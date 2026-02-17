@@ -1,10 +1,6 @@
-import { Column, Entity, Index, JoinColumn, ManyToOne } from "typeorm";
-import { Profiles } from "./Profiles";
+import { Column, Entity, Index } from "typeorm";
 
-@Index("idx_admin_alerts_acknowledged", ["acknowledged"], {})
-@Index("idx_admin_alerts_created", ["createdAt"], {})
 @Index("admin_alerts_pkey", ["id"], { unique: true })
-@Index("idx_admin_alerts_severity", ["severity"], {})
 @Entity("admin_alerts", { schema: "public" })
 export class AdminAlerts {
   @Column("uuid", {
@@ -26,21 +22,8 @@ export class AdminAlerts {
   @Column("text", { name: "message" })
   message: string;
 
-  @Column("jsonb", { name: "metadata", nullable: true, default: {} })
+  @Column("jsonb", { name: "metadata", nullable: true })
   metadata: object | null;
-
-  @Column("boolean", {
-    name: "acknowledged",
-    nullable: true,
-    default: () => "false",
-  })
-  acknowledged: boolean | null;
-
-  @Column("timestamp with time zone", {
-    name: "acknowledged_at",
-    nullable: true,
-  })
-  acknowledgedAt: Date | null;
 
   @Column("timestamp with time zone", {
     name: "created_at",
@@ -49,9 +32,9 @@ export class AdminAlerts {
   })
   createdAt: Date | null;
 
-  @ManyToOne(() => Profiles, (profiles) => profiles.adminAlerts, {
-    onDelete: "SET NULL",
-  })
-  @JoinColumn([{ name: "acknowledged_by", referencedColumnName: "id" }])
-  acknowledgedBy: Profiles;
+  @Column("timestamp with time zone", { name: "resolved_at", nullable: true })
+  resolvedAt: Date | null;
+
+  @Column("uuid", { name: "resolved_by", nullable: true })
+  resolvedBy: string | null;
 }

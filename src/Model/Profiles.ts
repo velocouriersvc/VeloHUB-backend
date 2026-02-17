@@ -1,205 +1,223 @@
-import { Column, Entity, Index, OneToMany, OneToOne } from "typeorm";
-import { AdminAlerts } from "./AdminAlerts";
-import { ApiErrors } from "./ApiErrors";
-import { AuditLogs } from "./AuditLogs";
-import { Bookings } from "./Bookings";
-import { BuyerProfiles } from "./BuyerProfiles";
-import { CartItems } from "./CartItems";
-import { DriverProfiles } from "./DriverProfiles";
-import { InventoryItems } from "./InventoryItems";
-import { LeaseRequests } from "./LeaseRequests";
-import { LeaseVehicles } from "./LeaseVehicles";
-import { NotificationsLog } from "./NotificationsLog";
-import { NotificationsQueue } from "./NotificationsQueue";
-import { OrderIssues } from "./OrderIssues";
-import { Orders } from "./Orders";
-import { PaymentMethodRequests } from "./PaymentMethodRequests";
-import { Payments } from "./Payments";
-import { Products } from "./Products";
-import { RecentLocations } from "./RecentLocations";
-import { Referrals } from "./Referrals";
-import { ReviewRequests } from "./ReviewRequests";
-import { Reviews } from "./Reviews";
-import { RideRequests } from "./RideRequests";
-import { SellerPayouts } from "./SellerPayouts";
-import { SellerProfiles } from "./SellerProfiles";
-import { ShopForMeRequests } from "./ShopForMeRequests";
-import { UserRoles } from "./UserRoles";
-import { VeloOrders } from "./VeloOrders";
-import { Vendors } from "./Vendors";
-import { WalletTransactions } from "./WalletTransactions";
+import { Column, Entity, Index, JoinColumn, ManyToOne, OneToMany, OneToOne } from "typeorm";
+import { ActiveUserRole } from './ActiveUserRole'
+import { BuyerInformation } from './BuyerInformation'
+import { Drivers } from './Drivers'
+import { IdCards } from './IdCards'
+import { Merchants } from './Merchants'
+import { OrderIssues } from './OrderIssues'
+import { Orders } from './Orders'
+import { PaymentMethods } from './PaymentMethods'
+import { PromotionUsages } from './PromotionUsages'
+import { Promotions } from './Promotions'
+import { PushNotificationTokens } from './PushNotificationTokens'
+import { ReviewRequests } from './ReviewRequests'
+import { RideBookings } from './RideBookings'
+import { Rides } from './Rides'
+import { SavedAddresses } from './SavedAddresses'
+import { SellerProfiles } from './SellerProfiles'
+import { TripPayments } from './TripPayments'
+import { TripQuotes } from './TripQuotes'
+import { Trips } from './Trips'
+import { UserRoleEvents } from './UserRoleEvents'
+import { UserRoles } from './UserRoles'
+import { Withdrawals } from './Withdrawals'
 
-@Index("profiles_pkey", ["id"], { unique: true })
-@Index("profiles_phone_number_key", ["phoneNumber"], { unique: true })
-@Index("idx_profiles_phone", ["phoneNumber"], {})
-@Index("profiles_referral_code_key", ["referralCode"], { unique: true })
-@Index("idx_profiles_stripe_customer_id", ["stripeCustomerId"], {})
+
+@Index("profiles_email_key", ["email",], { unique: true })
+@Index("idx_full_name", ["fullName",], {})
+@Index("profiles_pkey", ["id",], { unique: true })
+@Index("idx_profiles_phone", ["phoneNumber",], {})
+@Index("profiles_phone_number_key", ["phoneNumber",], { unique: true })
+@Index("profiles_referral_code_key", ["referralCode",], { unique: true })
 @Entity("profiles", { schema: "public" })
 export class Profiles {
-  @Column("uuid", {
-    primary: true,
-    name: "id",
-    default: () => "gen_random_uuid()",
-  })
-  id: string;
 
-  @Column("text", { name: "phone_number", unique: true })
-  phoneNumber: string;
+    @Column("uuid", { primary: true, name: "id" })
+    id: string;
 
-  @Column("text", { name: "name", nullable: true })
-  name: string | null;
+    @Column("character varying", { name: "phone_number", unique: true, length: 20 })
+    phoneNumber: string;
 
-  @Column("text", { name: "location", nullable: true })
-  location: string | null;
+    @Column("character varying", { name: "full_name", length: 255 })
+    fullName: string;
 
-  @Column("timestamp with time zone", {
-    name: "created_at",
-    nullable: true,
-    default: () => "now()",
-  })
-  createdAt: Date | null;
+    @Column("character varying", { name: "country", nullable: true, length: 100 })
+    country: string | null;
 
-  @Column("timestamp with time zone", {
-    name: "updated_at",
-    nullable: true,
-    default: () => "now()",
-  })
-  updatedAt: Date | null;
+    @Column("character varying", { name: "region", nullable: true, length: 100 })
+    region: string | null;
 
-  @Column("text", { name: "ghana_card_number", nullable: true })
-  ghanaCardNumber: string | null;
+    @Column("character varying", { name: "city", nullable: true, length: 100 })
+    city: string | null;
 
-  @Column("text", { name: "referral_code", nullable: true, unique: true })
-  referralCode: string | null;
+    @Column("character varying", { name: "email", nullable: true, unique: true, length: 255 })
+    email: string | null;
 
-  @Column("text", { name: "referred_by", nullable: true })
-  referredBy: string | null;
+    @Column("text", { name: "avatar_url", nullable: true })
+    avatarUrl: string | null;
 
-  @Column("numeric", {
-    name: "referral_credits",
-    nullable: true,
-    default: () => "0",
-  })
-  referralCredits: string | null;
+    @Column("boolean", { name: "is_active", nullable: true, default: () => "true", })
+    isActive: boolean | null;
 
-  @Column("integer", {
-    name: "total_referrals",
-    nullable: true,
-    default: () => "0",
-  })
-  totalReferrals: number | null;
+    @Column("boolean", { name: "otp_verified", nullable: true, default: () => "false", })
+    otpVerified: boolean | null;
 
-  @Column("text", { name: "stripe_customer_id", nullable: true })
-  stripeCustomerId: string | null;
+    @Column("timestamp with time zone", { name: "phone_verified_at", nullable: true })
+    phoneVerifiedAt: Date | null;
 
-  @OneToMany(() => AdminAlerts, (adminAlerts) => adminAlerts.acknowledgedBy)
-  adminAlerts: AdminAlerts[];
+    @Column("timestamp with time zone", { name: "created_at", nullable: true, default: () => "now()", })
+    createdAt: Date | null;
 
-  @OneToMany(() => ApiErrors, (apiErrors) => apiErrors.user)
-  apiErrors: ApiErrors[];
+    @Column("timestamp with time zone", { name: "updated_at", nullable: true, default: () => "now()", })
+    updatedAt: Date | null;
 
-  @OneToMany(() => AuditLogs, (auditLogs) => auditLogs.user)
-  auditLogs: AuditLogs[];
+    @Column("character varying", { name: "user_type", default: () => "'buyer'", })
+    userType: string;
 
-  @OneToMany(() => Bookings, (bookings) => bookings.user)
-  bookings: Bookings[];
+    @Column("geography", { name: "last_location", nullable: true })
+    lastLocation: string | null;
 
-  @OneToOne(() => BuyerProfiles, (buyerProfiles) => buyerProfiles.profile)
-  buyerProfiles: BuyerProfiles;
+    @Column("text", { name: "referral_code", nullable: true })
+    referralCode: string | null;
 
-  @OneToMany(() => CartItems, (cartItems) => cartItems.user)
-  cartItems: CartItems[];
+    @Column("numeric", { name: "referral_credits", nullable: true, default: () => "0", })
+    referralCredits: string | null;
 
-  @OneToOne(() => DriverProfiles, (driverProfiles) => driverProfiles.profile)
-  driverProfiles: DriverProfiles;
+    @Column("text", { name: "referred_by", nullable: true })
+    referredBy: string | null;
 
-  @OneToMany(() => InventoryItems, (inventoryItems) => inventoryItems.seller)
-  inventoryItems: InventoryItems[];
+    @Column("integer", { name: "total_referrals", nullable: true, default: () => "0", })
+    totalReferrals: number | null;
 
-  @OneToMany(() => LeaseRequests, (leaseRequests) => leaseRequests.user)
-  leaseRequests: LeaseRequests[];
+    @OneToOne(() => ActiveUserRole, activeUserRole => activeUserRole.profile)
 
-  @OneToMany(() => LeaseVehicles, (leaseVehicles) => leaseVehicles.owner)
-  leaseVehicles: LeaseVehicles[];
 
-  @OneToMany(
-    () => NotificationsLog,
-    (notificationsLog) => notificationsLog.recipient
-  )
-  notificationsLogs: NotificationsLog[];
+    activeUserRole: ActiveUserRole;
 
-  @OneToMany(
-    () => NotificationsQueue,
-    (notificationsQueue) => notificationsQueue.recipient
-  )
-  notificationsQueues: NotificationsQueue[];
+    @OneToOne(() => BuyerInformation, buyerInformation => buyerInformation.profile)
 
-  @OneToMany(() => OrderIssues, (orderIssues) => orderIssues.buyer)
-  orderIssues: OrderIssues[];
 
-  @OneToMany(() => Orders, (orders) => orders.seller)
-  orders: Orders[];
+    buyerInformation: BuyerInformation;
 
-  @OneToMany(() => Orders, (orders) => orders.user)
-  orders2: Orders[];
+    @OneToOne(() => Drivers, drivers => drivers.profile)
 
-  @OneToMany(
-    () => PaymentMethodRequests,
-    (paymentMethodRequests) => paymentMethodRequests.user
-  )
-  paymentMethodRequests: PaymentMethodRequests[];
 
-  @OneToMany(() => Payments, (payments) => payments.user)
-  payments: Payments[];
+    drivers: Drivers;
 
-  @OneToMany(() => Products, (products) => products.seller)
-  products: Products[];
+    @OneToMany(() => IdCards, idCards => idCards.profile)
 
-  @OneToMany(() => RecentLocations, (recentLocations) => recentLocations.user)
-  recentLocations: RecentLocations[];
 
-  @OneToMany(() => Referrals, (referrals) => referrals.referred)
-  referrals: Referrals[];
+    idCards: IdCards[];
 
-  @OneToMany(() => Referrals, (referrals) => referrals.referrer)
-  referrals2: Referrals[];
+    @OneToOne(() => Merchants, merchants => merchants.profile)
 
-  @OneToMany(() => ReviewRequests, (reviewRequests) => reviewRequests.buyer)
-  reviewRequests: ReviewRequests[];
 
-  @OneToMany(() => ReviewRequests, (reviewRequests) => reviewRequests.seller)
-  reviewRequests2: ReviewRequests[];
+    merchants: Merchants;
 
-  @OneToMany(() => Reviews, (reviews) => reviews.reviewer)
-  reviews: Reviews[];
+    @OneToMany(() => OrderIssues, orderIssues => orderIssues.buyer)
 
-  @OneToMany(() => RideRequests, (rideRequests) => rideRequests.user)
-  rideRequests: RideRequests[];
 
-  @OneToMany(() => SellerPayouts, (sellerPayouts) => sellerPayouts.seller)
-  sellerPayouts: SellerPayouts[];
+    orderIssues: OrderIssues[];
 
-  @OneToOne(() => SellerProfiles, (sellerProfiles) => sellerProfiles.profile)
-  sellerProfiles: SellerProfiles;
+    @OneToMany(() => Orders, orders => orders.buyer_2)
 
-  @OneToMany(
-    () => ShopForMeRequests,
-    (shopForMeRequests) => shopForMeRequests.buyer
-  )
-  shopForMeRequests: ShopForMeRequests[];
 
-  @OneToMany(() => UserRoles, (userRoles) => userRoles.profile)
-  userRoles: UserRoles[];
+    orders: Orders[];
 
-  @OneToMany(() => VeloOrders, (veloOrders) => veloOrders.user)
-  veloOrders: VeloOrders[];
+    @OneToMany(() => PaymentMethods, paymentMethods => paymentMethods.user)
 
-  @OneToMany(() => Vendors, (vendors) => vendors.seller)
-  vendors: Vendors[];
 
-  @OneToMany(
-    () => WalletTransactions,
-    (walletTransactions) => walletTransactions.profile
-  )
-  walletTransactions: WalletTransactions[];
+    paymentMethods: PaymentMethods[];
+
+    @ManyToOne(() => IdCards, idCards => idCards.profiles, { onDelete: "SET NULL" })
+    @JoinColumn([{ name: "id_card_id", referencedColumnName: "id" },
+    ])
+
+    idCard: IdCards;
+
+    @OneToMany(() => PromotionUsages, promotionUsages => promotionUsages.user)
+
+
+    promotionUsages: PromotionUsages[];
+
+    @OneToMany(() => Promotions, promotions => promotions.createdBy)
+
+
+    promotions: Promotions[];
+
+    @OneToMany(() => PushNotificationTokens, pushNotificationTokens => pushNotificationTokens.profile)
+
+
+    pushNotificationTokens: PushNotificationTokens[];
+
+    @OneToMany(() => ReviewRequests, reviewRequests => reviewRequests.buyer)
+
+
+    reviewRequests: ReviewRequests[];
+
+    @OneToMany(() => ReviewRequests, reviewRequests => reviewRequests.seller)
+
+
+    reviewRequests2: ReviewRequests[];
+
+    @OneToMany(() => RideBookings, rideBookings => rideBookings.buyer_2)
+
+
+    rideBookings: RideBookings[];
+
+    @OneToMany(() => RideBookings, rideBookings => rideBookings.cancelledBy)
+
+
+    rideBookings2: RideBookings[];
+
+    @OneToMany(() => RideBookings, rideBookings => rideBookings.driver_2)
+
+
+    rideBookings3: RideBookings[];
+
+    @OneToMany(() => Rides, rides => rides.rider)
+
+
+    rides: Rides[];
+
+    @OneToOne(() => SavedAddresses, savedAddresses => savedAddresses.user)
+
+
+    savedAddresses: SavedAddresses;
+
+    @OneToMany(() => SellerProfiles, sellerProfiles => sellerProfiles.profile)
+
+
+    sellerProfiles: SellerProfiles[];
+
+    @OneToMany(() => TripPayments, tripPayments => tripPayments.user)
+
+
+    tripPayments: TripPayments[];
+
+    @OneToMany(() => TripQuotes, tripQuotes => tripQuotes.user)
+
+
+    tripQuotes: TripQuotes[];
+
+    @OneToMany(() => Trips, trips => trips.rider)
+
+
+    trips: Trips[];
+
+    @OneToMany(() => UserRoleEvents, userRoleEvents => userRoleEvents.profile)
+
+
+    userRoleEvents: UserRoleEvents[];
+
+    @OneToMany(() => UserRoles, userRoles => userRoles.profile)
+
+
+    userRoles: UserRoles[];
+
+    @OneToMany(() => Withdrawals, withdrawals => withdrawals.user)
+
+
+    withdrawals: Withdrawals[];
+
 }

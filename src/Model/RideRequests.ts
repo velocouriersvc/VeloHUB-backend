@@ -1,14 +1,9 @@
 import { Column, Entity, Index, JoinColumn, ManyToOne } from "typeorm";
-import { Orders } from "./Orders";
-import { Profiles } from "./Profiles";
+import { Drivers } from "./Drivers";
+import { Rides } from "./Rides";
 
-@Index("idx_ride_requests_created_at", ["createdAt"], {})
-@Index("idx_ride_requests_driver_id", ["driverId"], {})
+@Index("unique_ride_driver", ["driverId", "rideId"], { unique: true })
 @Index("ride_requests_pkey", ["id"], { unique: true })
-@Index("idx_ride_requests_order_id_fkey", ["orderId"], {})
-@Index("idx_ride_requests_scheduled_for", ["scheduledFor"], {})
-@Index("idx_ride_requests_status", ["status"], {})
-@Index("idx_ride_requests_user_id", ["userId"], {})
 @Entity("ride_requests", { schema: "public" })
 export class RideRequests {
   @Column("uuid", {
@@ -18,118 +13,85 @@ export class RideRequests {
   })
   id: string;
 
-  @Column("uuid", { name: "user_id", nullable: true })
-  userId: string | null;
+  @Column("uuid", { name: "ride_id", unique: true })
+  rideId: string;
 
-  @Column("uuid", { name: "order_id", nullable: true })
-  orderId: string | null;
-
-  @Column("jsonb", { name: "pickup_location" })
-  pickupLocation: object;
-
-  @Column("jsonb", { name: "dropoff_location" })
-  dropoffLocation: object;
-
-  @Column("numeric", { name: "estimated_distance", nullable: true })
-  estimatedDistance: string | null;
-
-  @Column("integer", { name: "estimated_duration", nullable: true })
-  estimatedDuration: number | null;
-
-  @Column("text", { name: "vehicle_type" })
-  vehicleType: string;
-
-  @Column("numeric", { name: "base_fare" })
-  baseFare: string;
-
-  @Column("numeric", { name: "distance_fare" })
-  distanceFare: string;
-
-  @Column("numeric", {
-    name: "surge_multiplier",
-    nullable: true,
-    default: () => "1.0",
-  })
-  surgeMultiplier: string | null;
-
-  @Column("numeric", { name: "estimated_fare" })
-  estimatedFare: string;
-
-  @Column("numeric", { name: "final_fare", nullable: true })
-  finalFare: string | null;
-
-  @Column("jsonb", { name: "fare_breakdown", nullable: true, default: {} })
-  fareBreakdown: object | null;
-
-  @Column("uuid", { name: "driver_id", nullable: true })
-  driverId: string | null;
-
-  @Column("timestamp with time zone", {
-    name: "driver_accepted_at",
-    nullable: true,
-  })
-  driverAcceptedAt: Date | null;
+  @Column("uuid", { name: "driver_id", unique: true })
+  driverId: string;
 
   @Column("text", { name: "status", default: () => "'pending'" })
   status: string;
 
+  @Column("timestamp with time zone", {
+    name: "requested_at",
+    nullable: true,
+    default: () => "now()",
+  })
+  requestedAt: Date | null;
+
+  @Column("timestamp with time zone", { name: "responded_at", nullable: true })
+  respondedAt: Date | null;
+
+  @Column("character varying", {
+    name: "pickup_otp",
+    nullable: true,
+    length: 6,
+  })
+  pickupOtp: string | null;
+
+  @Column("character varying", {
+    name: "delivery_otp",
+    nullable: true,
+    length: 6,
+  })
+  deliveryOtp: string | null;
+
   @Column("boolean", {
-    name: "is_scheduled",
+    name: "pickup_verified",
     nullable: true,
     default: () => "false",
   })
-  isScheduled: boolean | null;
+  pickupVerified: boolean | null;
 
-  @Column("timestamp with time zone", { name: "scheduled_for", nullable: true })
-  scheduledFor: Date | null;
+  @Column("boolean", {
+    name: "delivery_verified",
+    nullable: true,
+    default: () => "false",
+  })
+  deliveryVerified: boolean | null;
 
   @Column("timestamp with time zone", {
-    name: "created_at",
+    name: "driver_arrived_at",
     nullable: true,
-    default: () => "now()",
   })
-  createdAt: Date | null;
+  driverArrivedAt: Date | null;
 
   @Column("timestamp with time zone", {
-    name: "updated_at",
+    name: "pickup_verified_at",
     nullable: true,
-    default: () => "now()",
   })
-  updatedAt: Date | null;
+  pickupVerifiedAt: Date | null;
 
-  @Column("timestamp with time zone", { name: "started_at", nullable: true })
-  startedAt: Date | null;
-
-  @Column("timestamp with time zone", { name: "completed_at", nullable: true })
-  completedAt: Date | null;
-
-  @Column("timestamp with time zone", { name: "cancelled_at", nullable: true })
-  cancelledAt: Date | null;
-
-  @Column("text", { name: "cancellation_reason", nullable: true })
-  cancellationReason: string | null;
-
-  @Column("text", { name: "payment_method", nullable: true })
-  paymentMethod: string | null;
-
-  @Column("text", {
-    name: "payment_status",
+  @Column("timestamp with time zone", {
+    name: "delivery_verified_at",
     nullable: true,
-    default: () => "'pending'",
   })
-  paymentStatus: string | null;
+  deliveryVerifiedAt: Date | null;
 
-  @Column("integer", { name: "rating", nullable: true })
-  rating: number | null;
+  @Column("enum", {
+    name: "vehicle_type",
+    enum: ["bike", "car", "suv", "truck"],
+    default: () => "'bike'",
+  })
+  vehicleType: "bike" | "car" | "suv" | "truck";
 
-  @Column("text", { name: "review_comment", nullable: true })
-  reviewComment: string | null;
+  @ManyToOne(() => Drivers, (drivers) => drivers.rideRequests)
+  @JoinColumn([{ name: "driver_id", referencedColumnName: "id" }])
+  driver: Drivers;
 
-  @ManyToOne(() => Orders, (orders) => orders.rideRequests)
-  @JoinColumn([{ name: "order_id", referencedColumnName: "id" }])
-  order: Orders;
-
-  @ManyToOne(() => Profiles, (profiles) => profiles.rideRequests)
-  @JoinColumn([{ name: "user_id", referencedColumnName: "id" }])
-  user: Profiles;
+  @ManyToOne(() => Rides, (rides) => rides.rideRequests, {
+    onDelete: "CASCADE",
+  })
+  @JoinColumn([{ name: "ride_id", referencedColumnName: "id" }])
+  ride: Rides;
 }

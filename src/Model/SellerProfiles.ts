@@ -3,15 +3,14 @@ import {
   Entity,
   Index,
   JoinColumn,
+  ManyToOne,
   OneToMany,
-  OneToOne,
 } from "typeorm";
 import { SellerPayoutRequests } from "./SellerPayoutRequests";
 import { Profiles } from "./Profiles";
 
 @Index("seller_profiles_pkey", ["id"], { unique: true })
-@Index("seller_profiles_profile_id_key", ["profileId"], { unique: true })
-@Index("idx_seller_profiles_profile", ["profileId"], {})
+@Index("seller_profiles_user_id_key", ["userId"], { unique: true })
 @Entity("seller_profiles", { schema: "public" })
 export class SellerProfiles {
   @Column("uuid", {
@@ -21,11 +20,41 @@ export class SellerProfiles {
   })
   id: string;
 
-  @Column("uuid", { name: "profile_id", nullable: true, unique: true })
-  profileId: string | null;
+  @Column("uuid", { name: "user_id", nullable: true, unique: true })
+  userId: string | null;
 
   @Column("text", { name: "business_name", nullable: true })
   businessName: string | null;
+
+  @Column("text", { name: "business_email", nullable: true })
+  businessEmail: string | null;
+
+  @Column("text", { name: "phone_number", nullable: true })
+  phoneNumber: string | null;
+
+  @Column("boolean", {
+    name: "is_verified",
+    nullable: true,
+    default: () => "false",
+  })
+  isVerified: boolean | null;
+
+  @Column("jsonb", { name: "payout_settings", nullable: true })
+  payoutSettings: object | null;
+
+  @Column("timestamp with time zone", {
+    name: "created_at",
+    nullable: true,
+    default: () => "now()",
+  })
+  createdAt: Date | null;
+
+  @Column("timestamp with time zone", {
+    name: "updated_at",
+    nullable: true,
+    default: () => "now()",
+  })
+  updatedAt: Date | null;
 
   @Column("text", { name: "business_type", nullable: true })
   businessType: string | null;
@@ -33,31 +62,36 @@ export class SellerProfiles {
   @Column("text", { name: "business_address", nullable: true })
   businessAddress: string | null;
 
-  @Column("jsonb", { name: "business_hours", nullable: true, default: {} })
+  @Column("jsonb", { name: "business_hours", nullable: true })
   businessHours: object | null;
-
-  @Column("text", { name: "bank_account_number", nullable: true })
-  bankAccountNumber: string | null;
 
   @Column("text", { name: "bank_name", nullable: true })
   bankName: string | null;
 
+  @Column("text", { name: "bank_account_number", nullable: true })
+  bankAccountNumber: string | null;
+
   @Column("text", { name: "tax_id", nullable: true })
   taxId: string | null;
 
-  @Column("boolean", {
-    name: "verified",
-    nullable: true,
-    default: () => "false",
-  })
-  verified: boolean | null;
+  @Column("text", { name: "ghana_card_number", nullable: true })
+  ghanaCardNumber: string | null;
+
+  @Column("text", { name: "ghana_card_front_url", nullable: true })
+  ghanaCardFrontUrl: string | null;
+
+  @Column("text", { name: "ghana_card_back_url", nullable: true })
+  ghanaCardBackUrl: string | null;
+
+  @Column("text", { name: "business_cert_url", nullable: true })
+  businessCertUrl: string | null;
 
   @Column("numeric", {
     name: "rating",
     nullable: true,
     precision: 3,
     scale: 2,
-    default: () => "0.0",
+    default: () => "5.0",
   })
   rating: string | null;
 
@@ -75,43 +109,11 @@ export class SellerProfiles {
   })
   totalSales: number | null;
 
-  @Column("timestamp with time zone", {
-    name: "created_at",
-    nullable: true,
-    default: () => "now()",
-  })
-  createdAt: Date | null;
+  @Column("text", { name: "bank_branch", nullable: true })
+  bankBranch: string | null;
 
-  @Column("timestamp with time zone", {
-    name: "updated_at",
-    nullable: true,
-    default: () => "now()",
-  })
-  updatedAt: Date | null;
-
-  @Column("text", { name: "ghana_card_number", nullable: true })
-  ghanaCardNumber: string | null;
-
-  @Column("numeric", {
-    name: "total_earnings",
-    nullable: true,
-    default: () => "0",
-  })
-  totalEarnings: string | null;
-
-  @Column("numeric", {
-    name: "pending_earnings",
-    nullable: true,
-    default: () => "0",
-  })
-  pendingEarnings: string | null;
-
-  @Column("numeric", {
-    name: "total_commission",
-    nullable: true,
-    default: () => "0",
-  })
-  totalCommission: string | null;
+  @Column("text", { name: "account_name", nullable: true })
+  accountName: string | null;
 
   @OneToMany(
     () => SellerPayoutRequests,
@@ -119,9 +121,7 @@ export class SellerProfiles {
   )
   sellerPayoutRequests: SellerPayoutRequests[];
 
-  @OneToOne(() => Profiles, (profiles) => profiles.sellerProfiles, {
-    onDelete: "CASCADE",
-  })
+  @ManyToOne(() => Profiles, (profiles) => profiles.sellerProfiles)
   @JoinColumn([{ name: "profile_id", referencedColumnName: "id" }])
   profile: Profiles;
 }

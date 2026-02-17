@@ -1,10 +1,8 @@
 import { Column, Entity, Index, JoinColumn, ManyToOne } from "typeorm";
 import { Profiles } from "./Profiles";
+import { Orders } from "./Orders";
 
-@Index("order_issues_buyer_id_idx", ["buyerId"], {})
 @Index("order_issues_pkey", ["id"], { unique: true })
-@Index("order_issues_order_id_idx", ["orderId"], {})
-@Index("order_issues_status_idx", ["status"], {})
 @Entity("order_issues", { schema: "public" })
 export class OrderIssues {
   @Column("uuid", {
@@ -14,20 +12,14 @@ export class OrderIssues {
   })
   id: string;
 
-  @Column("text", { name: "order_id" })
-  orderId: string;
-
   @Column("text", { name: "order_number" })
   orderNumber: string;
-
-  @Column("uuid", { name: "buyer_id", nullable: true })
-  buyerId: string | null;
 
   @Column("text", { name: "issue_type" })
   issueType: string;
 
-  @Column("text", { name: "description" })
-  description: string;
+  @Column("text", { name: "description", nullable: true })
+  description: string | null;
 
   @Column("text", { name: "status", default: () => "'pending'" })
   status: string;
@@ -40,22 +32,28 @@ export class OrderIssues {
 
   @Column("timestamp with time zone", {
     name: "created_at",
-    nullable: true,
-    default: () => "now()",
+    default: () => "timezone('utc', now())",
   })
-  createdAt: Date | null;
+  createdAt: Date;
 
   @Column("timestamp with time zone", {
     name: "updated_at",
-    nullable: true,
-    default: () => "now()",
+    default: () => "timezone('utc', now())",
   })
-  updatedAt: Date | null;
+  updatedAt: Date;
 
   @Column("timestamp with time zone", { name: "resolved_at", nullable: true })
   resolvedAt: Date | null;
 
-  @ManyToOne(() => Profiles, (profiles) => profiles.orderIssues)
+  @ManyToOne(() => Profiles, (profiles) => profiles.orderIssues, {
+    onDelete: "CASCADE",
+  })
   @JoinColumn([{ name: "buyer_id", referencedColumnName: "id" }])
   buyer: Profiles;
+
+  @ManyToOne(() => Orders, (orders) => orders.orderIssues, {
+    onDelete: "CASCADE",
+  })
+  @JoinColumn([{ name: "order_id", referencedColumnName: "id" }])
+  order: Orders;
 }

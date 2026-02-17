@@ -6,17 +6,16 @@ import {
   ManyToOne,
   OneToMany,
 } from "typeorm";
+import { OrderItems } from "./OrderItems";
 import { ProductShares } from "./ProductShares";
-import { Profiles } from "./Profiles";
-import { Vendors } from "./Vendors";
+import { Categories } from "./Categories";
+import { Merchants } from "./Merchants";
 
-@Index("idx_products_category", ["category"], {})
+@Index("idx_products_category", ["categoryId"], {})
 @Index("products_pkey", ["id"], { unique: true })
-@Index("idx_products_in_stock", ["inStock"], {})
-@Index("idx_products_product_slug", ["productSlug"], {})
-@Index("products_product_slug_key", ["productSlug"], { unique: true })
-@Index("idx_products_seller_id", ["sellerId"], {})
-@Index("idx_products_vendor_id", ["vendorId"], {})
+@Index("idx_products_available", ["isAvailable"], {})
+@Index("idx_products_merchant", ["merchantId"], {})
+@Index("idx_products_tags", ["tags"], {})
 @Entity("products", { schema: "public" })
 export class Products {
   @Column("uuid", {
@@ -26,56 +25,92 @@ export class Products {
   })
   id: string;
 
-  @Column("uuid", { name: "vendor_id", nullable: true })
-  vendorId: string | null;
+  @Column("uuid", { name: "merchant_id" })
+  merchantId: string;
 
-  @Column("uuid", { name: "seller_id", nullable: true })
-  sellerId: string | null;
+  @Column("uuid", { name: "category_id", nullable: true })
+  categoryId: string | null;
 
-  @Column("text", { name: "name" })
+  @Column("character varying", { name: "name", length: 255 })
   name: string;
 
   @Column("text", { name: "description", nullable: true })
   description: string | null;
 
-  @Column("numeric", { name: "price" })
+  @Column("numeric", { name: "price", precision: 10, scale: 2 })
   price: string;
 
-  @Column("text", { name: "image", nullable: true })
-  image: string | null;
-
-  @Column("text", { name: "category" })
-  category: string;
-
-  @Column("numeric", { name: "rating", nullable: true, default: () => "0.0" })
-  rating: string | null;
+  @Column("numeric", {
+    name: "compare_at_price",
+    nullable: true,
+    precision: 10,
+    scale: 2,
+  })
+  compareAtPrice: string | null;
 
   @Column("integer", {
-    name: "total_reviews",
+    name: "stock_quantity",
     nullable: true,
     default: () => "0",
   })
-  totalReviews: number | null;
-
-  @Column("boolean", {
-    name: "in_stock",
-    nullable: true,
-    default: () => "true",
-  })
-  inStock: boolean | null;
-
-  @Column("integer", { name: "stock", nullable: true, default: () => "0" })
-  stock: number | null;
+  stockQuantity: number | null;
 
   @Column("integer", {
     name: "low_stock_threshold",
     nullable: true,
-    default: () => "10",
+    default: () => "5",
   })
   lowStockThreshold: number | null;
 
-  @Column("text", { name: "sku", nullable: true })
-  sku: string | null;
+  @Column("text", { name: "image_urls", nullable: true, array: true })
+  imageUrls: string[] | null;
+
+  @Column("boolean", {
+    name: "is_available",
+    nullable: true,
+    default: () => "true",
+  })
+  isAvailable: boolean | null;
+
+  @Column("boolean", {
+    name: "is_featured",
+    nullable: true,
+    default: () => "false",
+  })
+  isFeatured: boolean | null;
+
+  @Column("numeric", {
+    name: "average_rating",
+    nullable: true,
+    precision: 3,
+    scale: 2,
+    default: () => "0.00",
+  })
+  averageRating: string | null;
+
+  @Column("integer", {
+    name: "total_ratings",
+    nullable: true,
+    default: () => "0",
+  })
+  totalRatings: number | null;
+
+  @Column("integer", { name: "total_sold", nullable: true, default: () => "0" })
+  totalSold: number | null;
+
+  @Column("numeric", {
+    name: "weight",
+    nullable: true,
+    precision: 10,
+    scale: 2,
+  })
+  weight: string | null;
+
+  @Column("jsonb", { name: "dimensions", nullable: true })
+  dimensions: object | null;
+
+  @Column("varchar", { name: "tags", nullable: true, array: true })
+  tags: string[] | null;
 
   @Column("timestamp with time zone", {
     name: "created_at",
@@ -91,33 +126,58 @@ export class Products {
   })
   updatedAt: Date | null;
 
-  @Column("boolean", {
-    name: "public_visible",
-    nullable: true,
-    default: () => "true",
-  })
-  publicVisible: boolean | null;
+  @Column("text", { name: "featured_image", nullable: true })
+  featuredImage: string | null;
 
-  @Column("text", { name: "product_slug", nullable: true, unique: true })
-  productSlug: string | null;
+  @Column("jsonb", { name: "customization_options", nullable: true })
+  customizationOptions: object | null;
+
+  @Column("text", { name: "location", nullable: true })
+  location: string | null;
+
+  @Column("text", { name: "rental_duration", nullable: true })
+  rentalDuration: string | null;
+
+  @Column("numeric", { name: "deposit", nullable: true })
+  deposit: string | null;
+
+  @Column("text", { name: "item_type", nullable: true })
+  itemType: string | null;
+
+  @Column("text", { name: "product_type", nullable: true })
+  productType: string | null;
+
+  @Column("date", { name: "expiration_date", nullable: true })
+  expirationDate: string | null;
+
+  @Column("text", { name: "dosage_info", nullable: true })
+  dosageInfo: string | null;
 
   @Column("boolean", {
-    name: "is_wholesale",
+    name: "prescription_required",
     nullable: true,
     default: () => "false",
   })
-  isWholesale: boolean | null;
+  prescriptionRequired: boolean | null;
+
+  @Column("text", { name: "regulatory_notes", nullable: true })
+  regulatoryNotes: string | null;
+
+  @OneToMany(() => OrderItems, (orderItems) => orderItems.product)
+  orderItems: OrderItems[];
 
   @OneToMany(() => ProductShares, (productShares) => productShares.product)
   productShares: ProductShares[];
 
-  @ManyToOne(() => Profiles, (profiles) => profiles.products)
-  @JoinColumn([{ name: "seller_id", referencedColumnName: "id" }])
-  seller: Profiles;
+  @ManyToOne(() => Categories, (categories) => categories.products, {
+    onDelete: "SET NULL",
+  })
+  @JoinColumn([{ name: "category_id", referencedColumnName: "id" }])
+  category: Categories;
 
-  @ManyToOne(() => Vendors, (vendors) => vendors.products, {
+  @ManyToOne(() => Merchants, (merchants) => merchants.products, {
     onDelete: "CASCADE",
   })
-  @JoinColumn([{ name: "vendor_id", referencedColumnName: "id" }])
-  vendor: Vendors;
+  @JoinColumn([{ name: "merchant_id", referencedColumnName: "id" }])
+  merchant: Merchants;
 }

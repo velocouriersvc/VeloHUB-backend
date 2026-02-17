@@ -5,28 +5,31 @@ import {
   JoinColumn,
   ManyToOne,
   OneToMany,
+  OneToOne,
 } from "typeorm";
-import { AuditLogs } from "./AuditLogs";
-import { DriverVerificationLocks } from "./DriverVerificationLocks";
-import { OrderStatusHistory } from "./OrderStatusHistory";
-import { Payments } from "./Payments";
+import { Attachments } from "./Attachments";
+import { Deliveries } from "./Deliveries";
+import { OrderIssues } from "./OrderIssues";
+import { OrderItems } from "./OrderItems";
+import { OrderStatus } from "./OrderStatus";
+import { OrderStatusLog } from "./OrderStatusLog";
+import { BuyerInformation } from "./BuyerInformation";
 import { Profiles } from "./Profiles";
-import { ProductShares } from "./ProductShares";
+import { Drivers } from "./Drivers";
+import { Merchants } from "./Merchants";
 import { ReviewRequests } from "./ReviewRequests";
-import { Reviews } from "./Reviews";
-import { RideRequests } from "./RideRequests";
-import { SellerPayouts } from "./SellerPayouts";
-import { StoreShares } from "./StoreShares";
+import { Rides } from "./Rides";
+import { Transactions } from "./Transactions";
 
-@Index("idx_orders_delivery_code", ["deliveryCode"], {})
-@Index("idx_orders_expiration", ["expirationTime"], {})
+@Index("idx_orders_buyer_id", ["buyerId"], {})
+@Index("orders_driver_accepted_at_idx", ["driverAcceptedAt"], {})
+@Index("orders_driver_id_idx", ["driverId"], {})
 @Index("orders_pkey", ["id"], { unique: true })
+@Index("idx_orders_merchant_id", ["merchantId"], {})
 @Index("orders_order_number_key", ["orderNumber"], { unique: true })
-@Index("idx_orders_payment_id_fkey", ["paymentId"], {})
-@Index("idx_orders_pickup_code", ["pickupCode"], {})
-@Index("idx_orders_seller_id", ["sellerId"], {})
-@Index("idx_orders_seller_status", ["sellerId", "status"], {})
-@Index("idx_orders_user_id_fkey", ["userId"], {})
+@Index("idx_orders_payment_reference", ["paymentReference"], {})
+@Index("orders_status_idx", ["status"], {})
+@Index("idx_orders_status", ["status"], {})
 @Entity("orders", { schema: "public" })
 export class Orders {
   @Column("uuid", {
@@ -36,47 +39,207 @@ export class Orders {
   })
   id: string;
 
-  @Column("uuid", { name: "user_id", nullable: true })
-  userId: string | null;
-
-  @Column("text", { name: "order_number", unique: true })
+  @Column("character varying", {
+    name: "order_number",
+    unique: true,
+    length: 50,
+  })
   orderNumber: string;
 
-  @Column("text", { name: "order_type" })
-  orderType: string;
+  @Column("uuid", { name: "buyer_id" })
+  buyerId: string;
 
-  @Column("jsonb", { name: "items", nullable: true, default: [] })
-  items: object | null;
+  @Column("uuid", { name: "merchant_id", nullable: true })
+  merchantId: string | null;
 
-  @Column("numeric", { name: "total_amount" })
-  totalAmount: string;
+  @Column("numeric", { name: "subtotal", precision: 12, scale: 2 })
+  subtotal: string;
 
-  @Column("jsonb", { name: "delivery_address", nullable: true })
-  deliveryAddress: object | null;
-
-  @Column("jsonb", { name: "pickup_location", nullable: true })
-  pickupLocation: object | null;
-
-  @Column("jsonb", { name: "dropoff_location", nullable: true })
-  dropoffLocation: object | null;
-
-  @Column("text", { name: "status", default: () => "'pending'" })
-  status: string;
-
-  @Column("uuid", { name: "driver_id", nullable: true })
-  driverId: string | null;
-
-  @Column("timestamp with time zone", {
-    name: "estimated_delivery_time",
+  @Column("numeric", {
+    name: "delivery_fee",
     nullable: true,
+    precision: 12,
+    scale: 2,
+    default: () => "0.00",
   })
-  estimatedDeliveryTime: Date | null;
+  deliveryFee: string | null;
 
-  @Column("timestamp with time zone", {
-    name: "actual_delivery_time",
+  @Column("numeric", {
+    name: "service_fee",
     nullable: true,
+    precision: 12,
+    scale: 2,
+    default: () => "0.00",
   })
-  actualDeliveryTime: Date | null;
+  serviceFee: string | null;
+
+  @Column("numeric", {
+    name: "tax_amount",
+    nullable: true,
+    precision: 12,
+    scale: 2,
+    default: () => "0.00",
+  })
+  taxAmount: string | null;
+
+  @Column("numeric", {
+    name: "discount_amount",
+    nullable: true,
+    precision: 12,
+    scale: 2,
+    default: () => "0.00",
+  })
+  discountAmount: string | null;
+
+  @Column("numeric", {
+    name: "tip_amount",
+    nullable: true,
+    precision: 12,
+    scale: 2,
+    default: () => "0.00",
+  })
+  tipAmount: string | null;
+
+  @Column("numeric", { name: "total_major", precision: 12, scale: 2 })
+  totalMajor: string;
+
+  @Column("numeric", {
+    name: "escrow_amount",
+    nullable: true,
+    precision: 12,
+    scale: 2,
+    default: () => "0.00",
+  })
+  escrowAmount: string | null;
+
+  @Column("numeric", {
+    name: "refund_fee",
+    nullable: true,
+    precision: 12,
+    scale: 2,
+    default: () => "0.00",
+  })
+  refundFee: string | null;
+
+  @Column("text", { name: "delivery_address", nullable: true })
+  deliveryAddress: string | null;
+
+  @Column("numeric", {
+    name: "delivery_lat",
+    nullable: true,
+    precision: 10,
+    scale: 8,
+  })
+  deliveryLat: string | null;
+
+  @Column("numeric", {
+    name: "delivery_lng",
+    nullable: true,
+    precision: 11,
+    scale: 8,
+  })
+  deliveryLng: string | null;
+
+  @Column("enum", {
+    name: "delivery_type",
+    nullable: true,
+    enum: ["standard", "express"],
+    default: () => "'standard'",
+  })
+  deliveryType: "standard" | "express" | null;
+
+  @Column("enum", {
+    name: "status",
+    nullable: true,
+    enum: [
+      "pending",
+      "confirmed",
+      "preparing_order",
+      "ready_for_pickup",
+      "driver_assigned",
+      "picked_up",
+      "in_transit",
+      "delivered",
+      "cancelled",
+      "refunded",
+      "pending_payment",
+      "paid",
+      "awaiting_confirmation",
+    ],
+    default: () => "'pending_payment'",
+  })
+  status:
+    | "pending"
+    | "confirmed"
+    | "preparing_order"
+    | "ready_for_pickup"
+    | "driver_assigned"
+    | "picked_up"
+    | "in_transit"
+    | "delivered"
+    | "cancelled"
+    | "refunded"
+    | "pending_payment"
+    | "paid"
+    | "awaiting_confirmation"
+    | null;
+
+  @Column("timestamp with time zone", { name: "cancelled_at", nullable: true })
+  cancelledAt: Date | null;
+
+  @Column("text", { name: "cancellation_reason", nullable: true })
+  cancellationReason: string | null;
+
+  @Column("enum", {
+    name: "cancelled_by",
+    nullable: true,
+    enum: ["buyer", "merchant", "driver", "system"],
+  })
+  cancelledBy: "buyer" | "merchant" | "driver" | "system" | null;
+
+  @Column("enum", {
+    name: "payment_method",
+    nullable: true,
+    enum: ["paystack", "other", "cash"],
+  })
+  paymentMethod: "paystack" | "other" | "cash" | null;
+
+  @Column("enum", {
+    name: "payment_status",
+    nullable: true,
+    enum: [
+      "pending",
+      "held",
+      "completed",
+      "refunded",
+      "initiated",
+      "successful",
+      "failed",
+    ],
+    default: () => "'pending'",
+  })
+  paymentStatus:
+    | "pending"
+    | "held"
+    | "completed"
+    | "refunded"
+    | "initiated"
+    | "successful"
+    | "failed"
+    | null;
+
+  @Column("text", { name: "payment_reference", nullable: true })
+  paymentReference: string | null;
+
+  @Column("timestamp with time zone", { name: "refunded_at", nullable: true })
+  refundedAt: Date | null;
+
+  @Column("character varying", {
+    name: "promo_code",
+    nullable: true,
+    length: 50,
+  })
+  promoCode: string | null;
 
   @Column("timestamp with time zone", {
     name: "created_at",
@@ -92,43 +255,87 @@ export class Orders {
   })
   updatedAt: Date | null;
 
-  @Column("text", {
-    name: "payment_status",
-    nullable: true,
-    default: () => "'pending'",
-  })
-  paymentStatus: string | null;
+  @Column("timestamp with time zone", { name: "paid_at", nullable: true })
+  paidAt: Date | null;
 
-  @Column("uuid", { name: "payment_id", nullable: true })
-  paymentId: string | null;
+  @Column("numeric", { name: "total_minor" })
+  totalMinor: string;
 
-  @Column("uuid", { name: "seller_id", nullable: true })
-  sellerId: string | null;
+  @Column("jsonb", { name: "pricing_snapshot" })
+  pricingSnapshot: object;
+
+  @Column("jsonb", { name: "metadata", nullable: true })
+  metadata: object | null;
+
+  @Column("text", { name: "failed_reason", nullable: true })
+  failedReason: string | null;
 
   @Column("numeric", {
-    name: "delivery_fee",
+    name: "refunded_amount",
     nullable: true,
-    default: () => "0",
+    precision: 12,
+    scale: 2,
+    default: () => "0.00",
   })
-  deliveryFee: string | null;
+  refundedAmount: string | null;
 
-  @Column("numeric", { name: "tip", nullable: true, default: () => "0" })
-  tip: string | null;
+  @Column("timestamp with time zone", { name: "fulfilled_at", nullable: true })
+  fulfilledAt: Date | null;
 
-  @Column("timestamp with time zone", { name: "scheduled_for", nullable: true })
-  scheduledFor: Date | null;
-
-  @Column("text", { name: "cancellation_reason", nullable: true })
-  cancellationReason: string | null;
-
-  @Column("timestamp with time zone", { name: "cancelled_at", nullable: true })
-  cancelledAt: Date | null;
+  @Column("uuid", { name: "driver_id", nullable: true })
+  driverId: string | null;
 
   @Column("timestamp with time zone", {
-    name: "rescheduled_from",
+    name: "driver_accepted_at",
     nullable: true,
   })
-  rescheduledFrom: Date | null;
+  driverAcceptedAt: Date | null;
+
+  @Column("text", { name: "pickup_code", nullable: true })
+  pickupCode: string | null;
+
+  @Column("text", { name: "delivery_code", nullable: true })
+  deliveryCode: string | null;
+
+  @Column("timestamp with time zone", {
+    name: "driver_arrived_at_pickup_at",
+    nullable: true,
+  })
+  driverArrivedAtPickupAt: Date | null;
+
+  @Column("numeric", {
+    name: "pickup_lat",
+    nullable: true,
+    precision: 10,
+    scale: 8,
+  })
+  pickupLat: string | null;
+
+  @Column("numeric", {
+    name: "pickup_lng",
+    nullable: true,
+    precision: 11,
+    scale: 8,
+  })
+  pickupLng: string | null;
+
+  @Column("timestamp with time zone", { name: "assigned_at", nullable: true })
+  assignedAt: Date | null;
+
+  @Column("timestamp with time zone", { name: "accepted_at", nullable: true })
+  acceptedAt: Date | null;
+
+  @Column("timestamp with time zone", { name: "picked_up_at", nullable: true })
+  pickedUpAt: Date | null;
+
+  @Column("timestamp with time zone", { name: "completed_at", nullable: true })
+  completedAt: Date | null;
+
+  @Column("timestamp with time zone", {
+    name: "estimated_ready_time",
+    nullable: true,
+  })
+  estimatedReadyTime: Date | null;
 
   @Column("boolean", {
     name: "is_scheduled",
@@ -137,119 +344,77 @@ export class Orders {
   })
   isScheduled: boolean | null;
 
-  @Column("timestamp with time zone", {
-    name: "expiration_time",
+  @Column("text", {
+    name: "order_type",
     nullable: true,
+    default: () => "'delivery'",
   })
-  expirationTime: Date | null;
+  orderType: string | null;
 
-  @Column("text", { name: "item_name", nullable: true })
-  itemName: string | null;
-
-  @Column("text", { name: "category", nullable: true })
-  category: string | null;
-
-  @Column("text", { name: "buyer_name", nullable: true })
-  buyerName: string | null;
-
-  @Column("integer", { name: "pickup_code", nullable: true })
-  pickupCode: number | null;
-
-  @Column("integer", { name: "delivery_code", nullable: true })
-  deliveryCode: number | null;
-
-  @Column("timestamp with time zone", {
-    name: "codes_generated_at",
+  @Column("numeric", {
+    name: "driver_lat",
     nullable: true,
+    precision: 10,
+    scale: 8,
   })
-  codesGeneratedAt: Date | null;
+  driverLat: string | null;
 
-  @Column("timestamp with time zone", {
-    name: "pickup_verified_at",
+  @Column("numeric", {
+    name: "driver_lng",
     nullable: true,
+    precision: 11,
+    scale: 8,
   })
-  pickupVerifiedAt: Date | null;
+  driverLng: string | null;
 
-  @Column("timestamp with time zone", {
-    name: "delivery_verified_at",
-    nullable: true,
-  })
-  deliveryVerifiedAt: Date | null;
+  @OneToMany(() => Attachments, (attachments) => attachments.order)
+  attachments: Attachments[];
 
-  @Column("integer", {
-    name: "verification_attempts",
-    nullable: true,
-    default: () => "0",
-  })
-  verificationAttempts: number | null;
+  @OneToMany(() => Deliveries, (deliveries) => deliveries.order)
+  deliveries: Deliveries[];
 
-  @Column("integer", {
-    name: "seller_verification_attempts",
-    nullable: true,
-    default: () => "0",
-  })
-  sellerVerificationAttempts: number | null;
+  @OneToMany(() => OrderIssues, (orderIssues) => orderIssues.order)
+  orderIssues: OrderIssues[];
 
-  @Column("timestamp with time zone", {
-    name: "seller_verification_locked_until",
-    nullable: true,
-  })
-  sellerVerificationLockedUntil: Date | null;
+  @OneToMany(() => OrderItems, (orderItems) => orderItems.order)
+  orderItems: OrderItems[];
 
-  @Column("timestamp with time zone", {
-    name: "seller_verified_at",
-    nullable: true,
-  })
-  sellerVerifiedAt: Date | null;
+  @OneToMany(() => OrderStatus, (orderStatus) => orderStatus.order)
+  orderStatuses: OrderStatus[];
 
-  @OneToMany(() => AuditLogs, (auditLogs) => auditLogs.order)
-  auditLogs: AuditLogs[];
+  @OneToMany(() => OrderStatusLog, (orderStatusLog) => orderStatusLog.order)
+  orderStatusLogs: OrderStatusLog[];
 
-  @OneToMany(
-    () => DriverVerificationLocks,
-    (driverVerificationLocks) => driverVerificationLocks.order
+  @ManyToOne(
+    () => BuyerInformation,
+    (buyerInformation) => buyerInformation.orders,
+    { onDelete: "CASCADE" }
   )
-  driverVerificationLocks: DriverVerificationLocks[];
+  @JoinColumn([{ name: "buyer_id", referencedColumnName: "id" }])
+  buyer: BuyerInformation;
 
-  @OneToMany(
-    () => OrderStatusHistory,
-    (orderStatusHistory) => orderStatusHistory.order
-  )
-  orderStatusHistories: OrderStatusHistory[];
+  @ManyToOne(() => Profiles, (profiles) => profiles.orders, {
+    onDelete: "CASCADE",
+  })
+  @JoinColumn([{ name: "buyer_id", referencedColumnName: "id" }])
+  buyer_2: Profiles;
 
-  @ManyToOne(() => Payments, (payments) => payments.orders)
-  @JoinColumn([{ name: "payment_id", referencedColumnName: "id" }])
-  payment: Payments;
+  @ManyToOne(() => Drivers, (drivers) => drivers.orders)
+  @JoinColumn([{ name: "driver_id", referencedColumnName: "id" }])
+  driver: Drivers;
 
-  @ManyToOne(() => Profiles, (profiles) => profiles.orders)
-  @JoinColumn([{ name: "seller_id", referencedColumnName: "id" }])
-  seller: Profiles;
-
-  @ManyToOne(() => Profiles, (profiles) => profiles.orders2)
-  @JoinColumn([{ name: "user_id", referencedColumnName: "id" }])
-  user: Profiles;
-
-  @OneToMany(() => Payments, (payments) => payments.order)
-  payments: Payments[];
-
-  @OneToMany(
-    () => ProductShares,
-    (productShares) => productShares.conversionOrder
-  )
-  productShares: ProductShares[];
+  @ManyToOne(() => Merchants, (merchants) => merchants.orders, {
+    onDelete: "SET NULL",
+  })
+  @JoinColumn([{ name: "merchant_id", referencedColumnName: "id" }])
+  merchant: Merchants;
 
   @OneToMany(() => ReviewRequests, (reviewRequests) => reviewRequests.order)
   reviewRequests: ReviewRequests[];
 
-  @OneToMany(() => Reviews, (reviews) => reviews.order)
-  reviews: Reviews[];
+  @OneToMany(() => Rides, (rides) => rides.order)
+  rides: Rides[];
 
-  @OneToMany(() => RideRequests, (rideRequests) => rideRequests.order)
-  rideRequests: RideRequests[];
-
-  @OneToMany(() => SellerPayouts, (sellerPayouts) => sellerPayouts.order)
-  sellerPayouts: SellerPayouts[];
-
-  @OneToMany(() => StoreShares, (storeShares) => storeShares.conversionOrder)
-  storeShares: StoreShares[];
+  @OneToOne(() => Transactions, (transactions) => transactions.order)
+  transactions: Transactions;
 }

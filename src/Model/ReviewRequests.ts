@@ -2,15 +2,7 @@ import { Column, Entity, Index, JoinColumn, ManyToOne } from "typeorm";
 import { Profiles } from "./Profiles";
 import { Orders } from "./Orders";
 
-@Index("idx_review_requests_buyer_id", ["buyerId"], {})
-@Index("review_requests_order_id_buyer_id_key", ["buyerId", "orderId"], {
-  unique: true,
-})
 @Index("review_requests_pkey", ["id"], { unique: true })
-@Index("idx_review_requests_order_id", ["orderId"], {})
-@Index("idx_review_requests_reminder_scheduled", ["reminderScheduledFor"], {})
-@Index("idx_review_requests_seller_id_fkey", ["sellerId"], {})
-@Index("idx_review_requests_status", ["status"], {})
 @Entity("review_requests", { schema: "public" })
 export class ReviewRequests {
   @Column("uuid", {
@@ -20,21 +12,14 @@ export class ReviewRequests {
   })
   id: string;
 
-  @Column("uuid", { name: "order_id", unique: true })
-  orderId: string;
-
-  @Column("uuid", { name: "buyer_id", unique: true })
-  buyerId: string;
-
-  @Column("uuid", { name: "seller_id" })
-  sellerId: string;
-
   @Column("timestamp with time zone", {
-    name: "request_sent_at",
+    name: "reminder_scheduled_for",
     nullable: true,
-    default: () => "now()",
   })
-  requestSentAt: Date | null;
+  reminderScheduledFor: Date | null;
+
+  @Column("text", { name: "status" })
+  status: string;
 
   @Column("timestamp with time zone", {
     name: "reminder_sent_at",
@@ -49,31 +34,16 @@ export class ReviewRequests {
   reviewSubmittedAt: Date | null;
 
   @Column("timestamp with time zone", {
-    name: "reminder_scheduled_for",
-    nullable: true,
-  })
-  reminderScheduledFor: Date | null;
-
-  @Column("text", {
-    name: "status",
-    nullable: true,
-    default: () => "'pending'",
-  })
-  status: string | null;
-
-  @Column("timestamp with time zone", {
     name: "created_at",
-    nullable: true,
-    default: () => "now()",
+    default: () => "timezone('utc', now())",
   })
-  createdAt: Date | null;
+  createdAt: Date;
 
   @Column("timestamp with time zone", {
     name: "updated_at",
-    nullable: true,
-    default: () => "now()",
+    default: () => "timezone('utc', now())",
   })
-  updatedAt: Date | null;
+  updatedAt: Date;
 
   @ManyToOne(() => Profiles, (profiles) => profiles.reviewRequests, {
     onDelete: "CASCADE",

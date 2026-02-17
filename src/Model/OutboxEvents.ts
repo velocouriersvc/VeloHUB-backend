@@ -1,9 +1,6 @@
 import { Column, Entity, Index } from "typeorm";
 
-@Index("idx_outbox_events_aggregate", ["aggregateId", "aggregateType"], {})
-@Index("idx_outbox_events_created", ["createdAt"], {})
 @Index("outbox_events_pkey", ["id"], { unique: true })
-@Index("idx_outbox_events_status", ["status"], {})
 @Entity("outbox_events", { schema: "public" })
 export class OutboxEvents {
   @Column("uuid", {
@@ -12,12 +9,6 @@ export class OutboxEvents {
     default: () => "gen_random_uuid()",
   })
   id: string;
-
-  @Column("text", { name: "aggregate_type" })
-  aggregateType: string;
-
-  @Column("uuid", { name: "aggregate_id" })
-  aggregateId: string;
 
   @Column("text", { name: "event_type" })
   eventType: string;
@@ -42,12 +33,15 @@ export class OutboxEvents {
   @Column("integer", {
     name: "max_retries",
     nullable: true,
-    default: () => "5",
+    default: () => "3",
   })
   maxRetries: number | null;
 
   @Column("text", { name: "error_message", nullable: true })
   errorMessage: string | null;
+
+  @Column("timestamp with time zone", { name: "processed_at", nullable: true })
+  processedAt: Date | null;
 
   @Column("timestamp with time zone", {
     name: "created_at",
@@ -56,6 +50,9 @@ export class OutboxEvents {
   })
   createdAt: Date | null;
 
-  @Column("timestamp with time zone", { name: "processed_at", nullable: true })
-  processedAt: Date | null;
+  @Column("text", { name: "aggregate_type", nullable: true })
+  aggregateType: string | null;
+
+  @Column("text", { name: "aggregate_id", nullable: true })
+  aggregateId: string | null;
 }
