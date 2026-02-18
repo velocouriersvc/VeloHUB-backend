@@ -1,5 +1,6 @@
-import { AppDataSource } from "../db/data-source.js";
-import { Otp } from "../models/otp.js";
+import { AppDataSource } from "../db/data-source";
+import { Otp } from "../models/otp";
+import { TwilioService } from "./twilio-service";
 import { MoreThan } from "typeorm";
 
 export class OtpService {
@@ -24,8 +25,15 @@ export class OtpService {
 
         await this.otpRepository.save(otp);
 
-        // In a real scenario, this is where Twilio would be called to send the SMS
-        // For now, we return the code to the caller (who will handle sending via Twilio)
+        // Send SMS via Twilio
+        const twilioService = new TwilioService();
+        try {
+            await twilioService.sendSMS(phoneNumber, `Your verification code is: ${code}`);
+        } catch (error) {
+            console.error("Failed to send OTP SMS:", error);
+            // We might want to throw here or handle it gracefully depending on requirements
+            // For now, logging it is sufficient as the code is returned
+        }
         return code;
     }
 

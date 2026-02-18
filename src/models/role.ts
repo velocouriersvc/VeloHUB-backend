@@ -1,5 +1,5 @@
 import { Entity, PrimaryGeneratedColumn, Column, OneToMany } from "typeorm";
-import { UserRole } from "./user-role.js";
+import { UserRole } from "./user-role";
 
 export enum RoleType {
     BUYER = "buyer",

@@ -1,5 +1,5 @@
 import { Request, Response } from "express";
-import { AuthService } from "../services/auth-service.js";
+import { AuthService } from "../services/auth-service";
 
 export class AuthController {
     private authService = new AuthService();
@@ -44,6 +44,24 @@ export class AuthController {
             });
         } catch (error) {
             console.error("Error verifying OTP:", error);
+            return res.status(500).json({ message: "Internal server error" });
+        }
+    };
+
+
+    syncUser = async (req: Request, res: Response) => {
+        try {
+            const supabaseUser = (req as any).user;
+
+            if (!supabaseUser) {
+                return res.status(401).json({ message: "User not authenticated" });
+            }
+
+            const result = await this.authService.syncUser(supabaseUser);
+
+            return res.status(200).json(result);
+        } catch (error) {
+            console.error("Error syncing user:", error);
             return res.status(500).json({ message: "Internal server error" });
         }
     };

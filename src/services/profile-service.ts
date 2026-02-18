@@ -1,7 +1,7 @@
-import { AppDataSource } from "../db/data-source.js";
-import { BuyerProfile } from "../models/buyer-profile.js";
-import { DriverProfile } from "../models/driver-profile.js";
-import { MerchantProfile } from "../models/merchant-profile.js";
+import { AppDataSource } from "../db/data-source";
+import { BuyerProfile } from "../models/buyer-profile";
+import { DriverProfile } from "../models/driver-profile";
+import { MerchantProfile } from "../models/merchant-profile";
 
 export class ProfileService {
     private buyerRepository = AppDataSource.getRepository(BuyerProfile);

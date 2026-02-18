@@ -1,6 +1,6 @@
-import { AppDataSource } from "../db/data-source.js";
-import { User, UserStatus } from "../models/user.js";
-import { OtpService } from "./otp-service.js";
+import { AppDataSource } from "../db/data-source";
+import { User, UserStatus } from "../models/user";
+import { OtpService } from "./otp-service";
 
 export class AuthService {
     private userRepository = AppDataSource.getRepository(User);
@@ -31,8 +31,6 @@ export class AuthService {
             user = this.userRepository.create({
                 phoneNumber,
                 status: UserStatus.ACTIVE,
-                isActive: true,
-                userType: "buyer",
             });
             await this.userRepository.save(user);
             isNewUser = true;
@@ -51,6 +49,42 @@ export class AuthService {
                 roles: user.userRoles?.map(ur => ur.role.name) || [],
             },
             isNewUser,
+        };
+    }
+    async syncUser(supabaseUser: any): Promise<any> {
+        const { id, email, phone } = supabaseUser;
+
+        let user = await this.userRepository.findOne({
+            where: { id },
+            relations: ["userRoles", "userRoles.role"]
+        });
+
+        const isNewUser = !user;
+
+        if (!user) {
+            user = this.userRepository.create({
+                id,
+                email,
+                phoneNumber: phone,
+                status: UserStatus.ACTIVE,
+                // isActive: true, // Removed as it's not in the entity?
+                // userType: "buyer", // Removed as it's not in the entity?
+            });
+            await this.userRepository.save(user);
+        } else {
+            user.lastLoginAt = new Date();
+            await this.userRepository.save(user);
+        }
+
+        return {
+            user: {
+                id: user.id,
+                email: user.email,
+                phoneNumber: user.phoneNumber,
+                status: user.status,
+                roles: user.userRoles?.map(ur => ur.role.name) || [],
+            },
+            isNewUser
         };
     }
 }

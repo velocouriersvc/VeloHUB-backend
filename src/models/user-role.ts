@@ -1,6 +1,6 @@
 import { Entity, Column, ManyToOne, JoinColumn, PrimaryGeneratedColumn, CreateDateColumn, UpdateDateColumn } from "typeorm";
-import { User } from "./user.js";
-import { Role } from "./role.js";
+import { User } from "./user";
+import { Role } from "./role";
 
 export enum RoleStatus {
     PENDING = "pending",

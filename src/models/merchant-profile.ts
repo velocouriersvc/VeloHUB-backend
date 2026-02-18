@@ -1,6 +1,6 @@
 import { Entity, PrimaryGeneratedColumn, Column, OneToOne, JoinColumn, CreateDateColumn, UpdateDateColumn, ManyToOne, Index } from "typeorm";
-import { User } from "./user.js";
-import { Identification } from "./identification.js";
+import { User } from "./user";
+import { Identification } from "./identification";
 
 export enum MerchantVerificationStatus {
     PENDING = "pending",

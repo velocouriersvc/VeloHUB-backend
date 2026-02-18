@@ -1,8 +1,8 @@
 import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, DeleteDateColumn, OneToMany, OneToOne } from "typeorm";
-import { UserRole } from "./user-role.js";
-import { BuyerProfile } from "./buyer-profile.js";
-import { DriverProfile } from "./driver-profile.js";
-import { MerchantProfile } from "./merchant-profile.js";
+import { UserRole } from "./user-role";
+import { BuyerProfile } from "./buyer-profile";
+import { DriverProfile } from "./driver-profile";
+import { MerchantProfile } from "./merchant-profile";
 
 export enum UserStatus {
     ACTIVE = "active",
@@ -13,7 +13,7 @@ export enum UserStatus {
 
 @Entity("users")
 export class User {
-    @PrimaryGeneratedColumn("uuid")
+    @Column({ type: "text", primary: true })
     id: string;
 
     @Column({ type: "varchar", length: 20, unique: true })

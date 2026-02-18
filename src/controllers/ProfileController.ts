@@ -1,5 +1,5 @@
 import { Request, Response } from "express";
-import { ProfileService } from "../services/profile-service.js";
+import { ProfileService } from "../services/profile-service";
 
 export class ProfileController {
     private profileService = new ProfileService();
