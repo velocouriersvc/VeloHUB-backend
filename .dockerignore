@@ -1,0 +1,13 @@
+node_modules
+dist
+npm-debug.log
+.env
+.git
+.gitignore
+*.md
+Dockerfile
+.dockerignore
+.github
+supabase
+schema.sql
+scripts

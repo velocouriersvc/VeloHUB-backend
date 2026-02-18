@@ -12,7 +12,7 @@ export const AppDataSource = new DataSource({
   database: process.env.DB_NAME || "velo",
   synchronize: false,
   logging: process.env.NODE_ENV === "development",
-  entities: [__dirname + "/../Model/**/*.{ts,js}"],
+  entities: [__dirname + "/../models/**/*.{ts,js}"],
   migrations: [__dirname + "/migrations/**/*.{ts,js}"],
   subscribers: [__dirname + "/subscribers/**/*.{ts,js}"],
 });
