@@ -31,6 +31,8 @@ export class AuthService {
             user = this.userRepository.create({
                 phoneNumber,
                 status: UserStatus.ACTIVE,
+                isActive: true,
+                userType: "buyer",
             });
             await this.userRepository.save(user);
             isNewUser = true;
