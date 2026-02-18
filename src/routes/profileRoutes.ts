@@ -1,13 +1,11 @@
 import { Router } from "express";
-import { ProfileController } from "../controllers/ProfileController";
+import { ProfileController } from "../controllers/ProfileController.js";
 
 const router = Router();
 const profileController = new ProfileController();
 
-router.get("/", profileController.getAll);
-router.get("/:id", profileController.getOne);
-router.post("/", profileController.create);
-router.put("/:id", profileController.update);
-router.delete("/:id", profileController.delete);
+router.post("/buyer", profileController.createBuyerProfile);
+router.post("/driver", profileController.createDriverProfile);
+router.post("/merchant", profileController.createMerchantProfile);
 
 export default router;
