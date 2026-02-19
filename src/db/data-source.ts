@@ -10,7 +10,7 @@ export const AppDataSource = new DataSource({
   username: process.env.DB_USERNAME || "postgres",
   password: process.env.DB_PASSWORD || "postgres",
   database: process.env.DB_NAME || "velo",
-  synchronize: false,
+  synchronize: true,
   logging: process.env.NODE_ENV === "development",
   entities: [__dirname + "/../models/**/*.{ts,js}"],
   migrations: [__dirname + "/migrations/**/*.{ts,js}"],

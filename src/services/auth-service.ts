@@ -1,6 +1,7 @@
 import { AppDataSource } from "../db/data-source";
 import { User, UserStatus } from "../models/user";
 import { OtpService } from "./otp-service";
+import { randomUUID } from "crypto";
 
 export class AuthService {
     private userRepository = AppDataSource.getRepository(User);
@@ -8,8 +9,6 @@ export class AuthService {
 
     async requestOtp(phoneNumber: string): Promise<void> {
         const code = await this.otpService.createOtp(phoneNumber);
-
-        // TODO: Actually call Twilio SMS Service here
         console.log(`[AUTH SERVICE] Sending code ${code} to ${phoneNumber} via Twilio`);
     }
 
@@ -29,6 +28,7 @@ export class AuthService {
 
         if (!user) {
             user = this.userRepository.create({
+                id: randomUUID(),
                 phoneNumber,
                 status: UserStatus.ACTIVE,
             });
@@ -86,5 +86,12 @@ export class AuthService {
             },
             isNewUser
         };
+    }
+
+    async findByPhone(phoneNumber: string): Promise<User | null> {
+        return this.userRepository.findOne({
+            where: { phoneNumber },
+            relations: ["userRoles", "userRoles.role"]
+        });
     }
 }

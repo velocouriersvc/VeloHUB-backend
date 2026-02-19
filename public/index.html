@@ -1,18 +1,49 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Velo Auth Test</title>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <style>
-        body { font-family: sans-serif; padding: 2rem; max-width: 800px; margin: 0 auto; }
-        .container { border: 1px solid #ccc; padding: 1rem; border-radius: 8px; margin-bottom: 1rem; }
-        input, button { padding: 0.5rem; margin: 0.5rem 0; width: 100%; box-sizing: border-box; }
-        code { background: #f4f4f4; padding: 0.2rem 0.5rem; border-radius: 4px; display: block; white-space: pre-wrap; word-break: break-all; }
-        .hidden { display: none; }
+        body {
+            font-family: sans-serif;
+            padding: 2rem;
+            max-width: 800px;
+            margin: 0 auto;
+        }
+
+        .container {
+            border: 1px solid #ccc;
+            padding: 1rem;
+            border-radius: 8px;
+            margin-bottom: 1rem;
+        }
+
+        input,
+        button {
+            padding: 0.5rem;
+            margin: 0.5rem 0;
+            width: 100%;
+            box-sizing: border-box;
+        }
+
+        code {
+            background: #f4f4f4;
+            padding: 0.2rem 0.5rem;
+            border-radius: 4px;
+            display: block;
+            white-space: pre-wrap;
+            word-break: break-all;
+        }
+
+        .hidden {
+            display: none;
+        }
     </style>
 </head>
+
 <body>
     <h1>Velo Backend Auth Test</h1>
 
@@ -33,37 +64,67 @@
         <div id="user-display"></div>
     </div>
 
-    <div class="container hidden" id="sync-section">
-        <h2>3. Backend Sync</h2>
+    <div class="container" id="sync-section">
+        <h2>3. Backend Sync (Supabase Auth)</h2>
         <p>Click to sync the authenticated user with the Velo backend.</p>
         <button onclick="syncUser()">Sync User with Backend</button>
         <h3>Result:</h3>
         <code id="sync-result">Waiting...</code>
     </div>
 
+    <!-- Phone Authentication Section -->
+    <div class="container" id="phone-auth-section">
+        <h2>4. Phone Authentication Flow</h2>
+        <input type="tel" id="phone" placeholder="Phone Number (e.g. +1234567890)">
+        <button onclick="startPhoneAuth()">Check User & Send OTP</button>
+
+        <div id="otp-section" class="hidden">
+            <input type="text" id="otp-code" placeholder="Enter OTP">
+            <button onclick="verifyPhoneOtp()">Verify OTP</button>
+        </div>
+
+        <h3>Status:</h3>
+        <code id="phone-auth-status">Waiting for input...</code>
+    </div>
+
     <script>
-        let supabase;
+        window.onload = async function () {
+            try {
+                const response = await fetch('/api/v1/auth/config');
+                const config = await response.json();
+
+                if (config.supabaseUrl && config.supabaseKey) {
+                    document.getElementById('supaUrl').value = config.supabaseUrl;
+                    document.getElementById('supaKey').value = config.supabaseKey;
+                    initSupabase();
+                }
+            } catch (error) {
+                console.error("Failed to fetch config:", error);
+            }
+        };
+
+        let supabaseClient;
 
         function initSupabase() {
             const url = document.getElementById('supaUrl').value;
             const key = document.getElementById('supaKey').value;
             if (!url || !key) return alert('Please enter URL and Key');
-            
-            supabase = window.supabase.createClient(url, key);
+
+            supabaseClient = window.supabase.createClient(url, key);
             document.getElementById('config-section').classList.add('hidden');
             document.getElementById('auth-section').classList.remove('hidden');
             checkUser();
         }
 
         async function checkUser() {
-            const { data: { user } } = await supabase.auth.getUser();
+            const { data: { user } } = await supabaseClient.auth.getUser();
             updateUserDisplay(user);
         }
 
         async function signUp() {
             const email = document.getElementById('email').value;
             const password = document.getElementById('password').value;
-            const { data, error } = await supabase.auth.signUp({ email, password });
+            const { data, error } = await supabaseClient.auth.signUp({ email, password });
             if (error) alert(error.message);
             else {
                 alert('Check email for confirmation link!');
@@ -74,13 +135,13 @@
         async function signIn() {
             const email = document.getElementById('email').value;
             const password = document.getElementById('password').value;
-            const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+            const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
             if (error) alert(error.message);
             else updateUserDisplay(data.user);
         }
 
         async function signOut() {
-            await supabase.auth.signOut();
+            await supabaseClient.auth.signOut();
             updateUserDisplay(null);
         }
 
@@ -97,7 +158,7 @@
         }
 
         async function syncUser() {
-            const { data: { session } } = await supabase.auth.getSession();
+            const { data: { session } } = await supabaseClient.auth.getSession();
             if (!session) return alert('No active session');
 
             const token = session.access_token;
@@ -118,6 +179,92 @@
                 resultEl.textContent = 'Error: ' + err.message;
             }
         }
+
+        // Phone Authentication Logic
+        async function startPhoneAuth() {
+            const phone = document.getElementById('phone').value;
+            const statusEl = document.getElementById('phone-auth-status');
+
+            if (!phone) return alert('Please enter phone number');
+
+            statusEl.textContent = 'Checking user existence...';
+
+            try {
+                // Check if user exists
+                const searchRes = await fetch(`/api/v1/auth/search?phone=${encodeURIComponent(phone)}`);
+                const otpSection = document.getElementById('otp-section');
+                otpSection.classList.add('hidden'); // Reset
+
+                if (searchRes.status === 200) {
+                    statusEl.textContent = 'User Found! Initiating Login... Requesting OTP...';
+                } else if (searchRes.status === 404) {
+                    statusEl.textContent = 'User Not Found! Initiating Registration... Requesting OTP...';
+                } else {
+                    const err = await searchRes.json();
+                    statusEl.textContent = 'Error checking user: ' + (err.message || searchRes.statusText);
+                    return;
+                }
+
+                // Request OTP for both cases
+                const otpRes = await fetch('/api/v1/auth/request-otp', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ phoneNumber: phone })
+                });
+
+                const otpData = await otpRes.json();
+
+                if (otpRes.ok) {
+                    statusEl.textContent += ' OTP Sent Successfully!';
+                    otpSection.classList.remove('hidden');
+                } else {
+                    statusEl.textContent += ' Error sending OTP: ' + otpData.message;
+                }
+
+            } catch (err) {
+                console.error(err);
+                statusEl.textContent = 'Error: ' + err.message;
+            }
+        }
+
+        async function verifyPhoneOtp() {
+            const phone = document.getElementById('phone').value;
+            const code = document.getElementById('otp-code').value;
+            const statusEl = document.getElementById('phone-auth-status');
+
+            if (!code) return alert('Please enter OTP');
+
+            statusEl.textContent = 'Verifying OTP...';
+
+            try {
+                const res = await fetch('/api/v1/auth/verify-otp', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ phoneNumber: phone, code })
+                });
+
+                const data = await res.json();
+
+                if (res.ok) {
+                    statusEl.innerHTML = '<strong>Success!</strong><br>' +
+                        'Token: ' + data.token + '<br>' +
+                        '<pre>' + JSON.stringify(data.user, null, 2) + '</pre>';
+
+                    if (data.user.is_new_user) {
+                        statusEl.innerHTML += '<br><strong style="color: green">Welcome New User!</strong>';
+                    } else {
+                        statusEl.innerHTML += '<br><strong style="color: blue">Welcome Back!</strong>';
+                    }
+
+                } else {
+                    statusEl.textContent = 'Verification Failed: ' + data.message;
+                }
+            } catch (err) {
+                console.error(err);
+                statusEl.textContent = 'Error: ' + err.message;
+            }
+        }
     </script>
 </body>
+
 </html>

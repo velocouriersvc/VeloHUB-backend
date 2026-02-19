@@ -64,5 +64,36 @@ export class AuthController {
             console.error("Error syncing user:", error);
             return res.status(500).json({ message: "Internal server error" });
         }
+
+    };
+
+    getConfig = (req: Request, res: Response) => {
+        const config = {
+            supabaseUrl: process.env.SUPABASE_URL,
+            supabaseKey: process.env.SUPABASE_ANON_KEY
+        };
+        return res.status(200).json(config);
+        return res.status(200).json(config);
+    };
+
+    searchUser = async (req: Request, res: Response) => {
+        try {
+            const { phone } = req.query;
+
+            if (!phone || typeof phone !== 'string') {
+                return res.status(400).json({ message: "Phone number is required as a query parameter (e.g., ?phone=+123456789)" });
+            }
+
+            const user = await this.authService.findByPhone(phone);
+
+            if (!user) {
+                return res.status(404).json({ message: "User not found" });
+            }
+
+            return res.status(200).json(user);
+        } catch (error) {
+            console.error("Error searching user:", error);
+            return res.status(500).json({ message: "Internal server error" });
+        }
     };
 }

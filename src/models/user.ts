@@ -13,7 +13,7 @@ export enum UserStatus {
 
 @Entity("users")
 export class User {
-    @Column({ type: "text", primary: true })
+    @Column({ type: "uuid", primary: true })
     id: string;
 
     @Column({ type: "varchar", length: 20, unique: true })
