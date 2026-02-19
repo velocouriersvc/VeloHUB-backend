@@ -1,19 +1,51 @@
 import { AppDataSource } from "../db/data-source";
 import { User, UserStatus } from "../models/user";
 import { OtpService } from "./otp-service";
+import { supabase } from "../utils/supabase-client";
+import { Profile } from "../types/profile";
+import { TwilioService } from "./twilio-service";
 
 export class AuthService {
     private userRepository = AppDataSource.getRepository(User);
     private otpService = new OtpService();
+    private twilioService = new TwilioService();
+
+    private async getProfileByPhone(phoneNumber: string): Promise<Profile> {
+        const { data: profile, error } = await supabase
+            .from('profiles')
+            .select('*')
+            .eq('phone_number', phoneNumber)
+            .single();
+
+        if (error || !profile) {
+            console.error(`[AUTH SERVICE] Profile not found for ${phoneNumber}:`, error);
+            throw new Error("Phone number not registered or profile not found.");
+        }
+
+        return profile as Profile;
+    }
 
     async requestOtp(phoneNumber: string): Promise<void> {
+        // 1. Check if phone number exists in Supabase profiles
+        await this.getProfileByPhone(phoneNumber);
+
+        // 2. Generate OTP
         const code = await this.otpService.createOtp(phoneNumber);
 
-        // TODO: Actually call Twilio SMS Service here
-        console.log(`[AUTH SERVICE] Sending code ${code} to ${phoneNumber} via Twilio`);
+        // 3. Send SMS via Twilio
+        try {
+            await this.twilioService.sendSMS(phoneNumber, `Your Velo Hub verification code is: ${code}`);
+            console.log(`[AUTH SERVICE] OTP sent successfully to ${phoneNumber}`);
+        } catch (twilioError) {
+            console.error(`[AUTH SERVICE] Failed to send OTP to ${phoneNumber}:`, twilioError);
+            throw new Error("Failed to send verification code. Please try again later.");
+        }
     }
 
     async verifyOtp(phoneNumber: string, code: string): Promise<{ token: string; user: any; isNewUser: boolean } | null> {
+        // 1. Check profile existence
+        await this.getProfileByPhone(phoneNumber);
+
         const isValid = await this.otpService.verifyOtp(phoneNumber, code);
 
         if (!isValid) {
@@ -40,13 +72,13 @@ export class AuthService {
         await this.userRepository.save(user);
 
         // Cleanup verified OTPs in the background
-        this.otpService.cleanup().catch(err => console.error("OTP Cleanup Error:", err));
+        this.otpService.cleanup().catch((err: Error) => console.error("OTP Cleanup Error:", err));
 
         return {
             token: "mock-jwt-token",
             user: {
                 id: user.id,
-                roles: user.userRoles?.map(ur => ur.role.name) || [],
+                roles: user.userRoles?.map((ur: any) => ur.role.name) || [],
             },
             isNewUser,
         };
@@ -82,7 +114,7 @@ export class AuthService {
                 email: user.email,
                 phoneNumber: user.phoneNumber,
                 status: user.status,
-                roles: user.userRoles?.map(ur => ur.role.name) || [],
+                roles: user.userRoles?.map((ur: any) => ur.role.name) || [],
             },
             isNewUser
         };

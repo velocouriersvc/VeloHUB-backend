@@ -21,7 +21,7 @@ export class TwilioService {
         this.client = twilio(accountSid, authToken);
     }
 
-    async sendSMS(to: string, body: string): Promise<void> {
+    async sendSMS(to: string, body: string): Promise<string> {
         try {
             const message = await this.client.messages.create({
                 body,
@@ -29,13 +29,14 @@ export class TwilioService {
                 to,
             });
             console.log(`SMS sent successfully to ${to}. SID: ${message.sid}`);
+            return message.sid;
         } catch (error) {
             console.error(`Failed to send SMS to ${to}:`, error);
             throw error;
         }
     }
 
-    async sendWhatsApp(to: string, body: string): Promise<void> {
+    async sendWhatsApp(to: string, body: string): Promise<string> {
         try {
             const from = `whatsapp:${this.whatsappNumber}`;
             const toWhatsApp = `whatsapp:${to}`;
@@ -46,8 +47,24 @@ export class TwilioService {
                 to: toWhatsApp,
             });
             console.log(`WhatsApp message sent successfully to ${to}. SID: ${message.sid}`);
+            return message.sid;
         } catch (error) {
             console.error(`Failed to send WhatsApp message to ${to}:`, error);
+            throw error;
+        }
+    }
+
+    async getMessageStatus(sid: string): Promise<any> {
+        try {
+            const message = await this.client.messages(sid).fetch();
+            return {
+                status: message.status,
+                errorCode: message.errorCode,
+                errorMessage: message.errorMessage,
+                dateUpdated: message.dateUpdated
+            };
+        } catch (error) {
+            console.error(`Failed to fetch status for SID ${sid}:`, error);
             throw error;
         }
     }
