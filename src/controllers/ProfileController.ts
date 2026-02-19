@@ -1,47 +1,52 @@
 import { Request, Response } from "express";
 import { ProfileService } from "../services/profile-service";
+import { BuyerSetupPayload, DriverSetupPayload, MerchantSetupPayload } from "../types/profile";
+import { AuthenticatedRequest } from "../types/auth";
 
 export class ProfileController {
     private profileService = new ProfileService();
 
-    createBuyerProfile = async (req: Request, res: Response) => {
+    setupBuyer = async (req: Request, res: Response) => {
         try {
-            if (!req.body.userId || !req.body.fullName) {
-                return res.status(400).json({ message: "userId and fullName are required" });
-            }
+            const authReq = req as AuthenticatedRequest;
+            const userId = authReq.user?.id || req.body.userId;
+            if (!userId) return res.status(401).json({ message: "User ID required" });
 
-            const profile = await this.profileService.saveBuyerProfile(req.body);
+            const payload: BuyerSetupPayload = req.body;
+            const profile = await this.profileService.setupBuyerProfile(userId, payload);
             return res.status(200).json(profile);
         } catch (error) {
-            console.error("Error saving buyer profile:", error);
+            console.error("Error setting up buyer profile:", error);
             return res.status(500).json({ message: "Internal server error" });
         }
     };
 
-    createDriverProfile = async (req: Request, res: Response) => {
+    setupDriver = async (req: Request, res: Response) => {
         try {
-            if (!req.body.userId || !req.body.fullName || !req.body.licenseNumber) {
-                return res.status(400).json({ message: "userId, fullName, and licenseNumber are required" });
-            }
+            const authReq = req as AuthenticatedRequest;
+            const userId = authReq.user?.id || req.body.userId;
+            if (!userId) return res.status(401).json({ message: "User ID required" });
 
-            const profile = await this.profileService.saveDriverProfile(req.body);
+            const payload: DriverSetupPayload = req.body;
+            const profile = await this.profileService.setupDriverProfile(userId, payload);
             return res.status(200).json(profile);
         } catch (error) {
-            console.error("Error saving driver profile:", error);
+            console.error("Error setting up driver profile:", error);
             return res.status(500).json({ message: "Internal server error" });
         }
     };
 
-    createMerchantProfile = async (req: Request, res: Response) => {
+    setupMerchant = async (req: Request, res: Response) => {
         try {
-            if (!req.body.userId || !req.body.businessName) {
-                return res.status(400).json({ message: "userId and businessName are required" });
-            }
+            const authReq = req as AuthenticatedRequest;
+            const userId = authReq.user?.id || req.body.userId;
+            if (!userId) return res.status(401).json({ message: "User ID required" });
 
-            const profile = await this.profileService.saveMerchantProfile(req.body);
+            const payload: MerchantSetupPayload = req.body;
+            const profile = await this.profileService.setupMerchantProfile(userId, payload);
             return res.status(200).json(profile);
         } catch (error) {
-            console.error("Error saving merchant profile:", error);
+            console.error("Error setting up merchant profile:", error);
             return res.status(500).json({ message: "Internal server error" });
         }
     };
