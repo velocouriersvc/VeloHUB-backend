@@ -5,6 +5,7 @@ import { AppDataSource } from "./db/data-source";
 import orderRoutes from "./routes/orderRoutes";
 import profileRoutes from "./routes/profileRoutes";
 import authRoutes from "./routes/authRoutes";
+import devRoutes from "./routes/devRoutes";
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -18,6 +19,7 @@ app.use(express.static('public'));
 // Routes
 app.use("/api/v1/auth", authRoutes);
 app.use("/api/v1/profile", profileRoutes);
+app.use("/api/v1/dev", devRoutes);
 app.use("/api/orders", orderRoutes);
 
 // Health check route

@@ -3,7 +3,7 @@ import { BuyerProfile } from "../models/buyer-profile";
 import { DriverProfile, DriverVerificationStatus } from "../models/driver-profile";
 import { MerchantProfile, MerchantVerificationStatus } from "../models/merchant-profile";
 import { Identification, IdentificationStatus } from "../models/identification";
-import { supabase } from "../utils/supabase-client";
+import { supabase, supabaseAdmin } from "../utils/supabase-client";
 import { RoleType } from "../models/role";
 import { User, UserStatus } from "../models/user";
 import { UserRole, RoleStatus } from "../models/user-role";
@@ -16,7 +16,7 @@ export class ProfileService {
 
     private async syncToSupabase(userId: string, data: any) {
         try {
-            const { error } = await supabase
+            const { error } = await supabaseAdmin
                 .from('profiles')
                 .upsert({
                     id: userId,
@@ -47,11 +47,11 @@ export class ProfileService {
             await this.ensureRole(queryRunner, userId, RoleType.BUYER);
 
             const user = await queryRunner.manager.findOne(User, { where: { id: userId } });
-            await this.syncToSupabase(userId, {
-                full_name: data.fullName,
-                email: data.email,
-                phone_number: user?.phoneNumber
-            });
+            // await this.syncToSupabase(userId, {
+            //     full_name: data.fullName,
+            //     email: data.email,
+            //     phone_number: user?.phoneNumber
+            // });
 
             await queryRunner.commitTransaction();
             return savedProfile;
@@ -100,10 +100,10 @@ export class ProfileService {
             await this.ensureRole(queryRunner, userId, RoleType.DRIVER);
 
             const user = await queryRunner.manager.findOne(User, { where: { id: userId } });
-            await this.syncToSupabase(userId, {
-                full_name: data.fullName,
-                phone_number: user?.phoneNumber
-            });
+            // await this.syncToSupabase(userId, {
+            //     full_name: data.fullName,
+            //     phone_number: user?.phoneNumber
+            // });
 
             await queryRunner.commitTransaction();
             return savedProfile;
@@ -155,10 +155,10 @@ export class ProfileService {
             await this.ensureRole(queryRunner, userId, RoleType.MERCHANT);
 
             const user = await queryRunner.manager.findOne(User, { where: { id: userId } });
-            await this.syncToSupabase(userId, {
-                full_name: data.businessName,
-                phone_number: user?.phoneNumber
-            });
+            // await this.syncToSupabase(userId, {
+            //     full_name: data.businessName,
+            //     phone_number: user?.phoneNumber
+            // });
 
             await queryRunner.commitTransaction();
             return savedProfile;

@@ -16,8 +16,8 @@ export class User {
     @Column({ type: "text", primary: true })
     id: string;
 
-    @Column({ type: "varchar", length: 20, unique: true })
-    phoneNumber: string;
+    @Column({ type: "varchar", length: 20, unique: true, nullable: true })
+    phoneNumber: string | null;
 
     @Column({ type: "varchar", length: 255, nullable: true, unique: true })
     email: string | null;

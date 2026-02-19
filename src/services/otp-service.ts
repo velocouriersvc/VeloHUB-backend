@@ -9,6 +9,7 @@ export class OtpService {
     async createOtp(phoneNumber: string): Promise<string> {
         // Generate 6-digit code
         const code = Math.floor(100000 + Math.random() * 900000).toString();
+        console.log(`[OTP SERVICE] Generated OTP for ${phoneNumber}: ${code}`);
 
         // Set expiry to 10 minutes from now
         const expiresAt = new Date();

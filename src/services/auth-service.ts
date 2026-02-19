@@ -31,46 +31,42 @@ export class AuthService {
     }
 
     async requestOtp(phoneNumber: string): Promise<void> {
-        // 1. Check if phone number exists in Supabase profiles (to determine if new user later)
-        // Note: Spec says to just send OTP here.
-
-        // 2. Send Verification via Twilio Verify
+        // 1. Generate and Send OTP via OtpService (Local DB + Twilio SMS)
         try {
-            await this.twilioService.sendVerification(phoneNumber);
-            console.log(`[AUTH SERVICE] Verification sent successfully to ${phoneNumber}`);
+            const code = await this.otpService.createOtp(phoneNumber);
+            console.log(`[AUTH SERVICE] OTP generated for ${phoneNumber}: ${code}`);
         } catch (error) {
-            console.error(`[AUTH SERVICE] Failed to send verification to ${phoneNumber}:`, error);
+            console.error(`[AUTH SERVICE] Failed to request OTP for ${phoneNumber}:`, error);
             throw new Error("Failed to send verification code. Please try again later.");
         }
     }
 
     async verifyOtp(phoneNumber: string, code: string): Promise<AuthResponse | null> {
-        // 1. Check verification with Twilio Verify
-        const isApproved = await this.twilioService.checkVerification(phoneNumber, code);
+        // 1. Check verification with OtpService (Local DB)
+        const isApproved = await this.otpService.verifyOtp(phoneNumber, code);
 
         if (!isApproved) {
             return null;
         }
 
-        // 2. Check if user exists in local DB and Supabase
-        const profile = await this.getProfileByPhone(phoneNumber);
-        const isNewUser = !profile;
+        // 2. Check if user exists in local DB
+        // const profile = await this.getProfileByPhone(phoneNumber); // Removed Supabase check
+        // const isNewUser = !profile;
 
         let user = await this.userRepository.findOne({
             where: { phoneNumber },
             relations: ["userRoles", "userRoles.role"]
         });
 
+        const isNewUser = !user;
+
         if (!user) {
-            // If they have a profile in Supabase but not in local DB, they might be "known" but not "synced"
-            // However, usually we create the user record upon verification if it doesn't exist.
             user = this.userRepository.create({
-                id: profile?.id || crypto.randomUUID(), // Fallback to new UUID if truly new
+                id: crypto.randomUUID(),
                 phoneNumber,
                 status: UserStatus.ACTIVE,
             });
             await this.userRepository.save(user);
-
         }
 
         user.lastLoginAt = new Date();
@@ -99,8 +95,8 @@ export class AuthService {
         if (!user) {
             user = this.userRepository.create({
                 id,
-                email,
-                phoneNumber: phone,
+                email: email || null,
+                phoneNumber: phone || null,
                 status: UserStatus.ACTIVE,
                 // isActive: true, // Removed as it's not in the entity?
                 // userType: "buyer", // Removed as it's not in the entity?
