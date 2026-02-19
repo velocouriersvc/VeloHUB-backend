@@ -1,8 +1,8 @@
-name: Build and Deploy to Production
+name: Build and Deploy to Staging
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [ "develop" ]
 
 env:
   REGISTRY: ghcr.io
@@ -32,8 +32,8 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
-            type=raw,value=latest
-            type=sha,format=short
+            type=raw,value=staging
+            type=sha,format=short,prefix=staging-
 
       - name: Build and push
         uses: docker/build-push-action@v5
@@ -46,7 +46,7 @@ jobs:
       - name: Scan image for vulnerabilities
         uses: aquasecurity/trivy-action@master
         with:
-          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:staging
           format: table
           exit-code: '1'
           severity: CRITICAL
@@ -54,4 +54,4 @@ jobs:
           TRIVY_USERNAME: ${{ github.actor }}
           TRIVY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
 
-      # ArgoCD picks up the new :latest image automatically — nothing else needed here
+      # ArgoCD picks up the new :staging image automatically — nothing else needed here
