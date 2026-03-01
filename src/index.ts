@@ -6,6 +6,14 @@ import orderRoutes from "./routes/orderRoutes";
 import profileRoutes from "./routes/profileRoutes";
 import authRoutes from "./routes/authRoutes";
 import devRoutes from "./routes/devRoutes";
+import rideRoutes from "./routes/rideRoutes";
+import driverRoutes from "./routes/driverRoutes";
+import paymentRoutes from "./routes/paymentRoutes";
+import walletRoutes from "./routes/walletRoutes";
+import locationRoutes from "./routes/locationRoutes";
+import ratingRoutes from "./routes/ratingRoutes";
+import placesRoutes from "./routes/placesRoutes";
+import notificationRoutes from "./routes/notificationRoutes";
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -20,6 +28,14 @@ app.use(express.static('public'));
 app.use("/api/v1/auth", authRoutes);
 app.use("/api/v1/profile", profileRoutes);
 app.use("/api/v1/dev", devRoutes);
+app.use("/api/v1/rides", rideRoutes);
+app.use("/api/v1/driver", driverRoutes);
+app.use("/api/v1/payments", paymentRoutes);
+app.use("/api/v1/wallet", walletRoutes);
+app.use("/api/v1/locations", locationRoutes);
+app.use("/api/v1/ratings", ratingRoutes);
+app.use("/api/v1/places", placesRoutes);
+app.use("/api/v1/notifications", notificationRoutes);
 app.use("/api/orders", orderRoutes);
 
 // Health check route

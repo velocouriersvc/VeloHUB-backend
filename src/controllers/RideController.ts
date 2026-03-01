@@ -1,0 +1,215 @@
+import { Response } from "express";
+import { AuthRequest } from "../middleware/role-middleware";
+import { RideService } from "../services/ride-service";
+import { RideType, CancelledBy, PaymentMethod } from "../models/ride";
+import { VehicleType } from "../models/vehicle-pricing";
+
+export class RideController {
+    private rideService = new RideService();
+
+    /**
+     * POST /rides/estimate
+     * Get fare estimates for all vehicle types
+     */
+    getEstimates = async (req: AuthRequest, res: Response) => {
+        try {
+            const { distanceKm, durationMin, pickupLat, pickupLng, promoCode } = req.body;
+
+            if (!distanceKm || !durationMin || !pickupLat || !pickupLng) {
+                return res.status(400).json({ message: "distanceKm, durationMin, pickupLat, pickupLng are required" });
+            }
+
+            const estimates = await this.rideService.getAllFareEstimates(
+                Number(distanceKm),
+                Number(durationMin),
+                Number(pickupLat),
+                Number(pickupLng),
+                promoCode
+            );
+
+            return res.json({ estimates });
+        } catch (error: any) {
+            console.error("Error getting estimates:", error);
+            return res.status(500).json({ message: error.message || "Internal server error" });
+        }
+    };
+
+    /**
+     * POST /rides/estimate/:vehicleType
+     * Get fare estimate for a specific vehicle type
+     */
+    getEstimate = async (req: AuthRequest, res: Response) => {
+        try {
+            const vehicleType = req.params.vehicleType as VehicleType;
+            const { distanceKm, durationMin, pickupLat, pickupLng, promoCode } = req.body;
+
+            if (!distanceKm || !durationMin || !pickupLat || !pickupLng) {
+                return res.status(400).json({ message: "distanceKm, durationMin, pickupLat, pickupLng are required" });
+            }
+
+            const estimate = await this.rideService.getFareEstimate(
+                vehicleType,
+                Number(distanceKm),
+                Number(durationMin),
+                Number(pickupLat),
+                Number(pickupLng),
+                promoCode
+            );
+
+            return res.json({ estimate });
+        } catch (error: any) {
+            console.error("Error getting estimate:", error);
+            return res.status(500).json({ message: error.message || "Internal server error" });
+        }
+    };
+
+    /**
+     * POST /rides/request
+     * Customer requests a ride
+     */
+    requestRide = async (req: AuthRequest, res: Response) => {
+        try {
+            const userId = req.user?.id;
+            if (!userId) return res.status(401).json({ message: "User ID required" });
+
+            const {
+                type, pickupAddress, pickupLat, pickupLng,
+                dropoffAddress, dropoffLat, dropoffLng,
+                vehicleType, distanceKm, durationMin,
+                passengerCount, promoCode, stops, sharedContacts,
+            } = req.body;
+
+            if (!pickupAddress || !pickupLat || !dropoffAddress || !dropoffLat || !vehicleType || !distanceKm || !durationMin) {
+                return res.status(400).json({ message: "Missing required ride fields" });
+            }
+
+            const ride = await this.rideService.requestRide({
+                customerId: userId,
+                type: type || RideType.RIDE,
+                pickupAddress,
+                pickupLat: Number(pickupLat),
+                pickupLng: Number(pickupLng),
+                dropoffAddress,
+                dropoffLat: Number(dropoffLat),
+                dropoffLng: Number(dropoffLng),
+                vehicleType,
+                distanceKm: Number(distanceKm),
+                durationMin: Number(durationMin),
+                passengerCount,
+                promoCode,
+                stops,
+                sharedContacts,
+            });
+
+            return res.status(201).json({ ride });
+        } catch (error: any) {
+            console.error("Error requesting ride:", error);
+            return res.status(500).json({ message: error.message || "Internal server error" });
+        }
+    };
+
+    /**
+     * POST /rides/:id/payment
+     * Set payment method and process payment
+     */
+    setPayment = async (req: AuthRequest, res: Response) => {
+        try {
+            const rideId = req.params.id;
+            const { paymentMethod, email } = req.body;
+            const phoneNumber = req.body.phoneNumber;
+
+            if (!paymentMethod) {
+                return res.status(400).json({ message: "paymentMethod is required" });
+            }
+
+            const ride = await this.rideService.setPaymentMethod(
+                rideId,
+                paymentMethod as PaymentMethod,
+                phoneNumber,
+                email
+            );
+
+            return res.json({ ride });
+        } catch (error: any) {
+            console.error("Error setting payment:", error);
+            return res.status(400).json({ message: error.message || "Internal server error" });
+        }
+    };
+
+    /**
+     * POST /rides/:id/cancel
+     * Cancel a ride
+     */
+    cancelRide = async (req: AuthRequest, res: Response) => {
+        try {
+            const rideId = req.params.id;
+            const userId = req.user?.id;
+            if (!userId) return res.status(401).json({ message: "User ID required" });
+
+            const { reason } = req.body;
+
+            // Determine who's cancelling based on their role
+            const cancelledBy = req.user?.roles.includes("driver")
+                ? CancelledBy.DRIVER
+                : CancelledBy.CUSTOMER;
+
+            const ride = await this.rideService.cancelRide(rideId, cancelledBy, reason);
+            return res.json({ ride });
+        } catch (error: any) {
+            console.error("Error cancelling ride:", error);
+            return res.status(400).json({ message: error.message || "Internal server error" });
+        }
+    };
+
+    /**
+     * GET /rides/:id
+     * Get ride details
+     */
+    getRide = async (req: AuthRequest, res: Response) => {
+        try {
+            const ride = await this.rideService.getRideById(req.params.id);
+            if (!ride) return res.status(404).json({ message: "Ride not found" });
+            return res.json({ ride });
+        } catch (error: any) {
+            console.error("Error getting ride:", error);
+            return res.status(500).json({ message: "Internal server error" });
+        }
+    };
+
+    /**
+     * GET /rides/active
+     * Get customer's active ride
+     */
+    getActiveRide = async (req: AuthRequest, res: Response) => {
+        try {
+            const userId = req.user?.id;
+            if (!userId) return res.status(401).json({ message: "User ID required" });
+
+            const ride = await this.rideService.getActiveRide(userId);
+            return res.json({ ride });
+        } catch (error: any) {
+            console.error("Error getting active ride:", error);
+            return res.status(500).json({ message: "Internal server error" });
+        }
+    };
+
+    /**
+     * GET /rides/history
+     * Get customer's ride history
+     */
+    getRideHistory = async (req: AuthRequest, res: Response) => {
+        try {
+            const userId = req.user?.id;
+            if (!userId) return res.status(401).json({ message: "User ID required" });
+
+            const limit = Number(req.query.limit) || 20;
+            const offset = Number(req.query.offset) || 0;
+
+            const result = await this.rideService.getCustomerRides(userId, limit, offset);
+            return res.json(result);
+        } catch (error: any) {
+            console.error("Error getting ride history:", error);
+            return res.status(500).json({ message: "Internal server error" });
+        }
+    };
+}
