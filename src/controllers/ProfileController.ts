@@ -1,15 +1,15 @@
 import { Request, Response } from "express";
 import { ProfileService } from "../services/profile-service";
 import { BuyerSetupPayload, DriverSetupPayload, MerchantSetupPayload } from "../types/profile";
-import { AuthenticatedRequest } from "../types/auth";
+import { AuthRequest } from "../middleware/role-middleware";
 
 export class ProfileController {
     private profileService = new ProfileService();
 
-    setupBuyer = async (req: Request, res: Response) => {
+    setupBuyer = async (req: AuthRequest, res: Response) => {
         try {
-            const authReq = req as AuthenticatedRequest;
-            const userId = authReq.user?.id || req.body.userId;
+            // User verified by requireRole middleware
+            const userId = (req as any).user?.id;
             if (!userId) return res.status(401).json({ message: "User ID required" });
 
             const payload: BuyerSetupPayload = req.body;
@@ -21,10 +21,10 @@ export class ProfileController {
         }
     };
 
-    setupDriver = async (req: Request, res: Response) => {
+    setupDriver = async (req: AuthRequest, res: Response) => {
         try {
-            const authReq = req as AuthenticatedRequest;
-            const userId = authReq.user?.id || req.body.userId;
+            // User verified by requireRole middleware
+            const userId = (req as any).user?.id;
             if (!userId) return res.status(401).json({ message: "User ID required" });
 
             const payload: DriverSetupPayload = req.body;
@@ -36,10 +36,10 @@ export class ProfileController {
         }
     };
 
-    setupMerchant = async (req: Request, res: Response) => {
+    setupMerchant = async (req: AuthRequest, res: Response) => {
         try {
-            const authReq = req as AuthenticatedRequest;
-            const userId = authReq.user?.id || req.body.userId;
+            // User verified by requireRole middleware
+            const userId = (req as any).user?.id;
             if (!userId) return res.status(401).json({ message: "User ID required" });
 
             const payload: MerchantSetupPayload = req.body;

@@ -1,7 +1,5 @@
 import { Router } from "express";
 import { AuthController } from "../controllers/AuthController";
-import { authenticateUser } from "../middleware/auth-middleware";
-
 import { apiKeyMiddleware } from "../middleware/api-key-middleware";
 
 const router = Router();
@@ -12,6 +10,6 @@ router.use(apiKeyMiddleware);
 
 router.post("/request-otp", authController.requestOTP);
 router.post("/verify-otp", authController.verifyOTP);
-router.post("/sync", authenticateUser, authController.syncUser);
+router.post("/sync", authController.syncUser);
 
 export default router;

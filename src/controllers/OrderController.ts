@@ -1,8 +1,8 @@
-import { Orders } from "../old-models/Orders";
-import { BaseController } from "./BaseController";
+// import { Orders } from "../old-models/Orders";
+// import { BaseController } from "./BaseController";
 
-export class OrderController extends BaseController<Orders> {
-    constructor() {
-        super(Orders);
-    }
-}
+// export class OrderController extends BaseController<Orders> {
+//     constructor() {
+//         super(Orders);
+//     }
+// }
