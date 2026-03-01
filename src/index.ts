@@ -33,8 +33,21 @@ AppDataSource.initialize()
     console.log("Data Source has been initialized!");
 
     // Start server
-    app.listen(PORT, () => {
+    app.listen(PORT, async () => {
       console.log(`Server is running on port ${PORT}`);
+
+      // Auto-start ngrok tunnel
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-var-requires
+        const ngrokLib = require("@ngrok/ngrok");
+        const listener = await ngrokLib.forward({
+          addr: Number(PORT),
+          authtoken: process.env.NGROK_AUTH_TOKEN,
+        });
+        console.log(`🌐 ngrok tunnel active: ${listener.url()}`);
+      } catch (err) {
+        console.error("Failed to start ngrok tunnel:", err);
+      }
     });
   })
   .catch((error: Error) => {
