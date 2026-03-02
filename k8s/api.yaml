@@ -1,0 +1,75 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: velo-api
+  namespace: velo
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: velo-api
+  template:
+    metadata:
+      labels:
+        app: velo-api
+    spec:
+      containers:
+        - name: velo-api
+          image: velo-backend:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 3000
+          envFrom:
+            - configMapRef:
+                name: velo-config
+            - secretRef:
+                name: velo-secrets
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 3000
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 3000
+            initialDelaySeconds: 15
+            periodSeconds: 20
+      restartPolicy: Always
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: velo-api-service
+  namespace: velo
+spec:
+  selector:
+    app: velo-api
+  ports:
+    - port: 3000
+      targetPort: 3000
+
+---
+# NodePort to expose API externally (Nginx will proxy to this)
+apiVersion: v1
+kind: Service
+metadata:
+  name: velo-api-nodeport
+  namespace: velo
+spec:
+  type: NodePort
+  selector:
+    app: velo-api
+  ports:
+    - port: 3000
+      targetPort: 3000
+      nodePort: 30080

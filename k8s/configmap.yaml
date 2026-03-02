@@ -1,0 +1,23 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: velo-config
+  namespace: velo
+data:
+  NODE_ENV: "production"
+  PORT: "3000"
+
+  # Database (host is the K8s service name)
+  DB_HOST: "postgres-service"
+  DB_PORT: "5432"
+  DB_USERNAME: "postgres"
+  DB_NAME: "velo"
+
+  # Redis (host is the K8s service name)
+  REDIS_URL: "redis://redis-service:6379"
+
+  # MinIO
+  MINIO_ENDPOINT: "minio-service"
+  MINIO_PORT: "9000"
+  MINIO_USE_SSL: "false"
+  MINIO_BUCKET: "velo-uploads"
