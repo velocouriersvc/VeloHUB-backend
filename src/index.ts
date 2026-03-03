@@ -1,3 +1,4 @@
+import "dotenv/config";
 import express, { Request, Response } from "express";
 import cors from "cors";
 import { AppDataSource } from "./db/data-source";
@@ -49,8 +50,24 @@ AppDataSource.initialize()
     console.log("Data Source has been initialized!");
 
     // Start server
-    app.listen(PORT, () => {
+    app.listen(PORT, async () => {
       console.log(`Server is running on port ${PORT}`);
+
+      // Auto-start ngrok tunnel in development
+      if (process.env.NODE_ENV !== "production") {
+        try {
+          // eslint-disable-next-line @typescript-eslint/no-var-requires
+          const ngrok = require("@ngrok/ngrok");
+          const listener = await ngrok.forward({
+            addr: Number(PORT),
+            authtoken: process.env.NGROK_AUTH_TOKEN,
+          });
+          process.env.NGROK_URL = listener.url();
+          console.log(`🌐 ngrok tunnel active: ${process.env.NGROK_URL}`);
+        } catch (err) {
+          console.error("Failed to start ngrok tunnel:", err);
+        }
+      }
     });
   })
   .catch((error: Error) => {

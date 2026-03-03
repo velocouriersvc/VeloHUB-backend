@@ -1,0 +1,686 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Velo API | Documentation</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+        rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/remixicon@3.5.0/fonts/remixicon.css" rel="stylesheet">
+    <style>
+        :root {
+            --bg-color: #0b0f1a;
+            --sidebar-bg: #111827;
+            --card-bg: #1f2937;
+            --text-primary: #f3f4f6;
+            --text-secondary: #9ca3af;
+            --accent-color: #3b82f6;
+            --accent-hover: #2563eb;
+            --border-color: #374151;
+            --method-get: #10b981;
+            --method-post: #3b82f6;
+            --method-put: #f59e0b;
+            --method-delete: #ef4444;
+            --code-bg: #111827;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Outfit', sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-primary);
+            display: flex;
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        /* Sidebar Styles */
+        .sidebar {
+            width: 280px;
+            background-color: var(--sidebar-bg);
+            border-right: 1px solid var(--border-color);
+            position: fixed;
+            height: 100vh;
+            overflow-y: auto;
+            padding: 2rem 1.5rem;
+            display: flex;
+            flex-direction: column;
+            gap: 2rem;
+            z-index: 100;
+        }
+
+        .brand {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: var(--text-primary);
+            text-decoration: none;
+        }
+
+        .brand i {
+            color: var(--accent-color);
+        }
+
+        .nav-category {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        .nav-category-title {
+            font-size: 0.75rem;
+            font-weight: 600;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-bottom: 0.5rem;
+            padding-left: 0.5rem;
+        }
+
+        .nav-link {
+            color: var(--text-secondary);
+            text-decoration: none;
+            font-size: 0.9rem;
+            padding: 0.6rem 0.75rem;
+            border-radius: 8px;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .nav-link:hover {
+            background-color: rgba(255, 255, 255, 0.05);
+            color: var(--text-primary);
+        }
+
+        .nav-link.active {
+            background-color: rgba(59, 130, 246, 0.1);
+            color: var(--accent-color);
+            font-weight: 500;
+        }
+
+        /* Main Content Styles */
+        .main-content {
+            margin-left: 280px;
+            flex: 1;
+            padding: 3rem 4rem;
+            max-width: 1200px;
+        }
+
+        .header {
+            margin-bottom: 4rem;
+        }
+
+        .header h1 {
+            font-size: 2.5rem;
+            font-weight: 700;
+            margin-bottom: 1rem;
+        }
+
+        .header p {
+            color: var(--text-secondary);
+            font-size: 1.1rem;
+            max-width: 800px;
+            line-height: 1.6;
+        }
+
+        .section {
+            margin-bottom: 5rem;
+            scroll-margin-top: 2rem;
+        }
+
+        .section-title {
+            font-size: 1.8rem;
+            font-weight: 700;
+            margin-bottom: 2rem;
+            padding-bottom: 0.75rem;
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        .endpoint-card {
+            background-color: var(--card-bg);
+            border-radius: 12px;
+            border: 1px solid var(--border-color);
+            overflow: hidden;
+            margin-bottom: 2.5rem;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+        }
+
+        .endpoint-header {
+            padding: 1.25rem 1.5rem;
+            background-color: rgba(255, 255, 255, 0.02);
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 1rem;
+        }
+
+        .endpoint-path {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.95rem;
+        }
+
+        .method {
+            padding: 0.25rem 0.6rem;
+            border-radius: 6px;
+            font-weight: 700;
+            font-size: 0.75rem;
+            text-transform: uppercase;
+        }
+
+        .method.get {
+            background-color: rgba(16, 185, 129, 0.1);
+            color: var(--method-get);
+        }
+
+        .method.post {
+            background-color: rgba(59, 130, 246, 0.1);
+            color: var(--method-post);
+        }
+
+        .method.put {
+            background-color: rgba(245, 158, 11, 0.1);
+            color: var(--method-put);
+        }
+
+        .method.delete {
+            background-color: rgba(239, 68, 68, 0.1);
+            color: var(--method-delete);
+        }
+
+        .endpoint-meta {
+            display: flex;
+            gap: 1rem;
+        }
+
+        .badge {
+            padding: 0.25rem 0.6rem;
+            border-radius: 6px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            background-color: var(--border-color);
+            color: var(--text-secondary);
+        }
+
+        .badge.role {
+            background-color: rgba(59, 130, 246, 0.15);
+            color: #60a5fa;
+            border: 1px solid rgba(59, 130, 246, 0.2);
+        }
+
+        .endpoint-body {
+            padding: 1.5rem;
+        }
+
+        .endpoint-description {
+            color: var(--text-secondary);
+            margin-bottom: 1.5rem;
+            line-height: 1.6;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1.5rem;
+        }
+
+        @media (max-width: 1024px) {
+            .grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .code-container {
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+        }
+
+        .code-title {
+            font-size: 0.8rem;
+            font-weight: 600;
+            color: var(--text-secondary);
+            padding-left: 0.25rem;
+        }
+
+        pre {
+            background-color: var(--code-bg);
+            padding: 1.25rem;
+            border-radius: 8px;
+            overflow-x: auto;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.85rem;
+            border: 1px solid var(--border-color);
+            color: #e5e7eb;
+            line-height: 1.5;
+        }
+
+        .search-container {
+            margin-bottom: 2rem;
+            position: relative;
+        }
+
+        .search-input {
+            width: 100%;
+            background-color: var(--sidebar-bg);
+            border: 1px solid var(--border-color);
+            color: var(--text-primary);
+            padding: 0.75rem 1rem 0.75rem 2.5rem;
+            border-radius: 10px;
+            font-family: 'Outfit', sans-serif;
+            outline: none;
+            transition: all 0.2s;
+        }
+
+        .search-input:focus {
+            border-color: var(--accent-color);
+            box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+        }
+
+        .search-icon {
+            position: absolute;
+            left: 10px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: var(--text-secondary);
+        }
+
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: var(--bg-color);
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: var(--border-color);
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: #4b5563;
+        }
+    </style>
+</head>
+
+<body>
+
+    <!-- Sidebar -->
+    <aside class="sidebar">
+        <a href="#" class="brand">
+            <i class="ri-rocket-2-fill"></i>
+            Velo API
+        </a>
+
+        <div class="search-container">
+            <i class="ri-search-line search-icon"></i>
+            <input type="text" class="search-input" placeholder="Search endpoints...">
+        </div>
+
+        <nav class="nav-category">
+            <div class="nav-category-title">Core</div>
+            <a href="#auth" class="nav-link"><i class="ri-shield-user-line"></i> Authentication</a>
+            <a href="#profile" class="nav-link"><i class="ri-profile-line"></i> Profiles</a>
+            <a href="#dev" class="nav-link"><i class="ri-terminal-box-line"></i> Development</a>
+        </nav>
+
+        <nav class="nav-category">
+            <div class="nav-category-title">Services</div>
+            <a href="#rides" class="nav-link"><i class="ri-taxi-line"></i> Rides</a>
+            <a href="#driver" class="nav-link"><i class="ri-steering-line"></i> Driver Operations</a>
+            <a href="#payments" class="nav-link"><i class="ri-bank-card-line"></i> Payments</a>
+            <a href="#wallet" class="nav-link"><i class="ri-wallet-3-line"></i> Wallet</a>
+            <a href="#places" class="nav-link"><i class="ri-map-pin-2-line"></i> Places & Location</a>
+        </nav>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="main-content">
+        <header class="header">
+            <h1>API Documentation</h1>
+            <p>Welcome to the Velo Backend API documentation. This API powers the Velo ride-hailing and courier
+                platform, providing robust services for users, drivers, and merchants.</p>
+            <div style="margin-top: 1.5rem; display: flex; gap: 1rem; align-items: center;">
+                <span class="badge">Base URL: <code style="color: var(--accent-color);">/api/v1</code></span>
+                <span class="badge">Auth: <code style="color: var(--accent-color);">x-api-key</code> header</span>
+            </div>
+        </header>
+
+        <!-- Authentication -->
+        <section id="auth" class="section">
+            <h2 class="section-title"><i class="ri-shield-user-line"></i> Authentication</h2>
+
+            <div class="endpoint-card">
+                <div class="endpoint-header">
+                    <div class="endpoint-path">
+                        <span class="method post">POST</span>
+                        <code>/auth/request-otp</code>
+                    </div>
+                    <div class="endpoint-meta">
+                        <span class="badge">API Key Required</span>
+                    </div>
+                </div>
+                <div class="endpoint-body">
+                    <p class="endpoint-description">Requests a 6-digit verification code to be sent via SMS/WhatsApp to
+                        the provided phone number.</p>
+                    <div class="grid">
+                        <div class="code-container">
+                            <span class="code-title">Request Body</span>
+                            <pre>{
+  "phoneNumber": "+233536690447"
+}</pre>
+                        </div>
+                        <div class="code-container">
+                            <span class="code-title">Response (200 OK)</span>
+                            <pre>{
+  "message": "OTP sent successfully"
+}</pre>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="endpoint-card">
+                <div class="endpoint-header">
+                    <div class="endpoint-path">
+                        <span class="method post">POST</span>
+                        <code>/auth/verify-otp</code>
+                    </div>
+                    <div class="endpoint-meta">
+                        <span class="badge">API Key Required</span>
+                    </div>
+                </div>
+                <div class="endpoint-body">
+                    <p class="endpoint-description">Verifies the OTP code received by the user and initiates the
+                        synchronization process.</p>
+                    <div class="grid">
+                        <div class="code-container">
+                            <span class="code-title">Request Body</span>
+                            <pre>{
+  "phoneNumber": "+233536690447",
+  "code": "123456"
+}</pre>
+                        </div>
+                        <div class="code-container">
+                            <span class="code-title">Response (200 OK)</span>
+                            <pre>{
+  "message": "OTP verified",
+  "synced": true
+}</pre>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Profiles -->
+        <section id="profile" class="section">
+            <h2 class="section-title"><i class="ri-profile-line"></i> Profiles</h2>
+
+            <div class="endpoint-card">
+                <div class="endpoint-header">
+                    <div class="endpoint-path">
+                        <span class="method post">POST</span>
+                        <code>/profile/buyer</code>
+                    </div>
+                    <div class="endpoint-meta">
+                        <span class="badge role">Buyer Only</span>
+                        <span class="badge">API Key Required</span>
+                    </div>
+                </div>
+                <div class="endpoint-body">
+                    <p class="endpoint-description">Sets up or updates the buyer profile for the authenticated user.</p>
+                    <div class="grid">
+                        <div class="code-container">
+                            <span class="code-title">Request Body</span>
+                            <pre>{
+  "fullName": "John Doe",
+  "region": "Greater Accra",
+  "primaryLocation": "Adabraka, Accra"
+}</pre>
+                        </div>
+                        <div class="code-container">
+                            <span class="code-title">Response (201 Created)</span>
+                            <pre>{
+  "id": "uuid-string",
+  "fullName": "John Doe",
+  "status": "active"
+}</pre>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Rides -->
+        <section id="rides" class="section">
+            <h2 class="section-title"><i class="ri-taxi-line"></i> Rides</h2>
+
+            <div class="endpoint-card">
+                <div class="endpoint-header">
+                    <div class="endpoint-path">
+                        <span class="method post">POST</span>
+                        <code>/rides/estimate</code>
+                    </div>
+                    <div class="endpoint-meta">
+                        <span class="badge role">Buyer Only</span>
+                        <span class="badge">API Key Required</span>
+                    </div>
+                </div>
+                <div class="endpoint-body">
+                    <p class="endpoint-description">Gets fare estimates for all available vehicle types based on pickup
+                        and dropoff locations.</p>
+                    <div class="grid">
+                        <div class="code-container">
+                            <span class="code-title">Request Body</span>
+                            <pre>{
+  "origin": { "lat": 5.6037, "lng": -0.1870 },
+  "destination": { "lat": 5.6148, "lng": -0.2058 }
+}</pre>
+                        </div>
+                        <div class="code-container">
+                            <span class="code-title">Response (200 OK)</span>
+                            <pre>[
+  {
+    "vehicleType": "bike",
+    "estimatedFare": 15.50,
+    "distance": "3.2 km",
+    "duration": "8 mins"
+  },
+  {
+    "vehicleType": "standard",
+    "estimatedFare": 35.00,
+    "distance": "3.2 km",
+    "duration": "12 mins"
+  }
+]</pre>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="endpoint-card">
+                <div class="endpoint-header">
+                    <div class="endpoint-path">
+                        <span class="method post">POST</span>
+                        <code>/rides/request</code>
+                    </div>
+                    <div class="endpoint-meta">
+                        <span class="badge role">Buyer Only</span>
+                        <span class="badge">API Key Required</span>
+                    </div>
+                </div>
+                <div class="endpoint-body">
+                    <p class="endpoint-description">Requests a new ride. The system will look for nearest online
+                        drivers.</p>
+                    <div class="grid">
+                        <div class="code-container">
+                            <span class="code-title">Request Body</span>
+                            <pre>{
+  "origin": { "lat": 5.6037, "lng": -0.1870, "address": "Airport" },
+  "destination": { "lat": 5.6148, "lng": -0.2058, "address": "Osu" },
+  "vehicleType": "standard",
+  "paymentMethod": "wallet"
+}</pre>
+                        </div>
+                        <div class="code-container">
+                            <span class="code-title">Response (201 Created)</span>
+                            <pre>{
+  "rideId": "uuid-string",
+  "status": "searching",
+  "message": "Searching for nearby drivers"
+}</pre>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Driver -->
+        <section id="driver" class="section">
+            <h2 class="section-title"><i class="ri-steering-line"></i> Driver Operations</h2>
+
+            <div class="endpoint-card">
+                <div class="endpoint-header">
+                    <div class="endpoint-path">
+                        <span class="method post">POST</span>
+                        <code>/driver/online</code>
+                    </div>
+                    <div class="endpoint-meta">
+                        <span class="badge role">Driver Only</span>
+                        <span class="badge">API Key Required</span>
+                    </div>
+                </div>
+                <div class="endpoint-body">
+                    <p class="endpoint-description">Sets the driver's status to online, making them eligible to receive
+                        ride requests.</p>
+                    <div class="grid">
+                        <div class="code-container">
+                            <span class="code-title">Request</span>
+                            <pre>{}</pre>
+                        </div>
+                        <div class="code-container">
+                            <span class="code-title">Response (200 OK)</span>
+                            <pre>{
+  "status": "online",
+  "message": "You are now online"
+}</pre>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="endpoint-card">
+                <div class="endpoint-header">
+                    <div class="endpoint-path">
+                        <span class="method post">POST</span>
+                        <code>/driver/location</code>
+                    </div>
+                    <div class="endpoint-meta">
+                        <span class="badge role">Driver Only</span>
+                        <span class="badge">API Key Required</span>
+                    </div>
+                </div>
+                <div class="endpoint-body">
+                    <p class="endpoint-description">Updates the driver's current real-time GPS coordinates.</p>
+                    <div class="grid">
+                        <div class="code-container">
+                            <span class="code-title">Request Body</span>
+                            <pre>{
+  "lat": 5.6037,
+  "lng": -0.1870,
+  "heading": 180
+}</pre>
+                        </div>
+                        <div class="code-container">
+                            <span class="code-title">Response (200 OK)</span>
+                            <pre>{ "success": true }</pre>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Development -->
+        <section id="dev" class="section">
+            <h2 class="section-title"><i class="ri-terminal-box-line"></i> Development</h2>
+            <div class="endpoint-card">
+                <div class="endpoint-header">
+                    <div class="endpoint-path">
+                        <span class="method get">GET</span>
+                        <code>/dev/db-data</code>
+                    </div>
+                    <div class="endpoint-meta">
+                        <span class="badge">Internal Use</span>
+                        <span class="badge">API Key Required</span>
+                    </div>
+                </div>
+                <div class="endpoint-body">
+                    <p class="endpoint-description">Internal utility to fetch all data from local DB tables for testing
+                        and debugging.</p>
+                    <div class="code-container">
+                        <span class="code-title">Response</span>
+                        <pre>{
+  "users": [...],
+  "otps": [...],
+  "buyerProfiles": [...],
+  "merchantProfiles": [...]
+}</pre>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <script>
+        // Simple search functionality
+        const searchInput = document.querySelector('.search-input');
+        const cards = document.querySelectorAll('.endpoint-card');
+
+        searchInput.addEventListener('input', (e) => {
+            const query = e.target.value.toLowerCase();
+            cards.forEach(card => {
+                const text = card.textContent.toLowerCase();
+                card.style.display = text.includes(query) ? 'block' : 'none';
+            });
+        });
+
+        // Smooth scrolling for sidebar links
+        document.querySelectorAll('.nav-link').forEach(anchor => {
+            anchor.addEventListener('click', function (e) {
+                e.preventDefault();
+                document.querySelector(this.getAttribute('href')).scrollIntoView({
+                    behavior: 'smooth'
+                });
+
+                // Update active state
+                document.querySelectorAll('.nav-link').forEach(l => l.classList.remove('active'));
+                this.classList.add('active');
+            });
+        });
+    </script>
+</body>
+
+</html>
