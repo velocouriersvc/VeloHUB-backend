@@ -1,61 +1,132 @@
-# VeloHub VPS Setup Guide
+# VeloHub VPS Setup — Step by Step
 
-> Tested on Ubuntu 22.04/24.04 LTS. Run everything as root.
+> **OS:** Ubuntu 22.04 or 24.04 LTS
+> **Login:** SSH as root
+> **Goal:** Prepare the VPS with Docker, K3s, Nginx, and basic firewall — ready for K8s deployment
+
+⚠️ **READ EACH STEP FULLY BEFORE RUNNING.** Firewall steps are written carefully so you don't lock yourself out.
 
 ---
 
-## 1. Initial System Update
+## Step 1 — SSH in and update
+
+```bash
+ssh root@YOUR_VPS_IP
+```
 
 ```bash
 apt update && apt upgrade -y
-reboot
 ```
+
+Don't reboot yet. If the kernel was upgraded, we'll reboot after the firewall is safe.
 
 ---
 
-## 2. Basic Security (Light — Root Stays Enabled)
-
-### 2.1 SSH Config
-
-Edit `/etc/ssh/sshd_config`:
+## Step 2 — Confirm SSH works on port 22
 
 ```bash
-nano /etc/ssh/sshd_config
+# Check what port sshd is running on
+grep -i "^Port" /etc/ssh/sshd_config
 ```
 
-Make sure these lines exist:
+If it says `Port 22` or nothing (22 is default), you're good. If it says something else, note that port.
 
-```
-Port 22
-PermitRootLogin yes
-PasswordAuthentication yes
-```
-
-Restart SSH:
+Make sure root login is enabled:
 
 ```bash
+grep -i "PermitRootLogin" /etc/ssh/sshd_config
+```
+
+If it says `no` or `prohibit-password`, fix it:
+
+```bash
+sed -i 's/^#*PermitRootLogin.*/PermitRootLogin yes/' /etc/ssh/sshd_config
 systemctl restart sshd
 ```
 
-### 2.2 Firewall (UFW)
+**TEST:** Open a **new terminal** and SSH in again before continuing. If it works, keep going.
+
+---
+
+## Step 3 — Firewall (UFW) — THE CAREFUL WAY
+
+This is where you got locked out before. We do this in a safe order:
+
+### 3.1 — Allow SSH FIRST (before enabling the firewall)
 
 ```bash
 apt install ufw -y
-
-# Allow essentials
-ufw allow 22/tcp       # SSH
-ufw allow 2222/tcp     # Reserved for custom SSH / future use
-ufw allow 80/tcp       # HTTP (Nginx)
-ufw allow 443/tcp      # HTTPS (Nginx + Certbot)
-ufw allow 30080/tcp    # K8s NodePort → Velo API
-ufw allow 30901/tcp    # K8s NodePort → MinIO Console
-ufw allow 6443/tcp     # K8s API server (kubectl)
-
-ufw enable
-ufw status
 ```
 
-### 2.3 Fail2Ban (basic brute-force protection)
+```bash
+# Allow SSH on BOTH ports so you can never get locked out
+ufw allow 22/tcp
+ufw allow 2222/tcp
+```
+
+### 3.2 — Allow the ports the backend needs
+
+```bash
+ufw allow 80/tcp       # Nginx HTTP
+ufw allow 443/tcp      # Nginx HTTPS (SSL)
+ufw allow 30080/tcp    # K8s NodePort → Velo API (Nginx proxies to this)
+ufw allow 30901/tcp    # K8s NodePort → MinIO Console
+ufw allow 6443/tcp     # K8s API server
+```
+
+### 3.3 — Set default policy to deny everything else
+
+```bash
+ufw default deny incoming
+ufw default allow outgoing
+```
+
+### 3.4 — Enable the firewall
+
+```bash
+ufw enable
+```
+
+It will ask "Command may disrupt existing SSH connections. Proceed?" → Type `y`.
+
+**You won't get kicked out because we already allowed port 22 and 2222.**
+
+### 3.5 — Verify
+
+```bash
+ufw status verbose
+```
+
+You should see:
+
+```
+Status: active
+
+To                         Action      From
+--                         ------      ----
+22/tcp                     ALLOW       Anywhere
+2222/tcp                   ALLOW       Anywhere
+80/tcp                     ALLOW       Anywhere
+443/tcp                    ALLOW       Anywhere
+30080/tcp                  ALLOW       Anywhere
+30901/tcp                  ALLOW       Anywhere
+6443/tcp                   ALLOW       Anywhere
+```
+
+### 3.6 — SAFETY CHECK
+
+Open a **brand new terminal** and SSH in again:
+
+```bash
+ssh root@YOUR_VPS_IP
+```
+
+**If it works → you're safe. Continue.**
+**If it doesn't → DO NOT close your current session. Run `ufw disable` to recover.**
+
+---
+
+## Step 4 — Fail2Ban (blocks brute-force SSH attempts)
 
 ```bash
 apt install fail2ban -y
@@ -63,322 +134,205 @@ systemctl enable fail2ban
 systemctl start fail2ban
 ```
 
-No custom config needed — defaults protect SSH out of the box.
+That's it. Default config protects SSH. Nothing else to configure.
 
 ---
 
-## 3. Install Docker
+## Step 5 — Reboot (if kernel was upgraded in Step 1)
 
 ```bash
-# Remove old versions
-apt remove docker docker-engine docker.io containerd runc -y 2>/dev/null
+reboot
+```
 
-# Install via official script
-curl -fsSL https://get.docker.com | sh
+SSH back in after ~30 seconds:
 
-# Verify
-docker --version
-docker run hello-world
+```bash
+ssh root@YOUR_VPS_IP
 ```
 
 ---
 
-## 4. Install K3s (Lightweight Kubernetes)
+## Step 6 — Install Docker
 
-> K3s is a production-ready, single-binary Kubernetes distro — perfect for a VPS. No need for full K8s or minikube.
+```bash
+curl -fsSL https://get.docker.com | sh
+```
+
+Verify:
+
+```bash
+docker --version
+```
+
+Quick test:
+
+```bash
+docker run --rm hello-world
+```
+
+You should see "Hello from Docker!" — then move on.
+
+---
+
+## Step 7 — Install K3s (Lightweight Kubernetes)
 
 ```bash
 curl -sfL https://get.k3s.io | sh -
-
-# Verify
-kubectl get nodes
 ```
 
-K3s automatically:
-- Installs `kubectl`
-- Sets up a single-node cluster
-- Provides a built-in ingress controller (Traefik — we'll use Nginx instead)
-- Manages `containerd` as the runtime
+This installs:
+- K3s (single-node Kubernetes cluster)
+- `kubectl` (bundled)
+- Starts the cluster automatically
 
-### Fix kubeconfig for convenience
+### Set up kubectl access
 
 ```bash
-# K3s puts config at /etc/rancher/k3s/k3s.yaml
-export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
 echo 'export KUBECONFIG=/etc/rancher/k3s/k3s.yaml' >> ~/.bashrc
+export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
 ```
 
-### Verify cluster
+### Verify the cluster is running
 
 ```bash
 kubectl get nodes
-# Should show 1 node in Ready state
+```
+
+You should see 1 node with status `Ready`:
+
+```
+NAME        STATUS   ROLES                  AGE   VERSION
+your-vps    Ready    control-plane,master   30s   v1.xx.x+k3s1
 ```
 
 ---
 
-## 5. Install Nginx (Reverse Proxy)
+## Step 8 — Install Nginx
 
 ```bash
 apt install nginx -y
 systemctl enable nginx
 ```
 
-### Copy the velo-api config
+We'll configure the Nginx site later once the API is deployed. For now just make sure it's installed:
 
 ```bash
-# From your local machine, scp the config:
-# scp k8s/nginx/velo-api.conf root@<VPS_IP>:/etc/nginx/sites-available/velo-api
-
-# Or paste it directly on the VPS:
-nano /etc/nginx/sites-available/velo-api
-```
-
-Paste the contents of `k8s/nginx/velo-api.conf`, then update the `server_name` to your actual subdomain.
-
-```bash
-ln -s /etc/nginx/sites-available/velo-api /etc/nginx/sites-enabled/
-rm /etc/nginx/sites-enabled/default   # remove default page
-nginx -t                               # test config
-systemctl reload nginx
+nginx -v
 ```
 
 ---
 
-## 6. Point Your Subdomain
-
-Go to your domain registrar (Namecheap, Cloudflare, etc.) and add:
-
-| Type | Name | Value | TTL |
-|------|------|-------|-----|
-| A    | api  | `<YOUR_VPS_IP>` | Auto |
-
-This creates `api.yourdomain.com` → your VPS.
-
-Wait a few minutes for DNS propagation, then test:
-
-```bash
-ping api.yourdomain.com
-# Should resolve to your VPS IP
-```
-
----
-
-## 7. SSL Certificate (Let's Encrypt)
+## Step 9 — Install Certbot (for SSL later)
 
 ```bash
 apt install certbot python3-certbot-nginx -y
-
-certbot --nginx -d api.yourdomain.com
 ```
 
-Follow the prompts. Certbot will auto-update the Nginx config with SSL.
+We'll use this after the subdomain is pointed to the VPS.
 
-Auto-renewal is set up by default. Verify:
+---
+
+## Step 10 — Install Git (if not already there)
 
 ```bash
-certbot renew --dry-run
+apt install git -y
+git --version
 ```
 
 ---
 
-## 8. Deploy the Backend
-
-### 8.1 Get the code onto the VPS
+## Step 11 — Create the Velo K8s Namespace
 
 ```bash
-# Option A: Git clone
-git clone https://github.com/velocouriersvc/velo-hub-backend.git
-cd velo-hub-backend
-git checkout rides
-
-# Option B: SCP from local
-# scp -r ./velo-backend root@<VPS_IP>:/root/velo-backend
+kubectl create namespace velo
 ```
 
-### 8.2 Build the Docker image on the VPS
+Verify:
 
 ```bash
-cd /root/velo-hub-backend   # or wherever you cloned it
-docker build -t velo-backend:latest .
+kubectl get namespaces
 ```
 
-### 8.3 Edit secrets
+You should see `velo` in the list.
+
+---
+
+## Step 12 — Verify Everything Is Installed
+
+Run this whole block — it checks everything at once:
 
 ```bash
-nano k8s/secrets.yaml
-```
-
-Replace ALL the base64 placeholder values with your real secrets:
-
-```bash
-# How to encode:
-echo -n "my-real-password" | base64
-
-# How to decode (to verify):
-echo "bXktcmVhbC1wYXNzd29yZA==" | base64 -d
-```
-
-**Must fill in:** `DB_PASSWORD`, `API_KEY`, `PAYSTACK_SECRET_KEY`, `GOOGLE_MAPS_API_KEY`, `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_PHONE_NUMBER`, `TWILIO_VERIFY_SERVICE_SID`, `MINIO_ROOT_PASSWORD`
-
-### 8.4 Apply K8s manifests
-
-```bash
-chmod +x k8s/deploy.sh
-./k8s/deploy.sh
-```
-
-### 8.5 Verify everything is running
-
-```bash
-kubectl -n velo get pods
-```
-
-Expected output:
-
-```
-NAME                        READY   STATUS    RESTARTS   AGE
-postgres-0                  1/1     Running   0          2m
-redis-xxxxx-xxxxx           1/1     Running   0          2m
-minio-xxxxx-xxxxx           1/1     Running   0          2m
-velo-api-xxxxx-xxxxx        1/1     Running   0          1m
-velo-api-xxxxx-yyyyy        1/1     Running   0          1m
-```
-
-```bash
-kubectl -n velo get svc
-```
-
-### 8.6 Test the API
-
-```bash
-curl http://localhost:30080
-# → {"message":"Velo Backend API is running!"}
-
-curl https://api.yourdomain.com
-# → {"message":"Velo Backend API is running!"}
+echo "=== System ==="
+uname -r
+echo ""
+echo "=== Docker ==="
+docker --version
+echo ""
+echo "=== K3s / Kubectl ==="
+kubectl version --short 2>/dev/null || kubectl version
+echo ""
+echo "=== Nginx ==="
+nginx -v
+echo ""
+echo "=== Certbot ==="
+certbot --version
+echo ""
+echo "=== Git ==="
+git --version
+echo ""
+echo "=== UFW ==="
+ufw status
+echo ""
+echo "=== K8s Nodes ==="
+kubectl get nodes
+echo ""
+echo "=== K8s Namespaces ==="
+kubectl get namespaces
+echo ""
+echo "✅ VPS is ready for deployment"
 ```
 
 ---
 
-## 9. MinIO Setup
+## What's Installed
 
-### 9.1 Access the Console
+| Software | Purpose |
+|----------|---------|
+| Docker | Build container images |
+| K3s | Lightweight Kubernetes (runs Postgres, Redis, MinIO, API) |
+| kubectl | Manage K8s cluster (bundled with K3s) |
+| Nginx | Reverse proxy — routes `api.yourdomain.com` → K8s API |
+| Certbot | Free SSL certs from Let's Encrypt |
+| UFW | Firewall |
+| Fail2Ban | Blocks brute-force SSH attempts |
+| Git | Clone the backend repo |
 
-Open `http://<VPS_IP>:30901` in your browser.
+## Open Ports
 
-Login with the credentials from your secrets:
-- **User:** velo-admin (or whatever you set)
-- **Password:** your MINIO_ROOT_PASSWORD
-
-### 9.2 Create the Bucket
-
-1. Click **Buckets** → **Create Bucket**
-2. Name: `velo-uploads`
-3. Leave defaults, click **Create**
-
-### 9.3 Set Bucket Policy (public read for images)
-
-1. Click the bucket → **Access Policy** → **Custom**
-2. Paste this policy to allow public read:
-
-```json
-{
-  "Version": "2012-10-17",
-  "Statement": [
-    {
-      "Effect": "Allow",
-      "Principal": "*",
-      "Action": ["s3:GetObject"],
-      "Resource": ["arn:aws:s3:::velo-uploads/*"]
-    }
-  ]
-}
-```
-
-This means uploaded images/files are readable by anyone (good for profile photos, license images, etc.), but only the backend can write.
+| Port | What |
+|------|------|
+| 22 | SSH |
+| 2222 | SSH fallback |
+| 80 | HTTP (Nginx) |
+| 443 | HTTPS (Nginx + SSL) |
+| 30080 | K8s → API (Nginx proxies here) |
+| 30901 | MinIO web console |
+| 6443 | K8s API server |
+| **Everything else** | **BLOCKED** |
 
 ---
 
-## 10. Useful Commands
+## What's Next
 
-### Logs
+Once all 12 steps pass, come back here and paste the output of Step 12.
 
-```bash
-# API logs
-kubectl -n velo logs -f deployment/velo-api
+We'll then:
+1. Clone the repo onto the VPS
+2. Build the Docker image
+3. Fill in K8s secrets (real API keys, passwords)
+4. Apply all K8s manifests (Postgres → Redis → MinIO → API)
+5. Configure Nginx for your subdomain
+6. Get SSL with certbot
+7. Test the live API
 
-# Postgres logs
-kubectl -n velo logs -f statefulset/postgres
-
-# Redis logs
-kubectl -n velo logs -f deployment/redis
-
-# MinIO logs
-kubectl -n velo logs -f deployment/minio
-```
-
-### Restart a deployment
-
-```bash
-kubectl -n velo rollout restart deployment/velo-api
-```
-
-### Redeploy after code changes
-
-```bash
-docker build -t velo-backend:latest .
-kubectl -n velo rollout restart deployment/velo-api
-```
-
-### Shell into a pod
-
-```bash
-# API
-kubectl -n velo exec -it deployment/velo-api -- sh
-
-# Postgres
-kubectl -n velo exec -it postgres-0 -- psql -U postgres -d velo
-
-# Redis
-kubectl -n velo exec -it deployment/redis -- redis-cli
-```
-
-### Delete everything and start over
-
-```bash
-kubectl delete namespace velo
-# Then re-run deploy.sh
-```
-
----
-
-## 11. Port Summary
-
-| Port | Service | Accessible From |
-|------|---------|----------------|
-| 22   | SSH | Anywhere |
-| 2222 | Reserved (alt SSH / future) | Anywhere |
-| 80   | Nginx HTTP | Anywhere |
-| 443  | Nginx HTTPS | Anywhere |
-| 30080 | K8s → Velo API | localhost + Nginx |
-| 30901 | K8s → MinIO Console | Your browser |
-| 6443 | K8s API server | localhost |
-| 5432 | Postgres | Internal cluster only |
-| 6379 | Redis | Internal cluster only |
-| 9000 | MinIO API | Internal cluster only |
-
----
-
-## 12. Installed Software Summary
-
-| Software | Purpose | Install Method |
-|----------|---------|---------------|
-| Docker | Container runtime | `get.docker.com` script |
-| K3s | Lightweight Kubernetes | `get.k3s.io` script |
-| kubectl | K8s CLI (bundled with K3s) | — |
-| Nginx | Reverse proxy + SSL termination | apt |
-| Certbot | Free SSL certificates | apt |
-| UFW | Firewall | apt |
-| Fail2Ban | Brute-force protection | apt |
-| Git | Clone repo | apt (usually pre-installed) |
+**Paste the output of Step 12 when you're done.**
