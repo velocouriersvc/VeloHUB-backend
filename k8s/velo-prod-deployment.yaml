@@ -22,7 +22,7 @@ spec:
         - name: velo-api
           # Image hosted on GitHub Container Registry — change owner/name/tag if needed
           image: ghcr.io/velocouriersvc/velo-backend:latest
-          imagePullPolicy: IfNotPresent
+          imagePullPolicy: Always
           ports:
             - containerPort: 3000
               name: http
