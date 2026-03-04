@@ -89,3 +89,13 @@ If you want, I can also:
 
 --
 Generated from repository state on 2026-03-04
+
+
+emma24@velo-prod:~/velo-api/k8s$ sudo kubectl -n velo get svc
+NAME                TYPE        CLUSTER-IP      EXTERNAL-IP   PORT(S)             AGE
+minio-console       NodePort    10.43.49.119    <none>        9001:30901/TCP      4m30s
+minio-service       ClusterIP   10.43.209.206   <none>        9000/TCP,9001/TCP   4m30s
+postgres-service    ClusterIP   None            <none>        5432/TCP            6m13s
+redis-service       ClusterIP   10.43.223.171   <none>        6379/TCP            4m58s
+velo-api-nodeport   NodePort    10.43.126.220   <none>        3000:30080/TCP      106s
+velo-api-service    ClusterIP   10.43.66.98     <none>        3000/TCP            106s
