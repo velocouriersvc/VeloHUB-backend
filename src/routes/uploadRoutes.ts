@@ -24,7 +24,9 @@ router.use(apiKeyMiddleware);
  *       **Max size:** 10 MB
  *       **Categories:** id-cards, licenses, registration, avatars, documents
  *
- *       Returns a public URL that can be used in profile setup (e.g. idImageUrl, licensePhotoUrl).
+ *       Returns a public URL that you pass to profile setup endpoints (e.g. `idImageUrl`, `licensePhotoUrl`).
+ *
+ *       **Roles:** buyer, driver, merchant
  *     security:
  *       - ApiKeyAuth: []
  *     requestBody:
@@ -41,14 +43,16 @@ router.use(apiKeyMiddleware);
  *               file:
  *                 type: string
  *                 format: binary
- *                 description: The file to upload (max 10 MB)
+ *                 description: The file to upload (max 10 MB). Allowed — JPEG, PNG, WebP, HEIC, PDF.
  *               category:
  *                 type: string
  *                 enum: [id-cards, licenses, registration, avatars, documents]
+ *                 example: id-cards
  *                 description: Upload category — determines folder structure in storage
  *               phoneNumber:
  *                 type: string
- *                 description: User phone number for auth (e.g. +233241234567)
+ *                 example: "+233501234567"
+ *                 description: Your registered phone number for auth
  *     responses:
  *       201:
  *         description: File uploaded successfully
@@ -63,9 +67,15 @@ router.use(apiKeyMiddleware);
  *                 data:
  *                   $ref: '#/components/schemas/UploadResult'
  *       400:
- *         description: Validation error (bad file type, too large, suspicious content, etc.)
+ *         description: Validation error (bad file type, too large, suspicious content, missing category)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
  *       401:
  *         description: Missing or invalid API key / user not found
+ *       403:
+ *         description: Role not approved
  *       500:
  *         description: Server error
  */
@@ -85,6 +95,8 @@ router.post(
  *     description: |
  *       Removes a file from MinIO storage. Users can only delete their own files
  *       (the key must contain the user's ID).
+ *
+ *       **Roles:** buyer, driver, merchant
  *     security:
  *       - ApiKeyAuth: []
  *     parameters:
@@ -94,18 +106,15 @@ router.post(
  *         description: 'Full object key, e.g. id-cards/userId/uuid.jpg'
  *         schema:
  *           type: string
+ *         example: "id-cards/abc123/550e8400-e29b.jpg"
  *     requestBody:
  *       required: true
  *       content:
  *         application/json:
  *           schema:
- *             type: object
- *             required:
- *               - phoneNumber
- *             properties:
- *               phoneNumber:
- *                 type: string
- *                 description: User phone number for auth
+ *             $ref: '#/components/schemas/PhoneOnlyBody'
+ *           example:
+ *             phoneNumber: "+233501234567"
  *     responses:
  *       200:
  *         description: File deleted successfully
@@ -133,6 +142,8 @@ router.delete(
  *     description: |
  *       Generates a time-limited signed URL for accessing a private file.
  *       Default expiry is 7 days (168 hours).
+ *
+ *       **Roles:** buyer, driver, merchant
  *     security:
  *       - ApiKeyAuth: []
  *     parameters:
@@ -142,6 +153,7 @@ router.delete(
  *         description: 'Full object key, e.g. id-cards/userId/uuid.jpg'
  *         schema:
  *           type: string
+ *         example: "id-cards/abc123/550e8400-e29b.jpg"
  *       - name: expiry
  *         in: query
  *         required: false
@@ -149,18 +161,15 @@ router.delete(
  *         schema:
  *           type: integer
  *           default: 168
+ *         example: 24
  *     requestBody:
  *       required: true
  *       content:
  *         application/json:
  *           schema:
- *             type: object
- *             required:
- *               - phoneNumber
- *             properties:
- *               phoneNumber:
- *                 type: string
- *                 description: User phone number for auth
+ *             $ref: '#/components/schemas/PhoneOnlyBody'
+ *           example:
+ *             phoneNumber: "+233501234567"
  *     responses:
  *       200:
  *         description: Presigned URL generated
@@ -178,8 +187,10 @@ router.delete(
  *                     url:
  *                       type: string
  *                       format: uri
+ *                       example: "http://minio-service:9000/velo-uploads/id-cards/abc123/photo.jpg?X-Amz-..."
  *                     expiresInHours:
  *                       type: integer
+ *                       example: 24
  *       400:
  *         description: Missing file key
  *       401:

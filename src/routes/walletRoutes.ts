@@ -18,12 +18,16 @@ const walletRoles = requireRole(["buyer", "driver"]);
  *   get:
  *     tags: [Wallet]
  *     summary: Get wallet balance
- *     description: Returns the user's wallet. Auto-creates one if it doesn't exist.
+ *     description: Returns the user's wallet. Auto-creates one if it doesn't exist. Requires **buyer** or **driver** role.
+ *     security:
+ *       - ApiKeyAuth: []
  *     parameters:
  *       - $ref: '#/components/parameters/PhoneNumber'
  *     responses:
  *       200:
  *         description: Wallet object with balance
+ *       403:
+ *         description: Invalid API key or role not approved
  */
 router.get("/", walletRoles, walletController.getWallet);
 
@@ -33,6 +37,9 @@ router.get("/", walletRoles, walletController.getWallet);
  *   get:
  *     tags: [Wallet]
  *     summary: Get wallet transactions
+ *     description: Returns paginated transaction history. Requires **buyer** or **driver** role.
+ *     security:
+ *       - ApiKeyAuth: []
  *     parameters:
  *       - $ref: '#/components/parameters/PhoneNumber'
  *       - $ref: '#/components/parameters/Limit'
@@ -40,6 +47,8 @@ router.get("/", walletRoles, walletController.getWallet);
  *     responses:
  *       200:
  *         description: Paginated transaction list
+ *       403:
+ *         description: Invalid API key or role not approved
  */
 router.get("/transactions", walletRoles, walletController.getTransactions);
 

@@ -16,10 +16,15 @@ router.use(apiKeyMiddleware);
  *   get:
  *     tags: [Dev]
  *     summary: Get all database data (development only)
- *     description: Returns all users, profiles, roles, and OTPs. For debugging.
+ *     description: |
+ *       Returns all users, profiles, roles, and OTPs. **For debugging only — do not use in production.**
+ *     security:
+ *       - ApiKeyAuth: []
  *     responses:
  *       200:
- *         description: All database tables
+ *         description: All database tables dumped as JSON
+ *       403:
+ *         description: Invalid API key
  *       500:
  *         description: Server error
  */

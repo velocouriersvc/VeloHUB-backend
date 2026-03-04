@@ -14,16 +14,20 @@ router.use(apiKeyMiddleware);
  *   post:
  *     tags: [Auth]
  *     summary: Request an OTP
- *     description: Sends a one-time password to the given phone number via SMS/WhatsApp.
+ *     description: Sends a one-time password to the given phone number via SMS/WhatsApp. This is the first step to log in.
+ *     security:
+ *       - ApiKeyAuth: []
  *     requestBody:
  *       required: true
  *       content:
  *         application/json:
  *           schema:
  *             $ref: '#/components/schemas/RequestOtpBody'
+ *           example:
+ *             phoneNumber: "+233501234567"
  *     responses:
  *       200:
- *         description: OTP sent
+ *         description: OTP sent successfully
  *         content:
  *           application/json:
  *             schema:
@@ -33,7 +37,13 @@ router.use(apiKeyMiddleware);
  *                   type: string
  *                   example: OTP sent successfully
  *       400:
- *         description: Missing phone number
+ *         description: Missing or invalid phone number
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       403:
+ *         description: Invalid API key
  *       500:
  *         description: Server error
  */
@@ -45,18 +55,48 @@ router.post("/request-otp", authController.requestOTP);
  *   post:
  *     tags: [Auth]
  *     summary: Verify an OTP
- *     description: Verifies the OTP code and returns user data with roles.
+ *     description: |
+ *       Verifies the OTP code and returns user data with roles.
+ *       Use the phone number and 6-digit code from the SMS you received.
+ *     security:
+ *       - ApiKeyAuth: []
  *     requestBody:
  *       required: true
  *       content:
  *         application/json:
  *           schema:
  *             $ref: '#/components/schemas/VerifyOtpBody'
+ *           example:
+ *             phoneNumber: "+233501234567"
+ *             code: "123456"
  *     responses:
  *       200:
- *         description: OTP verified, returns user data
+ *         description: OTP verified — returns user data with roles
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: OTP verified
+ *                 user:
+ *                   type: object
+ *                   properties:
+ *                     id:
+ *                       type: string
+ *                       format: uuid
+ *                     phoneNumber:
+ *                       type: string
+ *                     roles:
+ *                       type: array
+ *                       items:
+ *                         type: string
+ *                       example: ["buyer"]
  *       401:
  *         description: Invalid or expired OTP
+ *       403:
+ *         description: Invalid API key
  *       500:
  *         description: Server error
  */
@@ -68,7 +108,9 @@ router.post("/verify-otp", authController.verifyOTP);
  *   post:
  *     tags: [Auth]
  *     summary: Sync Supabase user
- *     description: Syncs a Supabase-authenticated user to the local database.
+ *     description: Syncs a Supabase-authenticated user to the local database (migration helper).
+ *     security:
+ *       - ApiKeyAuth: []
  *     responses:
  *       200:
  *         description: User synced

@@ -6,21 +6,50 @@ const options: swaggerJsdoc.Options = {
     info: {
       title: "Velo Backend API",
       version: "1.0.0",
-      description:
-        "Ride-hailing, delivery & wallet API for the VeloHub platform. All protected endpoints require an `X-API-Key` header and a `phoneNumber` field in the request body for role-based authentication.",
-      contact: {
-        name: "VeloCourier",
-      },
+      description: `
+## Ride-hailing, delivery & wallet API for the VeloHub platform.
+
+### 🔑 How to authenticate
+
+1. Click the **Authorize** button (🔓) at the top right.
+2. Enter your \`X-API-Key\` value and click **Authorize**.
+3. Every request will now include the API key header automatically.
+
+### 📱 Phone number auth
+Most endpoints require a \`phoneNumber\` field — either in the **request body** (POST/PUT/DELETE) or as a **query parameter** (GET).
+This is used for role-based access (buyer, driver, merchant). Use a real registered phone in E.164 format: \`+233501234567\`
+
+### 🎯 Quick start
+1. **Auth** → \`POST /auth/request-otp\` with your phone number
+2. **Auth** → \`POST /auth/verify-otp\` with the OTP code you received
+3. You're in! Now use any endpoint with your phone number.
+      `,
+      contact: { name: "VeloCourier" },
     },
     servers: [
       {
         url: "/api/v1",
-        description: "API v1",
+        description: "API v1 (main)",
       },
       {
         url: "/api",
         description: "Legacy (orders)",
       },
+    ],
+    tags: [
+      { name: "Health", description: "Server health & connectivity checks — **no auth required**" },
+      { name: "Auth", description: "OTP-based phone authentication — request & verify OTPs" },
+      { name: "Profile", description: "Setup buyer / driver / merchant profiles" },
+      { name: "Rides", description: "Request rides, get estimates, manage active rides (buyer)" },
+      { name: "Driver", description: "Driver operations — go online, accept rides, update location" },
+      { name: "Payments", description: "Paystack payments, webhook, verification" },
+      { name: "Wallet", description: "Wallet balance & transaction history" },
+      { name: "Locations", description: "Saved locations (Home, Work, etc.)" },
+      { name: "Ratings", description: "Rate completed rides, view driver ratings" },
+      { name: "Places", description: "Google Places — autocomplete, details, distance, reverse geocode" },
+      { name: "Notifications", description: "In-app notifications & push token management" },
+      { name: "Uploads", description: "File uploads to MinIO — images & PDFs for ID verification" },
+      { name: "Dev", description: "Development/debug endpoints — **not for production**" },
     ],
     components: {
       securitySchemes: {
@@ -28,111 +57,157 @@ const options: swaggerJsdoc.Options = {
           type: "apiKey",
           in: "header",
           name: "X-API-Key",
-          description: "API key sent in the `X-API-Key` header",
+          description:
+            "Your API key. Click **Authorize** above, paste it in, and every request will include it automatically.",
         },
       },
       parameters: {
         PhoneNumber: {
           name: "phoneNumber",
           in: "query",
-          description: "User's phone number (sent in body for auth/role lookup)",
+          required: true,
+          description: "Your registered phone number in E.164 format (used for auth/role lookup on GET requests)",
           schema: { type: "string", example: "+233501234567" },
         },
         Limit: {
           name: "limit",
           in: "query",
+          required: false,
           schema: { type: "integer", default: 20 },
-          description: "Number of items to return",
+          description: "Max items to return (pagination)",
         },
         Offset: {
           name: "offset",
           in: "query",
+          required: false,
           schema: { type: "integer", default: 0 },
-          description: "Number of items to skip",
+          description: "Items to skip (pagination)",
         },
       },
       schemas: {
-        // ---------- Common ----------
+        // ─── Common ─────────────────────────────────────
         Error: {
           type: "object",
           properties: {
-            message: { type: "string" },
+            message: { type: "string", example: "Something went wrong" },
+          },
+        },
+        SuccessMessage: {
+          type: "object",
+          properties: {
+            message: { type: "string", example: "Operation successful" },
           },
         },
 
-        // ---------- Uploads ----------
+        // ─── Uploads ────────────────────────────────────
         UploadResult: {
           type: "object",
           properties: {
-            url: { type: "string", format: "uri", example: "http://minio-service:9000/velo-uploads/id-cards/userId/uuid.jpg" },
-            key: { type: "string", example: "id-cards/userId/550e8400-e29b.jpg" },
+            url: {
+              type: "string",
+              format: "uri",
+              example: "http://minio-service:9000/velo-uploads/id-cards/abc123/550e8400.jpg",
+            },
+            key: { type: "string", example: "id-cards/abc123/550e8400-e29b-41d4.jpg" },
             bucket: { type: "string", example: "velo-uploads" },
-            size: { type: "integer", example: 245760 },
+            size: { type: "integer", example: 245760, description: "File size in bytes" },
             mimeType: { type: "string", example: "image/jpeg" },
-            checksum: { type: "string", example: "e3b0c44298fc1c149afbf4c8..." },
+            checksum: { type: "string", example: "e3b0c44298fc1c149afbf4c8996fb924..." },
           },
         },
 
-        // ---------- Auth ----------
+        // ─── Auth ───────────────────────────────────────
         RequestOtpBody: {
           type: "object",
           required: ["phoneNumber"],
           properties: {
-            phoneNumber: { type: "string", example: "+233501234567" },
+            phoneNumber: {
+              type: "string",
+              example: "+233501234567",
+              description: "Phone number in E.164 format",
+            },
           },
         },
         VerifyOtpBody: {
           type: "object",
           required: ["phoneNumber", "code"],
           properties: {
-            phoneNumber: { type: "string", example: "+233501234567" },
-            code: { type: "string", example: "123456" },
+            phoneNumber: {
+              type: "string",
+              example: "+233501234567",
+              description: "Same phone number used in request-otp",
+            },
+            code: {
+              type: "string",
+              example: "123456",
+              description: "6-digit OTP received via SMS",
+            },
           },
         },
 
-        // ---------- Profile ----------
+        // ─── Profile ───────────────────────────────────
         BuyerSetupBody: {
           type: "object",
           required: ["phoneNumber", "fullName"],
           properties: {
-            phoneNumber: { type: "string" },
-            fullName: { type: "string" },
-            email: { type: "string" },
+            phoneNumber: { type: "string", example: "+233501234567" },
+            fullName: { type: "string", example: "Kwame Asante" },
+            email: { type: "string", example: "kwame@example.com" },
           },
         },
         DriverSetupBody: {
           type: "object",
           required: ["phoneNumber", "fullName", "vehicleType", "licensePlate"],
           properties: {
-            phoneNumber: { type: "string" },
-            fullName: { type: "string" },
-            vehicleType: { type: "string" },
-            licensePlate: { type: "string" },
-            email: { type: "string" },
+            phoneNumber: { type: "string", example: "+233501234567" },
+            fullName: { type: "string", example: "Kofi Mensah" },
+            vehicleType: { type: "string", example: "motorbike", enum: ["motorbike", "car", "van"] },
+            licensePlate: { type: "string", example: "GR-1234-21" },
+            email: { type: "string", example: "kofi@example.com" },
+            idImageUrl: {
+              type: "string",
+              format: "uri",
+              description: "URL from /uploads (Ghana Card photo)",
+            },
+            licensePhotoUrl: {
+              type: "string",
+              format: "uri",
+              description: "URL from /uploads (driver license photo)",
+            },
           },
         },
         MerchantSetupBody: {
           type: "object",
           required: ["phoneNumber", "businessName", "businessAddress"],
           properties: {
-            phoneNumber: { type: "string" },
-            businessName: { type: "string" },
-            businessAddress: { type: "string" },
-            email: { type: "string" },
+            phoneNumber: { type: "string", example: "+233501234567" },
+            businessName: { type: "string", example: "Accra Express Deliveries" },
+            businessAddress: { type: "string", example: "15 Independence Ave, Accra" },
+            email: { type: "string", example: "info@accraexpress.com" },
+            registrationDocUrl: {
+              type: "string",
+              format: "uri",
+              description: "URL from /uploads (business registration doc)",
+            },
+            idImageUrl: {
+              type: "string",
+              format: "uri",
+              description: "URL from /uploads (owner ID photo)",
+            },
           },
         },
 
-        // ---------- Rides ----------
+        // ─── Rides ──────────────────────────────────────
         FareEstimateBody: {
           type: "object",
           required: ["phoneNumber", "distanceKm", "durationMin", "pickupLat", "pickupLng"],
           properties: {
-            phoneNumber: { type: "string" },
-            distanceKm: { type: "number", example: 5.2 },
-            durationMin: { type: "number", example: 15 },
-            pickupLat: { type: "number", example: 5.6037 },
-            pickupLng: { type: "number", example: -0.187 },
-            promoCode: { type: "string" },
+            phoneNumber: { type: "string", example: "+233501234567" },
+            distanceKm: { type: "number", example: 5.2, description: "Trip distance in km" },
+            durationMin: { type: "number", example: 15, description: "Estimated trip duration in minutes" },
+            pickupLat: { type: "number", example: 5.6037, description: "Pickup latitude" },
+            pickupLng: { type: "number", example: -0.187, description: "Pickup longitude" },
+            promoCode: { type: "string", example: "FIRST10", description: "Optional promo code for discount" },
           },
         },
         RequestRideBody: {
@@ -143,38 +218,40 @@ const options: swaggerJsdoc.Options = {
             "vehicleType", "distanceKm", "durationMin",
           ],
           properties: {
-            phoneNumber: { type: "string" },
-            type: { type: "string", enum: ["ride", "delivery"], default: "ride" },
-            pickupAddress: { type: "string" },
-            pickupLat: { type: "number" },
-            pickupLng: { type: "number" },
-            dropoffAddress: { type: "string" },
-            dropoffLat: { type: "number" },
-            dropoffLng: { type: "number" },
-            vehicleType: { type: "string", enum: ["motorbike", "car", "van"] },
-            distanceKm: { type: "number" },
-            durationMin: { type: "number" },
-            passengerCount: { type: "integer" },
-            promoCode: { type: "string" },
+            phoneNumber: { type: "string", example: "+233501234567" },
+            type: { type: "string", enum: ["ride", "delivery"], default: "ride", description: "Ride type" },
+            pickupAddress: { type: "string", example: "Accra Mall, Tetteh Quarshie" },
+            pickupLat: { type: "number", example: 5.6037 },
+            pickupLng: { type: "number", example: -0.187 },
+            dropoffAddress: { type: "string", example: "University of Ghana, Legon" },
+            dropoffLat: { type: "number", example: 5.6502 },
+            dropoffLng: { type: "number", example: -0.1869 },
+            vehicleType: { type: "string", enum: ["motorbike", "car", "van"], example: "motorbike" },
+            distanceKm: { type: "number", example: 5.2 },
+            durationMin: { type: "number", example: 15 },
+            passengerCount: { type: "integer", example: 1, description: "Number of passengers (car/van only)" },
+            promoCode: { type: "string", example: "FIRST10" },
             stops: {
               type: "array",
+              description: "Optional intermediate stops",
               items: {
                 type: "object",
                 properties: {
-                  address: { type: "string" },
-                  lat: { type: "number" },
-                  lng: { type: "number" },
-                  order: { type: "integer" },
+                  address: { type: "string", example: "East Legon, Accra" },
+                  lat: { type: "number", example: 5.6315 },
+                  lng: { type: "number", example: -0.1583 },
+                  order: { type: "integer", example: 1 },
                 },
               },
             },
             sharedContacts: {
               type: "array",
+              description: "People to notify about this ride (safety feature)",
               items: {
                 type: "object",
                 properties: {
-                  name: { type: "string" },
-                  phone: { type: "string" },
+                  name: { type: "string", example: "Ama" },
+                  phone: { type: "string", example: "+233241234567" },
                 },
               },
             },
@@ -184,123 +261,163 @@ const options: swaggerJsdoc.Options = {
           type: "object",
           required: ["phoneNumber", "paymentMethod"],
           properties: {
-            phoneNumber: { type: "string" },
-            paymentMethod: { type: "string", enum: ["cash", "wallet", "mobile_money"] },
-            email: { type: "string" },
+            phoneNumber: { type: "string", example: "+233501234567" },
+            paymentMethod: {
+              type: "string",
+              enum: ["cash", "wallet", "mobile_money"],
+              example: "mobile_money",
+              description: "How the rider will pay",
+            },
+            email: { type: "string", example: "kwame@example.com", description: "Required for mobile_money" },
           },
         },
         CancelRideBody: {
           type: "object",
           required: ["phoneNumber"],
           properties: {
-            phoneNumber: { type: "string" },
-            reason: { type: "string" },
+            phoneNumber: { type: "string", example: "+233501234567" },
+            reason: { type: "string", example: "Changed my mind", description: "Optional cancellation reason" },
           },
         },
 
-        // ---------- Driver ----------
+        // ─── Driver ─────────────────────────────────────
         DriverLocationBody: {
           type: "object",
           required: ["phoneNumber", "lat", "lng"],
           properties: {
-            phoneNumber: { type: "string" },
-            lat: { type: "number", example: 5.6037 },
-            lng: { type: "number", example: -0.187 },
-            heading: { type: "number" },
-            speed: { type: "number" },
+            phoneNumber: { type: "string", example: "+233501234567" },
+            lat: { type: "number", example: 5.6037, description: "Current latitude" },
+            lng: { type: "number", example: -0.187, description: "Current longitude" },
+            heading: { type: "number", example: 45.0, description: "Compass heading in degrees" },
+            speed: { type: "number", example: 30.5, description: "Speed in km/h" },
           },
         },
         DriverOnlineBody: {
           type: "object",
           required: ["phoneNumber", "lat", "lng"],
           properties: {
-            phoneNumber: { type: "string" },
-            lat: { type: "number" },
-            lng: { type: "number" },
+            phoneNumber: { type: "string", example: "+233501234567" },
+            lat: { type: "number", example: 5.6037, description: "Current latitude" },
+            lng: { type: "number", example: -0.187, description: "Current longitude" },
+          },
+        },
+        PhoneOnlyBody: {
+          type: "object",
+          required: ["phoneNumber"],
+          properties: {
+            phoneNumber: { type: "string", example: "+233501234567" },
           },
         },
         AcceptRideBody: {
           type: "object",
           required: ["phoneNumber", "driverName"],
           properties: {
-            phoneNumber: { type: "string" },
-            driverName: { type: "string" },
+            phoneNumber: { type: "string", example: "+233501234567" },
+            driverName: { type: "string", example: "Kofi Mensah" },
+          },
+        },
+        DriverStatusBody: {
+          type: "object",
+          required: ["phoneNumber"],
+          properties: {
+            phoneNumber: { type: "string", example: "+233501234567" },
+            driverName: { type: "string", example: "Kofi Mensah" },
           },
         },
 
-        // ---------- Locations ----------
+        // ─── Locations ──────────────────────────────────
         SaveLocationBody: {
           type: "object",
           required: ["phoneNumber", "label", "address", "lat", "lng"],
           properties: {
-            phoneNumber: { type: "string" },
-            label: { type: "string", example: "Home" },
-            address: { type: "string", example: "123 Main St, Accra" },
-            lat: { type: "number" },
-            lng: { type: "number" },
+            phoneNumber: { type: "string", example: "+233501234567" },
+            label: { type: "string", example: "Home", description: "Label like Home, Work, Gym" },
+            address: { type: "string", example: "123 Main St, East Legon, Accra" },
+            lat: { type: "number", example: 5.6315 },
+            lng: { type: "number", example: -0.1583 },
+          },
+        },
+        UpdateLocationBody: {
+          type: "object",
+          required: ["phoneNumber"],
+          properties: {
+            phoneNumber: { type: "string", example: "+233501234567" },
+            label: { type: "string", example: "Work" },
+            address: { type: "string", example: "456 Ring Rd, Osu, Accra" },
+            lat: { type: "number", example: 5.5571 },
+            lng: { type: "number", example: -0.1818 },
           },
         },
 
-        // ---------- Ratings ----------
+        // ─── Ratings ────────────────────────────────────
         RateRideBody: {
           type: "object",
           required: ["phoneNumber", "rideId", "rating"],
           properties: {
-            phoneNumber: { type: "string" },
-            rideId: { type: "string", format: "uuid" },
-            rating: { type: "integer", minimum: 1, maximum: 5 },
-            comment: { type: "string" },
+            phoneNumber: { type: "string", example: "+233501234567" },
+            rideId: { type: "string", format: "uuid", example: "550e8400-e29b-41d4-a716-446655440000" },
+            rating: { type: "integer", minimum: 1, maximum: 5, example: 5, description: "1-5 stars" },
+            comment: { type: "string", example: "Great ride, very safe!", description: "Optional review text" },
           },
         },
 
-        // ---------- Places ----------
+        // ─── Places ─────────────────────────────────────
         DistanceBody: {
           type: "object",
           required: ["phoneNumber", "originLat", "originLng", "destLat", "destLng"],
           properties: {
-            phoneNumber: { type: "string" },
-            originLat: { type: "number" },
-            originLng: { type: "number" },
-            destLat: { type: "number" },
-            destLng: { type: "number" },
+            phoneNumber: { type: "string", example: "+233501234567" },
+            originLat: { type: "number", example: 5.6037, description: "Origin latitude" },
+            originLng: { type: "number", example: -0.187, description: "Origin longitude" },
+            destLat: { type: "number", example: 5.6502, description: "Destination latitude" },
+            destLng: { type: "number", example: -0.1869, description: "Destination longitude" },
           },
         },
         ReverseGeocodeBody: {
           type: "object",
           required: ["phoneNumber", "lat", "lng"],
           properties: {
-            phoneNumber: { type: "string" },
-            lat: { type: "number" },
-            lng: { type: "number" },
+            phoneNumber: { type: "string", example: "+233501234567" },
+            lat: { type: "number", example: 5.6037 },
+            lng: { type: "number", example: -0.187 },
           },
         },
 
-        // ---------- Notifications ----------
+        // ─── Notifications ──────────────────────────────
         PushTokenBody: {
           type: "object",
           required: ["phoneNumber", "token", "platform"],
           properties: {
-            phoneNumber: { type: "string" },
-            token: { type: "string" },
-            platform: { type: "string", enum: ["ios", "android"] },
+            phoneNumber: { type: "string", example: "+233501234567" },
+            token: {
+              type: "string",
+              example: "ExponentPushToken[xxxxxx]",
+              description: "Expo or FCM push token",
+            },
+            platform: {
+              type: "string",
+              enum: ["ios", "android"],
+              example: "android",
+              description: "Device platform",
+            },
           },
         },
         RemovePushTokenBody: {
           type: "object",
           required: ["phoneNumber", "token"],
           properties: {
-            phoneNumber: { type: "string" },
-            token: { type: "string" },
+            phoneNumber: { type: "string", example: "+233501234567" },
+            token: { type: "string", example: "ExponentPushToken[xxxxxx]" },
           },
         },
 
-        // ---------- Health ----------
+        // ─── Health ─────────────────────────────────────
         HealthResponse: {
           type: "object",
           properties: {
-            status: { type: "string", example: "healthy" },
+            status: { type: "string", example: "healthy", enum: ["healthy", "degraded"] },
             version: { type: "string", example: "1.0.0" },
-            uptime: { type: "number" },
+            uptime: { type: "number", example: 3600, description: "Server uptime in seconds" },
             timestamp: { type: "string", format: "date-time" },
             services: {
               type: "object",
@@ -313,6 +430,7 @@ const options: swaggerJsdoc.Options = {
         },
       },
     },
+    // Global security — applies to ALL endpoints unless overridden with `security: []`
     security: [{ ApiKeyAuth: [] }],
   },
   apis: ["./src/routes/*.ts", "./src/routes/*.js"],

@@ -33,6 +33,15 @@ app.use(express.static('public'));
 app.use("/docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
   customCss: '.swagger-ui .topbar { display: none }',
   customSiteTitle: "Velo API Docs",
+  swaggerOptions: {
+    persistAuthorization: true,        // Remember API key across page reloads
+    tryItOutEnabled: true,             // "Try it out" is ON by default
+    filter: true,                      // Search bar to filter endpoints
+    displayRequestDuration: true,      // Show how long requests take
+    docExpansion: "list",              // Show all tags collapsed with summaries
+    defaultModelsExpandDepth: 2,       // Expand schema models
+    defaultModelExpandDepth: 2,
+  },
 }));
 app.get("/docs.json", (_req: Request, res: Response) => {
   res.setHeader("Content-Type", "application/json");
