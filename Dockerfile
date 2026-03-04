@@ -6,8 +6,8 @@ WORKDIR /app
 # Copy package files
 COPY package*.json ./
 
-# Install dependencies
-RUN npm install
+# Install dependencies (dev deps needed for tsc, but skip postinstall scripts that download binaries)
+RUN npm install --ignore-scripts
 
 # Copy source code
 COPY . .
