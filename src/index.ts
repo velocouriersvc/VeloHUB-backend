@@ -171,7 +171,7 @@ AppDataSource.initialize()
     console.log("Data Source has been initialized!");
 
     // Start server
-    app.listen(PORT, () => {
+    app.listen(PORT, async () => {
       console.log(`Server is running on port ${PORT}`);
       console.log(`📖 API Docs: http://localhost:${PORT}/docs`);
       console.log(`💚 Health:   http://localhost:${PORT}/health`);
