@@ -3,6 +3,7 @@ import cors from "cors";
 import swaggerUi from "swagger-ui-express";
 import { AppDataSource } from "./db/data-source";
 import { swaggerSpec } from "./swagger";
+import { ensureBucket } from "./utils/minio-client";
 
 import orderRoutes from "./routes/orderRoutes";
 import profileRoutes from "./routes/profileRoutes";
@@ -17,6 +18,7 @@ import ratingRoutes from "./routes/ratingRoutes";
 import placesRoutes from "./routes/placesRoutes";
 import notificationRoutes from "./routes/notificationRoutes";
 import healthRoutes from "./routes/healthRoutes";
+import uploadRoutes from "./routes/uploadRoutes";
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -52,6 +54,7 @@ app.use("/api/v1/locations", locationRoutes);
 app.use("/api/v1/ratings", ratingRoutes);
 app.use("/api/v1/places", placesRoutes);
 app.use("/api/v1/notifications", notificationRoutes);
+app.use("/api/v1/uploads", uploadRoutes);
 app.use("/api/orders", orderRoutes);
 
 // Root — Dashboard
@@ -167,8 +170,16 @@ app.get("/", (_req: Request, res: Response) => {
 
 // Initialize database connection
 AppDataSource.initialize()
-  .then(() => {
+  .then(async () => {
     console.log("Data Source has been initialized!");
+
+    // Ensure MinIO bucket exists
+    try {
+      await ensureBucket();
+      console.log("🪣 MinIO bucket ready");
+    } catch (err) {
+      console.warn("⚠️  MinIO bucket init failed (uploads may not work):", err);
+    }
 
     // Start server
     app.listen(PORT, async () => {

@@ -60,6 +60,19 @@ const options: swaggerJsdoc.Options = {
           },
         },
 
+        // ---------- Uploads ----------
+        UploadResult: {
+          type: "object",
+          properties: {
+            url: { type: "string", format: "uri", example: "http://minio-service:9000/velo-uploads/id-cards/userId/uuid.jpg" },
+            key: { type: "string", example: "id-cards/userId/550e8400-e29b.jpg" },
+            bucket: { type: "string", example: "velo-uploads" },
+            size: { type: "integer", example: 245760 },
+            mimeType: { type: "string", example: "image/jpeg" },
+            checksum: { type: "string", example: "e3b0c44298fc1c149afbf4c8..." },
+          },
+        },
+
         // ---------- Auth ----------
         RequestOtpBody: {
           type: "object",
