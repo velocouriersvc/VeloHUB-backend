@@ -351,7 +351,10 @@
             <a href="#driver" class="nav-link"><i class="ri-steering-line"></i> Driver Operations</a>
             <a href="#payments" class="nav-link"><i class="ri-bank-card-line"></i> Payments</a>
             <a href="#wallet" class="nav-link"><i class="ri-wallet-3-line"></i> Wallet</a>
-            <a href="#places" class="nav-link"><i class="ri-map-pin-2-line"></i> Places & Location</a>
+            <a href="#locations" class="nav-link"><i class="ri-map-pin-2-line"></i> Saved Locations</a>
+            <a href="#ratings" class="nav-link"><i class="ri-star-line"></i> Ratings</a>
+            <a href="#places" class="nav-link"><i class="ri-map-pin-line"></i> Places & Search</a>
+            <a href="#notifications" class="nav-link"><i class="ri-notification-3-line"></i> Notifications</a>
         </nav>
     </aside>
 
@@ -412,8 +415,8 @@
                     </div>
                 </div>
                 <div class="endpoint-body">
-                    <p class="endpoint-description">Verifies the OTP code received by the user and initiates the
-                        synchronization process.</p>
+                    <p class="endpoint-description">Verifies the OTP code received by the user and returns an access
+                        token.</p>
                     <div class="grid">
                         <div class="code-container">
                             <span class="code-title">Request Body</span>
@@ -425,7 +428,37 @@
                         <div class="code-container">
                             <span class="code-title">Response (200 OK)</span>
                             <pre>{
-  "message": "OTP verified",
+  "user": { ... },
+  "token": "jwt-token-string"
+}</pre>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="endpoint-card">
+                <div class="endpoint-header">
+                    <div class="endpoint-path">
+                        <span class="method post">POST</span>
+                        <code>/auth/sync</code>
+                    </div>
+                    <div class="endpoint-meta">
+                        <span class="badge">API Key Required</span>
+                        <span class="badge">Auth Token Required</span>
+                    </div>
+                </div>
+                <div class="endpoint-body">
+                    <p class="endpoint-description">Synchronizes the authenticated user's data with the backend system.
+                    </p>
+                    <div class="grid">
+                        <div class="code-container">
+                            <span class="code-title">Request</span>
+                            <pre>{} // Provided via Authorization header</pre>
+                        </div>
+                        <div class="code-container">
+                            <span class="code-title">Response (200 OK)</span>
+                            <pre>{
+  "user": { ... },
   "synced": true
 }</pre>
                         </div>
@@ -446,7 +479,7 @@
                     </div>
                     <div class="endpoint-meta">
                         <span class="badge role">Buyer Only</span>
-                        <span class="badge">API Key Required</span>
+                        <span class="badge">Auth Required</span>
                     </div>
                 </div>
                 <div class="endpoint-body">
@@ -461,13 +494,63 @@
 }</pre>
                         </div>
                         <div class="code-container">
-                            <span class="code-title">Response (201 Created)</span>
+                            <span class="code-title">Response (200 OK)</span>
                             <pre>{
-  "id": "uuid-string",
+  "id": "uuid",
   "fullName": "John Doe",
-  "status": "active"
+  "role": "buyer"
 }</pre>
                         </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="endpoint-card">
+                <div class="endpoint-header">
+                    <div class="endpoint-path">
+                        <span class="method post">POST</span>
+                        <code>/profile/driver</code>
+                    </div>
+                    <div class="endpoint-meta">
+                        <span class="badge role">Driver Only</span>
+                        <span class="badge">Auth Required</span>
+                    </div>
+                </div>
+                <div class="endpoint-body">
+                    <p class="endpoint-description">Sets up the driver profile including vehicle and license details.
+                    </p>
+                    <div class="code-container">
+                        <span class="code-title">Request Body</span>
+                        <pre>{
+  "licenseNumber": "GHA-123456",
+  "vehicleType": "bike",
+  "vehicleModel": "Royal 125",
+  "vehiclePlate": "GW-2022-21"
+}</pre>
+                    </div>
+                </div>
+            </div>
+
+            <div class="endpoint-card">
+                <div class="endpoint-header">
+                    <div class="endpoint-path">
+                        <span class="method post">POST</span>
+                        <code>/profile/merchant</code>
+                    </div>
+                    <div class="endpoint-meta">
+                        <span class="badge role">Merchant Only</span>
+                        <span class="badge">Auth Required</span>
+                    </div>
+                </div>
+                <div class="endpoint-body">
+                    <p class="endpoint-description">Sets up a merchant business profile.</p>
+                    <div class="code-container">
+                        <span class="code-title">Request Body</span>
+                        <pre>{
+  "businessName": "Velo Express",
+  "category": "courier",
+  "location": "Darkuman, Accra"
+}</pre>
                     </div>
                 </div>
             </div>
@@ -528,31 +611,107 @@
                     </div>
                     <div class="endpoint-meta">
                         <span class="badge role">Buyer Only</span>
-                        <span class="badge">API Key Required</span>
+                        <span class="badge">Auth Required</span>
                     </div>
                 </div>
                 <div class="endpoint-body">
-                    <p class="endpoint-description">Requests a new ride. The system will look for nearest online
-                        drivers.</p>
+                    <p class="endpoint-description">Requests a new ride. System will search for available drivers.</p>
                     <div class="grid">
                         <div class="code-container">
                             <span class="code-title">Request Body</span>
                             <pre>{
-  "origin": { "lat": 5.6037, "lng": -0.1870, "address": "Airport" },
-  "destination": { "lat": 5.6148, "lng": -0.2058, "address": "Osu" },
-  "vehicleType": "standard",
-  "paymentMethod": "wallet"
+  "pickupAddress": "Airport",
+  "pickupLat": 5.6037,
+  "pickupLng": -0.1870,
+  "dropoffAddress": "Osu",
+  "dropoffLat": 5.6148,
+  "dropoffLng": -0.2058,
+  "vehicleType": "bike",
+  "distanceKm": 3.2,
+  "durationMin": 10
 }</pre>
                         </div>
                         <div class="code-container">
                             <span class="code-title">Response (201 Created)</span>
                             <pre>{
-  "rideId": "uuid-string",
-  "status": "searching",
-  "message": "Searching for nearby drivers"
+  "ride": {
+    "id": "uuid",
+    "status": "searching",
+    "fare": 15.50
+  }
 }</pre>
                         </div>
                     </div>
+                </div>
+            </div>
+
+            <div class="endpoint-card">
+                <div class="endpoint-header">
+                    <div class="endpoint-path">
+                        <span class="method post">POST</span>
+                        <code>/rides/:id/payment</code>
+                    </div>
+                    <div class="endpoint-meta">
+                        <span class="badge role">Buyer Only</span>
+                        <span class="badge">Auth Required</span>
+                    </div>
+                </div>
+                <div class="endpoint-body">
+                    <p class="endpoint-description">Sets the payment method for a ride and initiates payment if
+                        applicable.</p>
+                    <div class="code-container">
+                        <span class="code-title">Request Body</span>
+                        <pre>{
+  "paymentMethod": "momo",
+  "phoneNumber": "23354..."
+}</pre>
+                    </div>
+                </div>
+            </div>
+
+            <div class="endpoint-card">
+                <div class="endpoint-header">
+                    <div class="endpoint-path">
+                        <span class="method post">POST</span>
+                        <code>/rides/:id/cancel</code>
+                    </div>
+                    <div class="endpoint-meta">
+                        <span class="badge role">Buyer/Driver</span>
+                    </div>
+                </div>
+                <div class="endpoint-body">
+                    <p class="endpoint-description">Cancels a pending or active ride.</p>
+                    <pre>{ "reason": "Changed my mind" }</pre>
+                </div>
+            </div>
+
+            <div class="endpoint-card">
+                <div class="endpoint-header">
+                    <div class="endpoint-path">
+                        <span class="method get">GET</span>
+                        <code>/rides/active</code>
+                    </div>
+                    <div class="endpoint-meta">
+                        <span class="badge role">Buyer Only</span>
+                    </div>
+                </div>
+                <div class="endpoint-body">
+                    <p class="endpoint-description">Gets the current active ride for the authenticated buyer.</p>
+                </div>
+            </div>
+
+            <div class="endpoint-card">
+                <div class="endpoint-header">
+                    <div class="endpoint-path">
+                        <span class="method get">GET</span>
+                        <code>/rides/history</code>
+                    </div>
+                    <div class="endpoint-meta">
+                        <span class="badge role">Buyer Only</span>
+                    </div>
+                </div>
+                <div class="endpoint-body">
+                    <p class="endpoint-description">Gets ride history with pagination (?limit=x&offset=y).</p>
                 </div>
             </div>
         </section>
@@ -599,7 +758,6 @@
                     </div>
                     <div class="endpoint-meta">
                         <span class="badge role">Driver Only</span>
-                        <span class="badge">API Key Required</span>
                     </div>
                 </div>
                 <div class="endpoint-body">
@@ -610,14 +768,273 @@
                             <pre>{
   "lat": 5.6037,
   "lng": -0.1870,
-  "heading": 180
+  "heading": 180,
+  "speed": 15
 }</pre>
                         </div>
                         <div class="code-container">
                             <span class="code-title">Response (200 OK)</span>
-                            <pre>{ "success": true }</pre>
+                            <pre>{ "message": "Location updated" }</pre>
                         </div>
                     </div>
+                </div>
+            </div>
+
+            <div class="endpoint-card">
+                <div class="endpoint-header">
+                    <div class="endpoint-path">
+                        <span class="method post">POST</span>
+                        <code>/driver/online</code>
+                    </div>
+                    <div class="endpoint-meta">
+                        <span class="badge role">Driver Only</span>
+                    </div>
+                </div>
+                <div class="endpoint-body">
+                    <p class="endpoint-description">Sets the driver's status to online. Requires current lat/lng.</p>
+                    <pre>{ "lat": 5.60, "lng": -0.18 }</pre>
+                </div>
+            </div>
+
+            <div class="endpoint-card">
+                <div class="endpoint-header">
+                    <div class="endpoint-path">
+                        <span class="method post">POST</span>
+                        <code>/driver/offline</code>
+                    </div>
+                    <div class="endpoint-meta">
+                        <span class="badge role">Driver Only</span>
+                    </div>
+                </div>
+                <div class="endpoint-body">
+                    <p class="endpoint-description">Sets the driver status to offline.</p>
+                </div>
+            </div>
+
+            <div class="endpoint-card">
+                <div class="endpoint-header">
+                    <div class="endpoint-path">
+                        <span class="method post">POST</span>
+                        <code>/driver/rides/:id/accept</code>
+                    </div>
+                    <div class="endpoint-meta">
+                        <span class="badge role">Driver Only</span>
+                    </div>
+                </div>
+                <div class="endpoint-body">
+                    <p class="endpoint-description">Accepts an incoming ride request.</p>
+                    <pre>{ "driverName": "Kwame" }</pre>
+                </div>
+            </div>
+
+            <div class="endpoint-card">
+                <div class="endpoint-header">
+                    <div class="endpoint-path">
+                        <span class="method post">POST</span>
+                        <code>/driver/rides/:id/start</code>
+                    </div>
+                    <div class="endpoint-meta">
+                        <span class="badge role">Driver Only</span>
+                    </div>
+                </div>
+                <div class="endpoint-body">
+                    <p class="endpoint-description">Marks the ride as started (passenger picked up).</p>
+                </div>
+            </div>
+
+            <div class="endpoint-card">
+                <div class="endpoint-header">
+                    <div class="endpoint-path">
+                        <span class="method post">POST</span>
+                        <code>/driver/rides/:id/complete</code>
+                    </div>
+                    <div class="endpoint-meta">
+                        <span class="badge role">Driver Only</span>
+                    </div>
+                </div>
+                <div class="endpoint-body">
+                    <p class="endpoint-description">Completes the ride and triggers payment processing.</p>
+                </div>
+            </div>
+
+            <div class="endpoint-card">
+                <div class="endpoint-header">
+                    <div class="endpoint-path">
+                        <span class="method get">GET</span>
+                        <code>/driver/stats</code>
+                    </div>
+                    <div class="endpoint-meta">
+                        <span class="badge role">Driver Only</span>
+                    </div>
+                </div>
+                <div class="endpoint-body">
+                    <p class="endpoint-description">Gets driver performance stats (rating, earnings, etc.).</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Payments -->
+        <section id="payments" class="section">
+            <h2 class="section-title"><i class="ri-bank-card-line"></i> Payments</h2>
+
+            <div class="endpoint-card">
+                <div class="endpoint-header">
+                    <div class="endpoint-path">
+                        <span class="method post">POST</span>
+                        <code>/payments/webhook</code>
+                    </div>
+                    <div class="endpoint-meta">
+                        <span class="badge">Unprotected</span>
+                    </div>
+                </div>
+                <div class="endpoint-body">
+                    <p class="endpoint-description">Webhook endpoint for Paystack notifications.</p>
+                </div>
+            </div>
+
+            <div class="endpoint-card">
+                <div class="endpoint-header">
+                    <div class="endpoint-path">
+                        <span class="method post">POST</span>
+                        <code>/payments/verify/:reference</code>
+                    </div>
+                    <div class="endpoint-meta">
+                        <span class="badge">Auth Required</span>
+                    </div>
+                </div>
+                <div class="endpoint-body">
+                    <p class="endpoint-description">Manually verify a payment reference.</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Wallet -->
+        <section id="wallet" class="section">
+            <h2 class="section-title"><i class="ri-wallet-3-line"></i> Wallet</h2>
+            <div class="endpoint-card">
+                <div class="endpoint-header">
+                    <div class="endpoint-path">
+                        <span class="method get">GET</span>
+                        <code>/wallet</code>
+                    </div>
+                </div>
+                <div class="endpoint-body">
+                    <p class="endpoint-description">Gets the authenticated user's wallet balance.</p>
+                </div>
+            </div>
+            <div class="endpoint-card">
+                <div class="endpoint-header">
+                    <div class="endpoint-path">
+                        <span class="method get">GET</span>
+                        <code>/wallet/transactions</code>
+                    </div>
+                </div>
+                <div class="endpoint-body">
+                    <p class="endpoint-description">Gets wallet transaction history.</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Saved Locations -->
+        <section id="locations" class="section">
+            <h2 class="section-title"><i class="ri-map-pin-2-line"></i> Saved Locations</h2>
+            <div class="endpoint-card">
+                <div class="endpoint-header">
+                    <div class="endpoint-path">
+                        <span class="method post">POST</span>
+                        <code>/locations</code>
+                    </div>
+                    <div class="endpoint-meta">
+                        <span class="badge role">Buyer Only</span>
+                    </div>
+                </div>
+                <div class="endpoint-body">
+                    <p class="endpoint-description">Saves a personal location (Home, Work, etc.).</p>
+                    <pre>{ "label": "Home", "address": "...", "lat": 5.6, "lng": -0.1 }</pre>
+                </div>
+            </div>
+            <div class="endpoint-card">
+                <div class="endpoint-header">
+                    <div class="endpoint-path">
+                        <span class="method get">GET</span>
+                        <code>/locations</code>
+                    </div>
+                </div>
+                <div class="endpoint-body">
+                    <p class="endpoint-description">Gets all saved locations for the user.</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Ratings -->
+        <section id="ratings" class="section">
+            <h2 class="section-title"><i class="ri-star-line"></i> Ratings</h2>
+            <div class="endpoint-card">
+                <div class="endpoint-header">
+                    <div class="endpoint-path">
+                        <span class="method post">POST</span>
+                        <code>/ratings</code>
+                    </div>
+                </div>
+                <div class="endpoint-body">
+                    <p class="endpoint-description">Submit a rating for a completed trip.</p>
+                    <pre>{ "rideId": "uuid", "rating": 5, "comment": "Great ride!" }</pre>
+                </div>
+            </div>
+        </section>
+
+        <!-- Places -->
+        <section id="places" class="section">
+            <h2 class="section-title"><i class="ri-map-pin-line"></i> Places & Search</h2>
+            <div class="endpoint-card">
+                <div class="endpoint-header">
+                    <div class="endpoint-path">
+                        <span class="method get">GET</span>
+                        <code>/places/autocomplete</code>
+                    </div>
+                </div>
+                <div class="endpoint-body">
+                    <p class="endpoint-description">Search for places as you type (?input=...).</p>
+                </div>
+            </div>
+            <div class="endpoint-card">
+                <div class="endpoint-header">
+                    <div class="endpoint-path">
+                        <span class="method post">POST</span>
+                        <code>/places/reverse-geocode</code>
+                    </div>
+                </div>
+                <div class="endpoint-body">
+                    <p class="endpoint-description">Get address from lat/lng coordinates.</p>
+                    <pre>{ "lat": 5.6037, "lng": -0.1870 }</pre>
+                </div>
+            </div>
+        </section>
+
+        <!-- Notifications -->
+        <section id="notifications" class="section">
+            <h2 class="section-title"><i class="ri-notification-3-line"></i> Notifications</h2>
+            <div class="endpoint-card">
+                <div class="endpoint-header">
+                    <div class="endpoint-path">
+                        <span class="method get">GET</span>
+                        <code>/notifications</code>
+                    </div>
+                </div>
+                <div class="endpoint-body">
+                    <p class="endpoint-description">Fetch user notification history.</p>
+                </div>
+            </div>
+            <div class="endpoint-card">
+                <div class="endpoint-header">
+                    <div class="endpoint-path">
+                        <span class="method post">POST</span>
+                        <code>/notifications/push-token</code>
+                    </div>
+                </div>
+                <div class="endpoint-body">
+                    <p class="endpoint-description">Registers a push notification token (Expo/FCM).</p>
+                    <pre>{ "token": "...", "platform": "ios" }</pre>
                 </div>
             </div>
         </section>

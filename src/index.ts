@@ -15,6 +15,8 @@ import locationRoutes from "./routes/locationRoutes";
 import ratingRoutes from "./routes/ratingRoutes";
 import placesRoutes from "./routes/placesRoutes";
 import notificationRoutes from "./routes/notificationRoutes";
+import adminRoutes from "./routes/adminRoutes";
+import waitlistRoutes from "./routes/waitlistRoutes";
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -37,6 +39,8 @@ app.use("/api/v1/locations", locationRoutes);
 app.use("/api/v1/ratings", ratingRoutes);
 app.use("/api/v1/places", placesRoutes);
 app.use("/api/v1/notifications", notificationRoutes);
+app.use("/api/v1/admin", adminRoutes);
+app.use("/api/v1/waitlist", waitlistRoutes);
 app.use("/api/orders", orderRoutes);
 
 // Health check route

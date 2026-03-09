@@ -1,6 +1,8 @@
 import { Request, Response } from "express";
 import { AuthService } from "../services/auth-service";
 import { RequestOtpPayload, VerifyOtpPayload, AuthenticatedRequest } from "../types/auth";
+import { AppDataSource } from "../db/data-source";
+import { User } from "../models/user";
 
 export class AuthController {
     private authService = new AuthService();
@@ -60,6 +62,41 @@ export class AuthController {
             return res.status(200).json(result);
         } catch (error) {
             console.error("Error syncing user:", error);
+            return res.status(500).json({ message: "Internal server error" });
+        }
+    };
+
+    getMe = async (req: Request, res: Response) => {
+        try {
+            const userRef = (req as any).user;
+
+            if (!userRef) {
+                return res.status(401).json({ message: "User not authenticated" });
+            }
+
+            const userRepository = AppDataSource.getRepository(User);
+            const user = await userRepository.findOne({
+                where: { id: userRef.id },
+                relations: ["userRoles", "userRoles.role"]
+            });
+
+            console.log(`getMe: Found user ${userRef.id}:`, !!user);
+
+            if (!user) {
+                return res.status(404).json({ message: "User not found" });
+            }
+
+            return res.status(200).json({
+                id: user.id,
+                phoneNumber: user.phoneNumber,
+                email: user.email,
+                status: user.status,
+                roles: user.userRoles.map(ur => ur.role.name),
+                full_name: (user.email && user.email.includes('@')) ? user.email.split('@')[0] : 'Velo Admin',
+                created_date: user.createdAt
+            });
+        } catch (error) {
+            console.error("Error fetching user profile:", error);
             return res.status(500).json({ message: "Internal server error" });
         }
     };
