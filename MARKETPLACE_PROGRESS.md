@@ -50,12 +50,14 @@
 
 ## Phase 2B — Products & Merchant
 
-- [ ] `ProductService` — CRUD + customizations + stock management
-- [ ] `ProductController` + routes
-- [ ] Product image upload (multipart → MinIO)
-- [ ] `MerchantService` — dashboard, operating hours, stats, finances, payout requests
-- [ ] `MerchantController` + routes
-- [ ] `SearchService` — product/merchant search + geo filtering
+- [x] `ProductService` — CRUD + customizations + stock management
+- [x] `ProductController` + routes (16 routes, full Swagger JSDoc)
+- [x] Product image upload (multipart → MinIO via UploadService)
+- [x] `MerchantService` — dashboard, operating hours, stats, finances, order management
+- [x] `MerchantController` + routes (~15 routes, full Swagger JSDoc)
+- [x] `SearchService` — unified product/merchant search + Haversine geo filtering + Redis cache
+- [x] `SearchController` + routes
+- [x] All routes registered in `index.ts` (`/api/v1/products`, `/api/v1/merchant`, `/api/v1/search`)
 
 ## Phase 2C — Cart & Checkout
 
