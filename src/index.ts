@@ -1,3 +1,4 @@
+import "dotenv/config";
 import express, { Request, Response } from "express";
 import cors from "cors";
 import swaggerUi from "swagger-ui-express";
@@ -21,6 +22,8 @@ import placesRoutes from "./routes/placesRoutes";
 import notificationRoutes from "./routes/notificationRoutes";
 import healthRoutes from "./routes/healthRoutes";
 import uploadRoutes from "./routes/uploadRoutes";
+import adminRoutes from "./routes/adminRoutes";
+import waitlistRoutes from "./routes/waitlistRoutes";
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -73,6 +76,8 @@ app.use("/api/v1/ratings", ratingRoutes);
 app.use("/api/v1/places", placesRoutes);
 app.use("/api/v1/notifications", notificationRoutes);
 app.use("/api/v1/uploads", uploadRoutes);
+app.use("/api/v1/admin", adminRoutes);
+app.use("/api/v1/waitlist", waitlistRoutes);
 app.use("/api/orders", orderRoutes);
 
 // Root — Dashboard
@@ -200,8 +205,9 @@ AppDataSource.initialize()
     }
 
     // Start server
-    app.listen(PORT, async () => {
+    app.listen(PORT,  async () => {
       logger.info(`Server is running on port ${PORT}`);
+
       logger.info(`API Docs: http://localhost:${PORT}/docs`);
       logger.info(`Health: http://localhost:${PORT}/health`);
       logger.info(`Metrics: http://localhost:${PORT}/metrics`);

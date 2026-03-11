@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { AuthController } from "../controllers/AuthController";
 import { apiKeyMiddleware } from "../middleware/api-key-middleware";
+import { requireRole } from "../middleware/role-middleware";
 
 const router = Router();
 const authController = new AuthController();
@@ -120,5 +121,6 @@ router.post("/verify-otp", authController.verifyOTP);
  *         description: Server error
  */
 router.post("/sync", authController.syncUser);
+router.get("/me", requireRole(["admin", "buyer", "driver", "merchant"]), authController.getMe);
 
 export default router;

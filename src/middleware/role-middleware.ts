@@ -17,16 +17,16 @@ export interface AuthRequest extends Request {
 
 export const requireRole = (requiredRoles: string[]) => {
   return async (req: AuthRequest, res: Response, next: NextFunction) => {
-    const { phoneNumber } = req.body;
-    
+    const phoneNumber = (req.body.phoneNumber || req.headers['x-user-phone']) as string;
+
     if (!phoneNumber) {
-      return res.status(400).json({ message: "phoneNumber required in body" });
+      return res.status(400).json({ message: "phoneNumber required in body or x-user-phone header" });
     }
 
     // Validate phone number format
     const phoneValidation = validatePhoneNumber(phoneNumber);
     if (!phoneValidation.valid) {
-      return res.status(400).json({ 
+      return res.status(400).json({
         message: "Invalid phone number format",
         error: phoneValidation.error
       });
@@ -34,7 +34,7 @@ export const requireRole = (requiredRoles: string[]) => {
 
     try {
       const userRepository = AppDataSource.getRepository(User);
-      
+
       // Find user by phone number
       const user = await userRepository.findOne({
         where: { phoneNumber: phoneValidation.formatted },
@@ -42,7 +42,7 @@ export const requireRole = (requiredRoles: string[]) => {
       });
 
       if (!user) {
-        return res.status(404).json({ 
+        return res.status(404).json({
           message: "User not found"
         });
       }
@@ -53,7 +53,8 @@ export const requireRole = (requiredRoles: string[]) => {
       );
 
       if (!hasRequiredRole) {
-        return res.status(403).json({ 
+        console.log(`Role check failed for user ${phoneNumber}. Roles required: ${requiredRoles}. User has roles:`, user.userRoles?.map(ur => ({ role: ur.role.name, status: ur.status })));
+        return res.status(403).json({
           message: "User does not have required role",
           required: requiredRoles,
           userRoles: user.userRoles?.map(ur => ({
@@ -64,7 +65,7 @@ export const requireRole = (requiredRoles: string[]) => {
       }
 
       // Attach user to request
-      (req as any).user = { 
+      (req as any).user = {
         id: user.id,
         phoneNumber: phoneValidation.formatted,
         roles: user.userRoles.map(ur => ur.role.name)
