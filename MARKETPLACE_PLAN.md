@@ -465,6 +465,254 @@ MERCHANT_SUSPENDED = "merchant_suspended",
 
 ---
 
+## 5.5 Multi-Country Readiness — Gap Analysis & Changes
+
+### The Problem
+
+The current codebase is **hardcoded to Ghana** in 6 critical places. To operate in multiple countries (GH, NG, US, CA, IN), every service that touches money, currency, or payment providers needs to resolve configuration from `platform_settings` via the user's country.
+
+### 5.5.1 Hardcoded GHS Locations (must fix)
+
+| File | Line | What's Hardcoded | Fix |
+|---|---|---|---|
+| `payment-service.ts` | L55 | `currency: "GHS"` in payment record creation | Resolve from `platform_settings` via user country |
+| `payment-service.ts` | L97 | `currency: "GHS"` in momo payment initiation | Same — pass currency from caller |
+| `wallet-service.ts` | L20 | `currency: "GHS"` in `createWallet()` | Resolve from user's country → `platform_settings.currency` |
+| `paystack-provider.ts` | L50 | `request.currency \|\| "GHS"` fallback | Always require currency, no GHS fallback |
+| `paystack-provider.ts` | L118 | `currency: "GHS"` in failed verify response | Use request currency, not hardcoded |
+| `notification-service.ts` | L229 | `GHS ${fare}` in ride completed message | Resolve currency symbol from user's country |
+| `notification-service.ts` | L237 | `GHS ${amount}` in payment received message | Same |
+| `notification-service.ts` | L241 | `GHS ${amount}` in driver earnings message | Same |
+| `payment-provider.interface.ts` | L6 | Comment says `// in GHS` | Update comment to `// in local currency` |
+
+### 5.5.2 Model Changes Required
+
+#### `User` — Add `country` column
+
+```
+users (ALTER)
+├── country             VARCHAR(2) DEFAULT 'GH'   -- ISO 3166-1 alpha-2
+```
+
+This is the **anchor**. Every downstream service resolves currency, payment provider, and fee structure from `user.country` → `platform_settings`.
+
+#### `VehiclePricing` — Add `country` column + rename `basePriceCedis`
+
+```
+vehicle_pricing (ALTER)
+├── country             VARCHAR(2) DEFAULT 'GH'
+├── basePrice           DECIMAL(8,2)              -- rename from basePriceCedis
+```
+
+Currently one global set of pricing. Needs per-country pricing so a bike ride in Ghana costs GHS 5 but in Nigeria costs NGN 500.
+Drop the `UNIQUE` constraint on `vehicleType` alone → make it `UNIQUE(vehicleType, country)`.
+
+#### `SurgeRule` — Add `country` column
+
+```
+surge_rules (ALTER)
+├── country             VARCHAR(2) DEFAULT 'GH'
+```
+
+Surge rules need to be country-specific (peak hours differ by timezone/region).
+
+#### `Ride` — Add `currency` column
+
+```
+rides (ALTER)
+├── currency            VARCHAR(3) DEFAULT 'GHS'
+```
+
+Freeze the currency on the ride so historical rides show the correct currency even if settings change.
+
+#### `Order` — Add `currency` column
+
+```
+orders (ALTER)
+├── currency            VARCHAR(3) DEFAULT 'GHS'
+```
+
+Same — freeze currency at checkout time.
+
+### 5.5.3 Payment Provider Strategy
+
+Current: `PaymentService` hardcodes `new PaystackProvider()`.
+
+Paystack supports: **GH, NG, ZA, KE, CI** — that's it. US/CA/IN need different providers.
+
+**Solution: Provider Registry**
+
+```typescript
+// src/services/payment/payment-provider-registry.ts
+
+interface ProviderConfig {
+    provider: PaymentProvider;
+    supportedMethods: PaymentMethodType[];
+    smallestUnit: number;  // 100 for pesewas/kobo, 100 for cents
+}
+
+const PROVIDER_REGISTRY: Record<string, ProviderConfig> = {
+    GH: { provider: new PaystackProvider(), supportedMethods: ["momo", "card", "cash", "wallet"], smallestUnit: 100 },
+    NG: { provider: new PaystackProvider(), supportedMethods: ["card", "cash", "wallet"], smallestUnit: 100 },
+    US: { provider: new StripeProvider(), supportedMethods: ["card", "wallet"], smallestUnit: 100 },
+    CA: { provider: new StripeProvider(), supportedMethods: ["card", "wallet"], smallestUnit: 100 },
+    IN: { provider: new RazorpayProvider(), supportedMethods: ["upi", "card", "wallet"], smallestUnit: 100 },
+};
+
+function getProviderForCountry(country: string): ProviderConfig { ... }
+function getSupportedMethods(country: string): PaymentMethodType[] { ... }
+```
+
+**New files needed:**
+| File | Purpose |
+|---|---|
+| `payment-provider-registry.ts` | Map country → provider + supported methods |
+| `stripe-provider.ts` | Stripe implementation (US, CA, EU) |
+
+> **Note:** `RazorpayProvider` (India) is Phase 3. For now, register it as a stub. Start with Paystack (GH/NG) + Stripe (US/CA).
+
+### 5.5.4 PaymentMethodType — Expand
+
+```typescript
+enum PaymentMethodType {
+    MOMO = "momo",           // GH, KE, CI
+    CARD = "card",           // All countries
+    CASH = "cash",           // GH, NG, IN
+    WALLET = "wallet",       // All countries
+    // Future:
+    // UPI = "upi",          // IN
+    // INTERAC = "interac",  // CA
+}
+```
+
+Add `CARD` to `PaymentMethodType` — it's missing from the current enum but Paystack already supports card charges.
+
+### 5.5.5 Service Changes Required
+
+#### `PaymentService`
+
+| Method | Current | Fix |
+|---|---|---|
+| `processRidePayment()` | Hardcodes `currency: "GHS"`, `new PaystackProvider()` | Accept `country` param → resolve currency from `platform_settings`, resolve provider from registry |
+| `processMomoPayment()` | Hardcodes `currency: "GHS"` in request | Pass currency from caller |
+| `processOrderPayment()` | (new — not built yet) | Build country-aware from day one |
+| `creditDriverEarnings()` | Hardcodes 80/20 split | Read commission from `platform_settings` or merchant override |
+| constructor | `this.provider = new PaystackProvider()` | Remove — resolve per-call from registry |
+
+#### `WalletService`
+
+| Method | Current | Fix |
+|---|---|---|
+| `createWallet()` | `currency: "GHS"` | Accept `country` param → resolve currency from `platform_settings` |
+
+#### `FareService`
+
+| Method | Current | Fix |
+|---|---|---|
+| `calculateFare()` | Reads from global `vehicle_pricing` table (no country filter) | Filter `vehicle_pricing` by country |
+| `getVehiclePricing()` | Returns all pricing, orders by `basePriceCedis` | Filter by country, rename field |
+| `getSurgeMultiplier()` | Reads all surge rules globally | Filter by country |
+
+#### `NotificationService`
+
+| Method | Current | Fix |
+|---|---|---|
+| `notifyRideCompleted()` | `GHS ${fare}` | Accept currency param → use currency symbol map |
+| `notifyPaymentReceived()` | `GHS ${amount}` | Same |
+| `notifyDriverEarnings()` | `GHS ${amount}` | Same |
+
+**Currency symbol helper:**
+
+```typescript
+// src/utils/currency.ts
+const CURRENCY_SYMBOLS: Record<string, string> = {
+    GHS: "GHS", NGN: "₦", USD: "$", CAD: "CA$", INR: "₹", EUR: "€",
+};
+export function formatCurrency(amount: number, currencyCode: string): string {
+    return `${CURRENCY_SYMBOLS[currencyCode] || currencyCode} ${amount.toFixed(2)}`;
+}
+```
+
+### 5.5.6 Momo Provider Detection
+
+`PaystackProvider.detectMomoProvider()` currently only handles Ghana prefixes (024→MTN, 020→Voda, 027→AirtelTigo). This needs to become country-aware:
+
+- **Ghana:** MTN, Vodafone, AirtelTigo (current logic)
+- **Nigeria:** No momo via Paystack (card only)
+- **Kenya:** M-Pesa
+- **Côte d'Ivoire:** MTN, Orange
+
+Move the detection logic to accept country as a param, or let each provider implementation handle its own phone prefix mapping.
+
+### 5.5.7 Migration Required
+
+```sql
+-- Add country to users
+ALTER TABLE "users" ADD COLUMN "country" VARCHAR(2) NOT NULL DEFAULT 'GH';
+
+-- Add country to vehicle_pricing + rename column
+ALTER TABLE "vehicle_pricing" ADD COLUMN "country" VARCHAR(2) NOT NULL DEFAULT 'GH';
+ALTER TABLE "vehicle_pricing" RENAME COLUMN "basePriceCedis" TO "basePrice";
+ALTER TABLE "vehicle_pricing" DROP CONSTRAINT IF EXISTS "UQ_vehicle_pricing_vehicleType";
+CREATE UNIQUE INDEX "UQ_vehicle_pricing_type_country" ON "vehicle_pricing" ("vehicleType", "country");
+
+-- Add country to surge_rules
+ALTER TABLE "surge_rules" ADD COLUMN "country" VARCHAR(2) NOT NULL DEFAULT 'GH';
+
+-- Add currency to rides
+ALTER TABLE "rides" ADD COLUMN "currency" VARCHAR(3) NOT NULL DEFAULT 'GHS';
+
+-- Add currency to orders
+ALTER TABLE "orders" ADD COLUMN "currency" VARCHAR(3) NOT NULL DEFAULT 'GHS';
+
+-- Add CARD to payment method enum
+ALTER TYPE "payment_method_enum" ADD VALUE IF NOT EXISTS 'card';
+```
+
+### 5.5.8 How It All Connects
+
+```
+User signs up → country set (from phone prefix or onboarding)
+                     │
+                     ▼
+         ┌─── platform_settings ───┐
+         │  country: "GH"          │
+         │  currency: "GHS"        │
+         │  commissionRate: 15%    │
+         │  deliveryBaseFee: 5.00  │
+         │  MOV: 50.00             │
+         └────────┬────────────────┘
+                  │
+    ┌─────────────┼─────────────────┐
+    ▼             ▼                 ▼
+ Wallet       Payment           Fare/Order
+ created     Provider           calculations
+ in GHS      = Paystack         use GH pricing
+              (momo+card)       & GH surge rules
+```
+
+### 5.5.9 What We Do NOW vs Later
+
+| Task | When | Why |
+|---|---|---|
+| Add `country` to `User` model | **Now (Phase 2A+)** | Anchor point — everything else depends on this |
+| Add `currency` to `Order` model | **Now** | New model, build it right |
+| Add `currency` to `Ride` model | **Now** | One column, cheap |
+| Add `country` to `VehiclePricing` + rename column | **Now** | Needed before rides go multi-country |
+| Add `country` to `SurgeRule` | **Now** | Same |
+| Create `payment-provider-registry.ts` | **Now** | So new `OrderService` uses it from day one |
+| Create `currency.ts` util | **Now** | Tiny file, used everywhere |
+| Add `CARD` to `PaymentMethodType` | **Now** | Missing, needed for Paystack card + Stripe |
+| Refactor `PaymentService.processRidePayment()` | **Now** | Remove GHS hardcoding |
+| Refactor `WalletService.createWallet()` | **Now** | Remove GHS hardcoding |
+| Refactor `FareService` country filter | **Now** | Filter pricing/surge by country |
+| Refactor `NotificationService` currency | **Now** | Use currency symbol helper |
+| Create `StripeProvider` | **Later (Phase 3)** | Not launching in US/CA yet |
+| Create `RazorpayProvider` | **Later (Phase 3)** | Not launching in India yet |
+| Multi-currency wallets | **Later (Phase 3)** | Complex — currency conversion, etc. |
+
+---
+
 ## 6. API Endpoints & Response Contracts
 
 ### 6.1 Product APIs (`/api/v1/products`)
@@ -1193,6 +1441,20 @@ const settings = [
 5. ☐ Add `products` and `merchants` upload categories
 6. ☐ Deploy & verify tables are created
 
+### Phase 2A+ — Multi-Country Readiness (Week 2)
+
+1. ☐ Add `country` to User, VehiclePricing, SurgeRule models
+2. ☐ Add `currency` to Ride, Order models
+3. ☐ Rename `basePriceCedis` → `basePrice` in VehiclePricing
+4. ☐ Add `CARD` to PaymentMethodType enum
+5. ☐ Create migration `AddMultiCountrySupport`
+6. ☐ Create `src/utils/currency.ts` (symbol map + `formatCurrency()`)
+7. ☐ Create `src/services/payment/payment-provider-registry.ts`
+8. ☐ Refactor `PaymentService` — remove GHS hardcoding, use provider registry
+9. ☐ Refactor `WalletService.createWallet()` — currency from country
+10. ☐ Refactor `FareService` — filter pricing/surge by country
+11. ☐ Refactor `NotificationService` — use `formatCurrency()` helper
+
 ### Phase 2B — Products & Merchant (Week 2-3)
 
 1. ☐ `ProductService` — full CRUD with customizations
@@ -1261,6 +1523,11 @@ src/
 │   ├── merchant-profile.ts          ← MODIFY (add columns)
 │   ├── notification.ts              ← MODIFY (add enum values)
 │   ├── promo-code.ts                ← MODIFY (add columns)
+│   ├── user.ts                      ← MODIFY (add country)
+│   ├── vehicle-pricing.ts           ← MODIFY (add country, rename basePriceCedis)
+│   ├── surge-rule.ts                ← MODIFY (add country)
+│   ├── ride.ts                      ← MODIFY (add currency)
+│   ├── payment.ts                   ← MODIFY (add CARD to enum)
 │   └── ... (existing unchanged)
 │
 ├── controllers/
@@ -1282,9 +1549,18 @@ src/
 │   ├── pickup-code-service.ts        ← NEW
 │   ├── delivery-fee-service.ts       ← NEW
 │   ├── upload-service.ts             ← MODIFY (add categories)
+│   ├── wallet-service.ts             ← MODIFY (country-aware createWallet)
+│   ├── fare-service.ts               ← MODIFY (filter by country)
+│   ├── notification-service.ts       ← MODIFY (use formatCurrency)
 │   ├── payment/
-│   │   └── payment-service.ts        ← MODIFY (add order payments)
+│   │   ├── payment-service.ts        ← MODIFY (provider registry, remove GHS)
+│   │   ├── payment-provider-registry.ts ← NEW
+│   │   ├── paystack-provider.ts      ← MODIFY (country-aware momo detection)
+│   │   └── payment-provider.interface.ts ← MODIFY (update comment)
 │   └── ... (existing unchanged)
+│
+├── utils/
+│   └── currency.ts                   ← NEW (symbol map + formatCurrency)
 │
 ├── routes/
 │   ├── productRoutes.ts              ← NEW
@@ -1308,15 +1584,18 @@ src/
 | Metric | Count |
 |---|---|
 | New TypeORM entities | 11 |
-| Modified entities | 3 |
+| Modified entities (marketplace) | 3 |
+| Modified entities (multi-country) | 5 (User, VehiclePricing, SurgeRule, Ride, Payment) |
 | New API route files | 5 |
-| New service files | 8 |
+| New service files | 8 + 1 (provider registry) |
+| New util files | 1 (currency.ts) |
 | New controller files | 5 |
 | Modified controllers | 1 |
+| Refactored services | 4 (Payment, Wallet, Fare, Notification) |
 | New admin endpoints | ~20 |
 | New customer/merchant endpoints | ~25 |
 | Infrastructure changes | **0** |
-| New env vars | **0** |
+| New env vars | **0** (Stripe key added later Phase 3) |
 | K8s manifest changes | **0** |
 
 **Bottom line:** This is purely a code addition. No infrastructure, no new secrets, no K8s changes. Redis and MinIO are already deployed and ready. PostgreSQL auto-syncs via TypeORM. Ship it. 🚀
