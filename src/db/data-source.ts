@@ -13,6 +13,6 @@ export const AppDataSource = new DataSource({
   synchronize: true,
   logging: process.env.NODE_ENV === "development",
   entities: [__dirname + "/../models/**/*.{ts,js}"],
-  migrations: [__dirname + "/migrations/**/*.{ts,js}"],
+  migrations: [__dirname + "/../migrations/**/*.{ts,js}"],
   subscribers: [__dirname + "/subscribers/**/*.{ts,js}"],
 });

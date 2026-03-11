@@ -36,10 +36,12 @@ export type UploadCategory =
   | "licenses"        // Driver's license photos
   | "registration"    // Business registration docs
   | "avatars"         // Profile photos
-  | "documents";      // General documents
+  | "documents"       // General documents
+  | "products"        // Product images
+  | "merchants";      // Merchant cover images, logos
 
 const VALID_CATEGORIES: UploadCategory[] = [
-  "id-cards", "licenses", "registration", "avatars", "documents",
+  "id-cards", "licenses", "registration", "avatars", "documents", "products", "merchants",
 ];
 
 // ─── Validation ─────────────────────────────────────────────────────

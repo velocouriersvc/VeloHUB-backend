@@ -26,6 +26,29 @@ export enum NotificationType {
     ROLE_REJECTED = "role_rejected",
     PROMO_CODE = "promo_code",
 
+    // Order notifications
+    ORDER_PLACED = "order_placed",
+    ORDER_ACCEPTED = "order_accepted",
+    ORDER_REJECTED = "order_rejected",
+    ORDER_PREPARING = "order_preparing",
+    ORDER_READY = "order_ready",
+    ORDER_PICKED_UP = "order_picked_up",
+    ORDER_IN_TRANSIT = "order_in_transit",
+    ORDER_DELIVERED = "order_delivered",
+    ORDER_COMPLETED = "order_completed",
+    ORDER_CANCELLED = "order_cancelled",
+
+    // Pickup
+    PICKUP_CODE_GENERATED = "pickup_code_generated",
+    PICKUP_CODE_VERIFIED = "pickup_code_verified",
+
+    // Merchant
+    NEW_PRODUCT_REVIEW = "new_product_review",
+    PAYOUT_REQUESTED = "payout_requested",
+    PAYOUT_COMPLETED = "payout_completed",
+    MERCHANT_APPROVED = "merchant_approved",
+    MERCHANT_SUSPENDED = "merchant_suspended",
+
     // General
     SYSTEM = "system",
 }

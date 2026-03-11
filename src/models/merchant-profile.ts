@@ -47,6 +47,25 @@ export class MerchantProfile {
     })
     status: MerchantVerificationStatus;
 
+    // ── Marketplace Fields ──
+    @Column({ type: "text", nullable: true })
+    description: string | null;
+
+    @Column({ type: "text", nullable: true })
+    coverImageUrl: string | null;
+
+    @Column({ type: "boolean", default: false })
+    isOpen: boolean;
+
+    @Column({ type: "decimal", precision: 5, scale: 2, nullable: true })
+    commissionRate: number | null; // overrides platform default
+
+    @Column({ type: "decimal", precision: 5, scale: 2, nullable: true })
+    serviceFeeRate: number | null; // overrides platform default
+
+    @Column({ type: "decimal", precision: 5, scale: 2, nullable: true })
+    pickupFeeRate: number | null; // overrides platform default
+
     @CreateDateColumn()
     createdAt: Date;
 
