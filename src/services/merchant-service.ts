@@ -2,7 +2,7 @@ import { AppDataSource } from "../db/data-source";
 import { MerchantProfile, MerchantVerificationStatus } from "../models/merchant-profile";
 import { MerchantStats } from "../models/merchant-stats";
 import { MerchantOperatingHours } from "../models/merchant-operating-hours";
-import { Order, OrderStatus, OrderPaymentStatus, OrderCancelledBy } from "../models/order";
+import { Order, OrderStatus, OrderPaymentStatus, OrderCancelledBy, DeliveryType } from "../models/order";
 import { OrderStatusHistory } from "../models/order-status-history";
 import { WalletService } from "./wallet-service";
 import { NotificationService } from "./notification-service";
@@ -434,6 +434,97 @@ export class MerchantService {
 
         log.info("Pickup code verified", { orderId, merchantId });
         return { verified: true, order };
+    }
+
+    /**
+     * Complete a pickup order after code verification → triggers settlement.
+     * For pickup orders where the customer (or their delegate) picks up directly.
+     * Verifies the code, then calls SettlementService.
+     */
+    async completePickupOrder(
+        merchantId: string,
+        orderId: string,
+        pickupCode: string
+    ): Promise<{ order: Order; settlement: any }> {
+        // Import here to avoid circular dependency
+        const { SettlementService } = await import("./settlement-service");
+        const settlementService = new SettlementService();
+
+        // First verify the code
+        const result = await this.verifyPickupCode(merchantId, orderId, pickupCode);
+        if (!result.verified) {
+            throw new Error("Invalid pickup code");
+        }
+
+        // Now trigger settlement
+        const settlement = await settlementService.settleOrder(orderId, merchantId, "merchant");
+
+        // Re-fetch the settled order
+        const settledOrder = await this.orderRepo.findOne({ where: { id: orderId } });
+
+        return {
+            order: settledOrder || result.order,
+            settlement,
+        };
+    }
+
+    /**
+     * Request a payout — merchant withdraws from wallet via momo/bank.
+     */
+    async requestPayout(
+        merchantId: string,
+        input: { amount: number; payoutMethod: string; accountNumber: string }
+    ): Promise<{ success: boolean; message: string; reference: string }> {
+        const { amount, payoutMethod, accountNumber } = input;
+
+        if (amount <= 0) throw new Error("Amount must be greater than 0");
+        if (!payoutMethod) throw new Error("Payout method is required");
+        if (!accountNumber) throw new Error("Account number is required");
+
+        // Check wallet balance
+        const hasBalance = await this.walletService.hasEnoughBalance(merchantId, amount);
+        if (!hasBalance) {
+            throw new Error("Insufficient wallet balance for this payout");
+        }
+
+        // Get wallet for currency
+        const wallet = await this.walletService.getWallet(merchantId);
+        const currency = wallet?.currency || "GHS";
+
+        // Debit wallet
+        const tx = await this.walletService.debit(
+            merchantId,
+            amount,
+            `Payout request: ${payoutMethod} → ${accountNumber}`,
+            {
+                type: "payout",
+                payoutMethod,
+                accountNumber,
+                status: "pending", // Admin must approve actual disbursement
+            }
+        );
+
+        // Notify merchant
+        await this.notificationService.notify(
+            merchantId,
+            NotificationType.PAYOUT_REQUESTED,
+            "Payout Requested 💸",
+            `Your payout of ${formatCurrency(amount, currency)} has been submitted and is being processed.`,
+            {
+                amount,
+                payoutMethod,
+                accountNumber,
+                reference: tx.reference,
+            }
+        );
+
+        log.info("Payout requested", { merchantId, amount, payoutMethod, reference: tx.reference });
+
+        return {
+            success: true,
+            message: "Payout request submitted successfully",
+            reference: tx.reference,
+        };
     }
 
     // ── Finances ────────────────────────────────────────────────────

@@ -344,6 +344,87 @@ export class MerchantController {
         }
     };
 
+    /**
+     * POST /merchant/orders/:orderId/complete-pickup — Verify pickup code + trigger settlement.
+     */
+    completePickupOrder = async (req: AuthRequest, res: Response) => {
+        try {
+            const merchantId = req.user?.id;
+            if (!merchantId) return res.status(401).json({ message: "User ID required" });
+
+            const { orderId } = req.params;
+            const { code } = req.body;
+
+            if (!code) {
+                return res.status(400).json({ message: "code is required" });
+            }
+
+            const result = await this.merchantService.completePickupOrder(merchantId, orderId, code);
+
+            return res.status(200).json({
+                message: "Pickup verified! Order completed.",
+                order: result.order,
+                settlement: {
+                    merchantEarnings: result.settlement.merchantEarnings,
+                    platformFee: result.settlement.platformFee,
+                    driverEarnings: result.settlement.driverEarnings,
+                    settlementType: result.settlement.settlementType,
+                    walletCredited: result.settlement.merchantWalletCredited,
+                },
+            });
+        } catch (error) {
+            const message = (error as Error).message;
+            if (message.includes("not found")) {
+                return res.status(404).json({ message });
+            }
+            if (message.includes("Invalid pickup code")) {
+                return res.status(400).json({ message: "Invalid pickup code", verified: false });
+            }
+            if (message.includes("Cannot") || message.includes("already been settled")) {
+                return res.status(400).json({ message });
+            }
+            log.error("Error completing pickup order", { error: message });
+            return res.status(500).json({ message: "Internal server error" });
+        }
+    };
+
+    /**
+     * POST /merchant/request-payout — Request wallet payout.
+     */
+    requestPayout = async (req: AuthRequest, res: Response) => {
+        try {
+            const merchantId = req.user?.id;
+            if (!merchantId) return res.status(401).json({ message: "User ID required" });
+
+            const { amount, payoutMethod, accountNumber } = req.body;
+
+            if (!amount || amount <= 0) {
+                return res.status(400).json({ message: "Amount must be greater than 0" });
+            }
+            if (!payoutMethod) {
+                return res.status(400).json({ message: "payoutMethod is required (e.g., momo, bank)" });
+            }
+            if (!accountNumber) {
+                return res.status(400).json({ message: "accountNumber is required" });
+            }
+
+            const result = await this.merchantService.requestPayout(merchantId, {
+                amount: Number(amount),
+                payoutMethod,
+                accountNumber,
+            });
+
+            return res.status(200).json(result);
+        } catch (error) {
+            const message = (error as Error).message;
+            if (message.includes("Insufficient")) {
+                return res.status(400).json({ message });
+            }
+            log.error("Error requesting payout", { error: message });
+            return res.status(500).json({ message: "Internal server error" });
+        }
+    };
+
     // ── Finances ────────────────────────────────────────────────────
 
     /**

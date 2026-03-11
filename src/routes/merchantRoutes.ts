@@ -494,9 +494,126 @@ router.patch("/orders/:orderId/status", merchantRole, merchantController.updateO
  */
 router.post("/orders/:orderId/verify-pickup", merchantRole, merchantController.verifyPickupCode);
 
+/**
+ * @openapi
+ * /merchant/orders/{orderId}/complete-pickup:
+ *   post:
+ *     tags: [Merchant]
+ *     summary: Complete pickup order (verify code + settle)
+ *     description: |
+ *       Verify the 6-char pickup code and immediately trigger settlement.
+ *       For pickup orders where the customer (or delegate) picks up from the merchant.
+ *
+ *       On success:
+ *       - Code verified, order transitions to COMPLETED
+ *       - Settlement runs (cash pickup → debit merchant platform fee; online pickup → credit merchant)
+ *       - Merchant stats updated
+ *       - Customer and merchant notified
+ *     security:
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - $ref: '#/components/parameters/PhoneNumber'
+ *       - name: orderId
+ *         in: path
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [code]
+ *             properties:
+ *               code:
+ *                 type: string
+ *                 example: "A7K3M2"
+ *     responses:
+ *       200:
+ *         description: Pickup verified, order completed, settlement processed
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                 order:
+ *                   type: object
+ *                 settlement:
+ *                   type: object
+ *                   properties:
+ *                     merchantEarnings:
+ *                       type: number
+ *                     platformFee:
+ *                       type: number
+ *                     settlementType:
+ *                       type: string
+ *                     walletCredited:
+ *                       type: boolean
+ *       400:
+ *         description: Invalid code, wrong status, or already settled
+ *       404:
+ *         description: Order not found
+ */
+router.post("/orders/:orderId/complete-pickup", merchantRole, merchantController.completePickupOrder);
+
 // ════════════════════════════════════════════════════════════════════
 //  FINANCES & STATS
 // ════════════════════════════════════════════════════════════════════
+
+/**
+ * @openapi
+ * /merchant/request-payout:
+ *   post:
+ *     tags: [Merchant]
+ *     summary: Request a wallet payout
+ *     description: |
+ *       Withdraw earnings from merchant wallet via momo or bank.
+ *       Amount is immediately debited from wallet. Actual disbursement is processed by admin.
+ *       Requires **merchant** role.
+ *     security:
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - $ref: '#/components/parameters/PhoneNumber'
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [amount, payoutMethod, accountNumber]
+ *             properties:
+ *               amount:
+ *                 type: number
+ *                 example: 500.00
+ *               payoutMethod:
+ *                 type: string
+ *                 enum: [momo, bank]
+ *                 example: "momo"
+ *               accountNumber:
+ *                 type: string
+ *                 example: "+233241234567"
+ *     responses:
+ *       200:
+ *         description: Payout request submitted
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 message:
+ *                   type: string
+ *                 reference:
+ *                   type: string
+ *       400:
+ *         description: Insufficient balance or invalid input
+ */
+router.post("/request-payout", merchantRole, merchantController.requestPayout);
 
 /**
  * @openapi

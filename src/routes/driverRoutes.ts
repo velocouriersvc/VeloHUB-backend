@@ -1,10 +1,12 @@
 import { Router } from "express";
 import { DriverController } from "../controllers/DriverController";
+import { DeliveryController } from "../controllers/DeliveryController";
 import { apiKeyMiddleware } from "../middleware/api-key-middleware";
 import { requireRole } from "../middleware/role-middleware";
 
 const router = Router();
 const driverController = new DriverController();
+const deliveryController = new DeliveryController();
 
 // Apply API Key Middleware to all driver routes
 router.use(apiKeyMiddleware);
@@ -330,5 +332,344 @@ router.get("/rides/history", driverRole, driverController.getRideHistory);
  *         description: Invalid API key or role not approved
  */
 router.get("/stats", driverRole, driverController.getStats);
+
+// ════════════════════════════════════════════════════════════════════
+//  MARKETPLACE DELIVERIES
+// ════════════════════════════════════════════════════════════════════
+
+/**
+ * @openapi
+ * /driver/deliveries/available:
+ *   get:
+ *     tags: [Driver - Deliveries]
+ *     summary: List available marketplace deliveries
+ *     description: |
+ *       Returns marketplace orders that are **READY_FOR_PICKUP** and need a driver.
+ *       Optionally filter by proximity to driver's current location.
+ *       Ordered by oldest first (FIFO).
+ *       Requires **driver** role.
+ *     security:
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - $ref: '#/components/parameters/PhoneNumber'
+ *       - in: query
+ *         name: lat
+ *         schema:
+ *           type: number
+ *         description: Driver's current latitude
+ *       - in: query
+ *         name: lng
+ *         schema:
+ *           type: number
+ *         description: Driver's current longitude
+ *       - in: query
+ *         name: radiusKm
+ *         schema:
+ *           type: number
+ *           default: 10
+ *         description: Search radius in km (default 10)
+ *     responses:
+ *       200:
+ *         description: List of available deliveries
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 deliveries:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       orderId:
+ *                         type: string
+ *                       orderNumber:
+ *                         type: string
+ *                       merchantName:
+ *                         type: string
+ *                       merchantLat:
+ *                         type: number
+ *                       merchantLng:
+ *                         type: number
+ *                       deliveryAddress:
+ *                         type: string
+ *                       deliveryLat:
+ *                         type: number
+ *                       deliveryLng:
+ *                         type: number
+ *                       estimatedDistanceKm:
+ *                         type: number
+ *                       deliveryFee:
+ *                         type: number
+ *                       itemCount:
+ *                         type: integer
+ *                       currency:
+ *                         type: string
+ *                       createdAt:
+ *                         type: string
+ *                         format: date-time
+ *                 total:
+ *                   type: integer
+ *       403:
+ *         description: Invalid API key or role not approved
+ */
+router.get("/deliveries/available", driverRole, deliveryController.getAvailableDeliveries);
+
+/**
+ * @openapi
+ * /driver/deliveries/active:
+ *   get:
+ *     tags: [Driver - Deliveries]
+ *     summary: Get driver's current active delivery
+ *     description: |
+ *       Returns the in-progress marketplace delivery assigned to this driver, or null.
+ *       Requires **driver** role.
+ *     security:
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - $ref: '#/components/parameters/PhoneNumber'
+ *     responses:
+ *       200:
+ *         description: Active delivery order or null
+ *       403:
+ *         description: Invalid API key or role not approved
+ */
+router.get("/deliveries/active", driverRole, deliveryController.getActiveDelivery);
+
+/**
+ * @openapi
+ * /driver/deliveries/history:
+ *   get:
+ *     tags: [Driver - Deliveries]
+ *     summary: Get driver's delivery history
+ *     description: |
+ *       Paginated list of completed marketplace deliveries.
+ *       Requires **driver** role.
+ *     security:
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - $ref: '#/components/parameters/PhoneNumber'
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *           default: 1
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 20
+ *           maximum: 50
+ *     responses:
+ *       200:
+ *         description: Paginated delivery list
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 deliveries:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                 total:
+ *                   type: integer
+ *                 page:
+ *                   type: integer
+ *                 limit:
+ *                   type: integer
+ *       403:
+ *         description: Invalid API key or role not approved
+ */
+router.get("/deliveries/history", driverRole, deliveryController.getDeliveryHistory);
+
+/**
+ * @openapi
+ * /driver/deliveries/{orderId}/accept:
+ *   post:
+ *     tags: [Driver - Deliveries]
+ *     summary: Accept a marketplace delivery
+ *     description: |
+ *       Driver accepts a delivery order. Uses a Redis lock to prevent double-accept.
+ *       Sets order status to **DRIVER_ASSIGNED**.
+ *       Notifies customer and merchant.
+ *       Requires **driver** role.
+ *     security:
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - $ref: '#/components/parameters/PhoneNumber'
+ *       - in: path
+ *         name: orderId
+ *         required: true
+ *         description: Order ID (UUID)
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *     responses:
+ *       200:
+ *         description: Delivery accepted
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                 order:
+ *                   type: object
+ *                   properties:
+ *                     id:
+ *                       type: string
+ *                     orderNumber:
+ *                       type: string
+ *                     status:
+ *                       type: string
+ *                     deliveryAddress:
+ *                       type: string
+ *                     deliveryFee:
+ *                       type: number
+ *       404:
+ *         description: Order not found
+ *       409:
+ *         description: Delivery already accepted by another driver
+ */
+router.post("/deliveries/:orderId/accept", driverRole, deliveryController.acceptDelivery);
+
+/**
+ * @openapi
+ * /driver/deliveries/{orderId}/status:
+ *   patch:
+ *     tags: [Driver - Deliveries]
+ *     summary: Update delivery status
+ *     description: |
+ *       Transition delivery status through the lifecycle:
+ *       - **picked_up** — Driver has picked up items from merchant
+ *       - **in_transit** — Driver is on the way to customer
+ *       - **delivered** — Items delivered to customer
+ *
+ *       Notifies customer and merchant on each transition.
+ *       Requires **driver** role.
+ *     security:
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - $ref: '#/components/parameters/PhoneNumber'
+ *       - in: path
+ *         name: orderId
+ *         required: true
+ *         description: Order ID (UUID)
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [status]
+ *             properties:
+ *               status:
+ *                 type: string
+ *                 enum: [picked_up, in_transit, delivered]
+ *     responses:
+ *       200:
+ *         description: Status updated
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                 order:
+ *                   type: object
+ *                   properties:
+ *                     id:
+ *                       type: string
+ *                     orderNumber:
+ *                       type: string
+ *                     status:
+ *                       type: string
+ *                     pickedUpAt:
+ *                       type: string
+ *                       format: date-time
+ *                       nullable: true
+ *                     deliveredAt:
+ *                       type: string
+ *                       format: date-time
+ *                       nullable: true
+ *       400:
+ *         description: Invalid transition or not assigned to this driver
+ *       404:
+ *         description: Order not found
+ */
+router.patch("/deliveries/:orderId/status", driverRole, deliveryController.updateDeliveryStatus);
+
+/**
+ * @openapi
+ * /driver/deliveries/{orderId}/complete:
+ *   post:
+ *     tags: [Driver - Deliveries]
+ *     summary: Complete a delivery and trigger settlement
+ *     description: |
+ *       Marks the delivery as **DELIVERED** (if not already) and triggers the settlement flow.
+ *
+ *       **Settlement logic (depends on payment method):**
+ *       - **Cash delivery:** Driver collected cash → wallet debited for merchant + platform shares, merchant wallet credited
+ *       - **Online delivery:** Platform holds funds → merchant wallet credited with earnings, driver wallet credited with delivery fee
+ *
+ *       Returns settlement breakdown with earnings.
+ *       Requires **driver** role.
+ *     security:
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - $ref: '#/components/parameters/PhoneNumber'
+ *       - in: path
+ *         name: orderId
+ *         required: true
+ *         description: Order ID (UUID)
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *     responses:
+ *       200:
+ *         description: Delivery completed and settled
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                 order:
+ *                   type: object
+ *                   properties:
+ *                     id:
+ *                       type: string
+ *                     orderNumber:
+ *                       type: string
+ *                     status:
+ *                       type: string
+ *                     deliveredAt:
+ *                       type: string
+ *                       format: date-time
+ *                 settlement:
+ *                   type: object
+ *                   nullable: true
+ *                   properties:
+ *                     settlementType:
+ *                       type: string
+ *                     merchantEarnings:
+ *                       type: number
+ *                     driverEarnings:
+ *                       type: number
+ *                     platformFee:
+ *                       type: number
+ *       400:
+ *         description: Cannot complete — not assigned or invalid state
+ *       404:
+ *         description: Order not found
+ */
+router.post("/deliveries/:orderId/complete", driverRole, deliveryController.completeDelivery);
 
 export default router;

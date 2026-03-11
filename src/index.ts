@@ -27,6 +27,8 @@ import waitlistRoutes from "./routes/waitlistRoutes";
 import productRoutes from "./routes/productRoutes";
 import merchantRoutes from "./routes/merchantRoutes";
 import searchRoutes from "./routes/searchRoutes";
+import cartRoutes from "./routes/cartRoutes";
+import marketplaceOrderRoutes from "./routes/marketplaceOrderRoutes";
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -84,6 +86,8 @@ app.use("/api/v1/waitlist", waitlistRoutes);
 app.use("/api/v1/products", productRoutes);
 app.use("/api/v1/merchant", merchantRoutes);
 app.use("/api/v1/search", searchRoutes);
+app.use("/api/v1/cart", cartRoutes);
+app.use("/api/v1/marketplace/orders", marketplaceOrderRoutes);
 app.use("/api/orders", orderRoutes);
 
 // Root — Dashboard
