@@ -14,7 +14,7 @@
 ssh root@YOUR_VPS_IP
 ```
 
-```bash
+```bash 
 apt update && apt upgrade -y
 ```
 
