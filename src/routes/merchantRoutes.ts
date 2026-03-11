@@ -3,6 +3,8 @@ import { MerchantController } from "../controllers/MerchantController";
 import { apiKeyMiddleware } from "../middleware/api-key-middleware";
 import { requireRole } from "../middleware/role-middleware";
 import { upload } from "../middleware/upload-middleware";
+import { validate, body } from "../middleware/validate";
+import { OrderStatus } from "../models/order";
 
 const router = Router();
 const merchantController = new MerchantController();
@@ -164,7 +166,9 @@ router.post("/profile/cover-image", merchantRole, upload.single("file"), merchan
  *       403:
  *         description: Invalid API key or merchant role not approved
  */
-router.patch("/toggle-open", merchantRole, merchantController.toggleOpen);
+router.patch("/toggle-open", merchantRole, validate([
+    body("isOpen").required().isBoolean(),
+]), merchantController.toggleOpen);
 
 // ════════════════════════════════════════════════════════════════════
 //  OPERATING HOURS
@@ -242,7 +246,9 @@ router.get("/hours", merchantRole, merchantController.getOperatingHours);
  *       403:
  *         description: Invalid API key or merchant role not approved
  */
-router.put("/hours", merchantRole, merchantController.setOperatingHours);
+router.put("/hours", merchantRole, validate([
+    body("hours").required().isArray(),
+]), merchantController.setOperatingHours);
 
 /**
  * @openapi
@@ -364,7 +370,9 @@ router.get("/orders", merchantRole, merchantController.getOrders);
  *       403:
  *         description: Invalid API key or merchant role not approved
  */
-router.patch("/orders/:orderId/accept", merchantRole, merchantController.acceptOrder);
+router.patch("/orders/:orderId/accept", merchantRole, validate([
+    body("estimatedPrepMinutes").optional().isNumber().isPositive(),
+]), merchantController.acceptOrder);
 
 /**
  * @openapi
@@ -404,7 +412,9 @@ router.patch("/orders/:orderId/accept", merchantRole, merchantController.acceptO
  *       403:
  *         description: Invalid API key or merchant role not approved
  */
-router.patch("/orders/:orderId/reject", merchantRole, merchantController.rejectOrder);
+router.patch("/orders/:orderId/reject", merchantRole, validate([
+    body("reason").required().isString().minLength(3),
+]), merchantController.rejectOrder);
 
 /**
  * @openapi
@@ -449,7 +459,9 @@ router.patch("/orders/:orderId/reject", merchantRole, merchantController.rejectO
  *       403:
  *         description: Invalid API key or merchant role not approved
  */
-router.patch("/orders/:orderId/status", merchantRole, merchantController.updateOrderStatus);
+router.patch("/orders/:orderId/status", merchantRole, validate([
+    body("status").required().isIn([OrderStatus.PREPARING, OrderStatus.READY_FOR_PICKUP]),
+]), merchantController.updateOrderStatus);
 
 /**
  * @openapi
@@ -492,7 +504,9 @@ router.patch("/orders/:orderId/status", merchantRole, merchantController.updateO
  *       403:
  *         description: Invalid API key or merchant role not approved
  */
-router.post("/orders/:orderId/verify-pickup", merchantRole, merchantController.verifyPickupCode);
+router.post("/orders/:orderId/verify-pickup", merchantRole, validate([
+    body("pickupCode").required().isString().minLength(6),
+]), merchantController.verifyPickupCode);
 
 /**
  * @openapi

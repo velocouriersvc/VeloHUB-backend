@@ -1,3 +1,4 @@
+import { FindOptionsWhere } from "typeorm";
 import { AppDataSource } from "../db/data-source";
 import { Order, OrderStatus, OrderPaymentMethod, OrderPaymentStatus, DeliveryType, OrderCancelledBy } from "../models/order";
 import { OrderStatusHistory } from "../models/order-status-history";
@@ -368,16 +369,16 @@ export class OrderService {
                         savedOrder.paymentStatus = OrderPaymentStatus.PAID;
                     }
                     await this.orderRepo.save(savedOrder);
-                } catch (payError: any) {
+                } catch (payError) {
                     // Payment failed — restore stock, delete order
                     log.error("Payment failed during checkout, restoring stock", {
                         orderId: savedOrder.id,
-                        error: payError.message,
+                        error: (payError as Error).message,
                     });
                     await this.productService.restoreStock(stockItems);
                     await this.historyRepo.delete({ orderId: savedOrder.id });
                     await this.orderRepo.delete(savedOrder.id);
-                    throw new Error(`Payment failed: ${payError.message}`);
+                    throw new Error(`Payment failed: ${(payError as Error).message}`);
                 }
             }
 
@@ -460,7 +461,7 @@ export class OrderService {
         const limit = Math.min(params.limit || 20, 50);
         const offset = (page - 1) * limit;
 
-        const where: any = { customerId };
+        const where: FindOptionsWhere<Order> = { customerId };
         if (params.status) where.status = params.status;
 
         const [orders, total] = await this.orderRepo.findAndCount({

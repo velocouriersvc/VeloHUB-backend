@@ -3,6 +3,7 @@ import { RatingController } from "../controllers/RatingController";
 import { OrderRatingController } from "../controllers/OrderRatingController";
 import { apiKeyMiddleware } from "../middleware/api-key-middleware";
 import { requireRole } from "../middleware/role-middleware";
+import { validate, body } from "../middleware/validate";
 
 const router = Router();
 const ratingController = new RatingController();
@@ -189,7 +190,11 @@ router.get("/driver/:driverId", requireRole(["buyer", "driver"]), ratingControll
  *       404:
  *         description: Order not found
  */
-router.post("/order", requireRole(["buyer"]), orderRatingController.rateOrder);
+router.post("/order", requireRole(["buyer"]), validate([
+    body("orderId").required().isUUID(),
+    body("merchantRating").required().isNumber().min(1).max(5),
+    body("deliveryRating").optional().isNumber().min(1).max(5),
+]), orderRatingController.rateOrder);
 
 /**
  * @openapi

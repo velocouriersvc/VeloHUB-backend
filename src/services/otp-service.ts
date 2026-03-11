@@ -36,8 +36,8 @@ export class OtpService {
         try {
             await twilioService.sendSMS(phoneNumber, `Your verification code is: ${code}`);
             log.info("OTP SMS sent successfully");
-        } catch (error: any) {
-            log.error("Failed to send OTP SMS", { error: error.message });
+        } catch (error) {
+            log.error("Failed to send OTP SMS", { error: (error as Error).message });
         }
         return code;
     }

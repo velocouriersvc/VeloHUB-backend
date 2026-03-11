@@ -27,8 +27,8 @@ export class PaymentController {
 
             // Always respond 200 to Paystack
             return res.status(200).json({ message: "ok" });
-        } catch (error: any) {
-            log.error("Webhook error", { error: error.message });
+        } catch (error) {
+            log.error("Webhook error", { error: (error as Error).message });
             // Still return 200 to prevent retries on our errors
             return res.status(200).json({ message: "ok" });
         }
@@ -48,8 +48,8 @@ export class PaymentController {
             }
 
             return res.json({ payment });
-        } catch (error: any) {
-            log.error("Error verifying payment", { error: error.message });
+        } catch (error) {
+            log.error("Error verifying payment", { error: (error as Error).message });
             return res.status(500).json({ message: "Internal server error" });
         }
     };
@@ -68,8 +68,8 @@ export class PaymentController {
 
             const result = await this.paymentService.getUserPayments(userId, limit, offset);
             return res.json(result);
-        } catch (error: any) {
-            log.error("Error getting payment history", { error: error.message });
+        } catch (error) {
+            log.error("Error getting payment history", { error: (error as Error).message });
             return res.status(500).json({ message: "Internal server error" });
         }
     };

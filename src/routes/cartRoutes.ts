@@ -2,6 +2,7 @@ import { Router } from "express";
 import { CartController } from "../controllers/CartController";
 import { apiKeyMiddleware } from "../middleware/api-key-middleware";
 import { requireRole } from "../middleware/role-middleware";
+import { validate, body } from "../middleware/validate";
 
 const router = Router();
 const cartController = new CartController();
@@ -168,7 +169,10 @@ router.get("/", buyerRole, cartController.getCart);
  *                 newMerchant:
  *                   type: string
  */
-router.post("/add", buyerRole, cartController.addItem);
+router.post("/add", buyerRole, validate([
+    body("productId").required().isUUID(),
+    body("quantity").required().isNumber().isPositive(),
+]), cartController.addItem);
 
 /**
  * @openapi
@@ -207,7 +211,9 @@ router.post("/add", buyerRole, cartController.addItem);
  *       404:
  *         description: Cart or item not found
  */
-router.patch("/items/:itemId", buyerRole, cartController.updateItemQuantity);
+router.patch("/items/:itemId", buyerRole, validate([
+    body("quantity").required().isNumber().min(1),
+]), cartController.updateItemQuantity);
 
 /**
  * @openapi

@@ -3,6 +3,8 @@ import { DriverController } from "../controllers/DriverController";
 import { DeliveryController } from "../controllers/DeliveryController";
 import { apiKeyMiddleware } from "../middleware/api-key-middleware";
 import { requireRole } from "../middleware/role-middleware";
+import { validate, body } from "../middleware/validate";
+import { OrderStatus } from "../models/order";
 
 const router = Router();
 const driverController = new DriverController();
@@ -603,7 +605,9 @@ router.post("/deliveries/:orderId/accept", driverRole, deliveryController.accept
  *       404:
  *         description: Order not found
  */
-router.patch("/deliveries/:orderId/status", driverRole, deliveryController.updateDeliveryStatus);
+router.patch("/deliveries/:orderId/status", driverRole, validate([
+    body("status").required().isIn([OrderStatus.PICKED_UP, OrderStatus.IN_TRANSIT, OrderStatus.DELIVERED]),
+]), deliveryController.updateDeliveryStatus);
 
 /**
  * @openapi

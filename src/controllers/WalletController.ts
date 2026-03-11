@@ -25,8 +25,8 @@ export class WalletController {
             }
 
             return res.json({ wallet });
-        } catch (error: any) {
-            log.error("Error getting wallet", { error: error.message });
+        } catch (error) {
+            log.error("Error getting wallet", { error: (error as Error).message });
             return res.status(500).json({ message: "Internal server error" });
         }
     };
@@ -45,8 +45,8 @@ export class WalletController {
 
             const result = await this.walletService.getTransactions(userId, limit, offset);
             return res.json(result);
-        } catch (error: any) {
-            log.error("Error getting transactions", { error: error.message });
+        } catch (error) {
+            log.error("Error getting transactions", { error: (error as Error).message });
             return res.status(500).json({ message: "Internal server error" });
         }
     };

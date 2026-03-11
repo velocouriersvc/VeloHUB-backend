@@ -24,6 +24,12 @@ export interface DistanceResult {
     durationText: string;
 }
 
+interface GooglePrediction {
+    place_id: string;
+    description: string;
+    structured_formatting?: { main_text?: string; secondary_text?: string };
+}
+
 const GOOGLE_MAPS_BASE = "https://maps.googleapis.com/maps/api";
 
 export class PlacesService {
@@ -54,7 +60,7 @@ export class PlacesService {
 
         const predictions = response.data.predictions || [];
 
-        return predictions.map((p: any) => ({
+        return predictions.map((p: GooglePrediction) => ({
             placeId: p.place_id,
             description: p.description,
             mainText: p.structured_formatting?.main_text || "",

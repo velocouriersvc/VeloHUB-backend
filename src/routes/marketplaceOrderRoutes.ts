@@ -2,6 +2,8 @@ import { Router } from "express";
 import { MarketplaceOrderController } from "../controllers/MarketplaceOrderController";
 import { apiKeyMiddleware } from "../middleware/api-key-middleware";
 import { requireRole } from "../middleware/role-middleware";
+import { validate, body } from "../middleware/validate";
+import { DeliveryType, OrderPaymentMethod } from "../models/order";
 
 const router = Router();
 const orderController = new MarketplaceOrderController();
@@ -89,7 +91,11 @@ const buyerRole = requireRole(["buyer"]);
  *       400:
  *         description: Cart empty, below MOV, or missing delivery coordinates
  */
-router.post("/quote", buyerRole, orderController.getQuote);
+router.post("/quote", buyerRole, validate([
+    body("deliveryType").required().isIn(Object.values(DeliveryType)),
+    body("deliveryLat").optional().isNumber(),
+    body("deliveryLng").optional().isNumber(),
+]), orderController.getQuote);
 
 // ════════════════════════════════════════════════════════════════════
 //  CHECKOUT
@@ -196,7 +202,12 @@ router.post("/quote", buyerRole, orderController.getQuote);
  *       409:
  *         description: Out of stock
  */
-router.post("/checkout", buyerRole, orderController.checkout);
+router.post("/checkout", buyerRole, validate([
+    body("deliveryType").required().isIn(Object.values(DeliveryType)),
+    body("paymentMethod").required().isIn(Object.values(OrderPaymentMethod)),
+    body("deliveryLat").optional().isNumber(),
+    body("deliveryLng").optional().isNumber(),
+]), orderController.checkout);
 
 // ════════════════════════════════════════════════════════════════════
 //  MY ORDERS — static routes before :id

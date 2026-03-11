@@ -38,8 +38,8 @@ export class AuthService {
         try {
             await this.otpService.createOtp(phoneNumber);
             log.info("OTP request initiated");
-        } catch (error: any) {
-            log.error("Failed to request OTP", { error: error.message });
+        } catch (error) {
+            log.error("Failed to request OTP", { error: (error as Error).message });
             throw new Error("Failed to send verification code. Please try again later.");
         }
     }
@@ -83,7 +83,7 @@ export class AuthService {
             user: {
                 id: user.id,
                 is_new_user: isNewUser,
-                roles: user.userRoles?.map((ur: any) => ur.role.name) || [],
+                roles: user.userRoles?.map((ur: UserRole) => ur.role.name) || [],
             }
         };
     }
@@ -119,7 +119,7 @@ export class AuthService {
                 email: user.email || undefined,
                 phoneNumber: user.phoneNumber || undefined,
                 status: user.status,
-                roles: user.userRoles?.map((ur: any) => ur.role.name) || [],
+                roles: user.userRoles?.map((ur: UserRole) => ur.role.name) || [],
             },
             isNewUser
         };

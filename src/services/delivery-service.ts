@@ -2,7 +2,7 @@ import { AppDataSource } from "../db/data-source";
 import { Order, OrderStatus, DeliveryType, OrderCancelledBy } from "../models/order";
 import { OrderStatusHistory } from "../models/order-status-history";
 import { MerchantProfile } from "../models/merchant-profile";
-import { SettlementService } from "./settlement-service";
+import { SettlementService, SettlementResult } from "./settlement-service";
 import { NotificationService } from "./notification-service";
 import { NotificationType } from "../models/notification";
 import { redis } from "../utils/redis";
@@ -289,7 +289,7 @@ export class DeliveryService {
     async completeDelivery(
         driverId: string,
         orderId: string
-    ): Promise<{ order: Order; settlement: any }> {
+    ): Promise<{ order: Order; settlement: SettlementResult }> {
         const order = await this.orderRepo.findOne({
             where: { id: orderId, driverId },
         });

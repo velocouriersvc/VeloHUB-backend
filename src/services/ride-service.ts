@@ -640,8 +640,8 @@ export class RideService {
                 await this.twilioService.sendSMS(contact.phone, message);
                 contact.notified = true;
                 await this.contactRepo.save(contact);
-            } catch (err: any) {
-                log.error("Failed to notify shared contact", { rideId, error: err.message });
+            } catch (err) {
+                log.error("Failed to notify shared contact", { rideId, error: (err as Error).message });
             }
         }
     }

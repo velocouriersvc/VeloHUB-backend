@@ -25,7 +25,7 @@ export class LocationController {
 
             const location = await this.locationService.saveLocation(userId, label, address, Number(lat), Number(lng));
             return res.status(201).json({ location });
-        } catch (error: any) {
+        } catch (error) {
             log.error("Error saving location", { error: (error as Error).message });
             return res.status(500).json({ message: "Internal server error" });
         }
@@ -42,7 +42,7 @@ export class LocationController {
 
             const locations = await this.locationService.getUserLocations(userId);
             return res.json({ locations });
-        } catch (error: any) {
+        } catch (error) {
             log.error("Error getting locations", { error: (error as Error).message });
             return res.status(500).json({ message: "Internal server error" });
         }
@@ -68,9 +68,9 @@ export class LocationController {
             });
 
             return res.json({ location });
-        } catch (error: any) {
+        } catch (error) {
             log.error("Error updating location", { error: (error as Error).message });
-            return res.status(400).json({ message: error.message || "Internal server error" });
+            return res.status(400).json({ message: (error as Error).message || "Internal server error" });
         }
     };
 
@@ -85,9 +85,9 @@ export class LocationController {
 
             await this.locationService.deleteLocation(req.params.id, userId);
             return res.json({ message: "Location deleted" });
-        } catch (error: any) {
+        } catch (error) {
             log.error("Error deleting location", { error: (error as Error).message });
-            return res.status(400).json({ message: error.message || "Internal server error" });
+            return res.status(400).json({ message: (error as Error).message || "Internal server error" });
         }
     };
 }

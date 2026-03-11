@@ -3,6 +3,8 @@ import { ProductController } from "../controllers/ProductController";
 import { apiKeyMiddleware } from "../middleware/api-key-middleware";
 import { requireRole } from "../middleware/role-middleware";
 import { upload } from "../middleware/upload-middleware";
+import { validate, body } from "../middleware/validate";
+import { ProductCategory } from "../models/product";
 
 const router = Router();
 const productController = new ProductController();
@@ -134,7 +136,9 @@ router.get("/my", merchantRole, productController.getMyProducts);
  *       403:
  *         description: Invalid API key or merchant role not approved
  */
-router.patch("/stock", merchantRole, productController.updateStock);
+router.patch("/stock", merchantRole, validate([
+    body("items").required().isArray(),
+]), productController.updateStock);
 
 // ── Customization sub-routes (static paths) ─────────────────────────
 
@@ -390,7 +394,11 @@ router.get("/:id", anyRole, productController.getProduct);
  *       403:
  *         description: Invalid API key or merchant role not approved
  */
-router.post("/", merchantRole, productController.createProduct);
+router.post("/", merchantRole, validate([
+    body("name").required().isString().minLength(2),
+    body("category").required().isIn(Object.values(ProductCategory)),
+    body("price").required().isNumber().isPositive(),
+]), productController.createProduct);
 
 /**
  * @openapi

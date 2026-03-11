@@ -16,7 +16,7 @@ export interface Profile {
     created_at: string;
     updated_at: string;
     user_type: UserType;
-    last_location: any | null;
+    last_location: { lat: number; lng: number } | null;
     referral_code: string | null;
     referral_credits: number;
     referred_by: string | null;

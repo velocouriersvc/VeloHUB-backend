@@ -54,7 +54,7 @@ export class NotificationService {
 
         // 2. Send push notification (fire-and-forget, don't block)
         this.sendPushNotification(userId, title, body, data).catch((err) => {
-            log.error("Push notification failed", { userId, error: err.message });
+            log.error("Push notification failed", { userId, error: (err as Error).message });
             notificationEventsTotal.inc({ channel: "push", status: "failed" });
         });
 
@@ -70,8 +70,8 @@ export class NotificationService {
     ): Promise<void> {
         try {
             await this.twilioService.sendSMS(phoneNumber, message);
-        } catch (err: any) {
-            log.error("SMS notification failed", { error: err.message });
+        } catch (err) {
+            log.error("SMS notification failed", { error: (err as Error).message });
         }
     }
 
@@ -84,8 +84,8 @@ export class NotificationService {
     ): Promise<void> {
         try {
             await this.twilioService.sendWhatsApp(phoneNumber, message);
-        } catch (err: any) {
-            log.error("WhatsApp notification failed", { error: err.message });
+        } catch (err) {
+            log.error("WhatsApp notification failed", { error: (err as Error).message });
         }
     }
 

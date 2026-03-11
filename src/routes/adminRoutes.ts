@@ -2,6 +2,8 @@ import { Router } from "express";
 import { AdminController } from "../controllers/AdminController";
 import { apiKeyMiddleware } from "../middleware/api-key-middleware";
 import { requireRole } from "../middleware/role-middleware";
+import { validate, body } from "../middleware/validate";
+import { OrderStatus } from "../models/order";
 
 const router = Router();
 const adminController = new AdminController();
@@ -291,7 +293,10 @@ router.get("/orders/:id", adminRole, adminController.getOrderDetail);
  *       404:
  *         description: Order not found
  */
-router.patch("/orders/:id/status", adminRole, adminController.overrideOrderStatus);
+router.patch("/orders/:id/status", adminRole, validate([
+    body("status").required().isIn(Object.values(OrderStatus)),
+    body("reason").optional().isString(),
+]), adminController.overrideOrderStatus);
 
 /**
  * @openapi
@@ -389,7 +394,9 @@ router.post("/orders/:id/cancel", adminRole, adminController.adminCancelOrder);
  *       404:
  *         description: Order or driver not found
  */
-router.post("/orders/:id/assign-driver", adminRole, adminController.assignDriver);
+router.post("/orders/:id/assign-driver", adminRole, validate([
+    body("driverId").required().isUUID(),
+]), adminController.assignDriver);
 
 /**
  * @openapi
@@ -423,7 +430,10 @@ router.post("/orders/:id/assign-driver", adminRole, adminController.assignDriver
  *       404:
  *         description: Order or driver not found
  */
-router.post("/orders/:id/reassign-driver", adminRole, adminController.reassignDriver);
+router.post("/orders/:id/reassign-driver", adminRole, validate([
+    body("driverId").required().isUUID(),
+    body("reason").optional().isString(),
+]), adminController.reassignDriver);
 
 // ────────────────────────────────────────────────────────────────
 //  Products
@@ -788,7 +798,9 @@ router.patch("/payouts/:id/approve", adminRole, adminController.approvePayout);
  *       404:
  *         description: Payout not found
  */
-router.patch("/payouts/:id/reject", adminRole, adminController.rejectPayout);
+router.patch("/payouts/:id/reject", adminRole, validate([
+    body("reason").required().isString().minLength(5),
+]), adminController.rejectPayout);
 
 // ────────────────────────────────────────────────────────────────
 //  Platform Settings
@@ -948,7 +960,10 @@ router.get("/reports/orders", adminRole, adminController.getOrderReport);
  *       404:
  *         description: User not found
  */
-router.post("/users/:id/credit-wallet", adminRole, adminController.creditWallet);
+router.post("/users/:id/credit-wallet", adminRole, validate([
+    body("amount").required().isNumber().isPositive(),
+    body("description").required().isString().minLength(3),
+]), adminController.creditWallet);
 
 /**
  * @openapi
@@ -985,6 +1000,9 @@ router.post("/users/:id/credit-wallet", adminRole, adminController.creditWallet)
  *       404:
  *         description: User not found
  */
-router.post("/users/:id/debit-wallet", adminRole, adminController.debitWallet);
+router.post("/users/:id/debit-wallet", adminRole, validate([
+    body("amount").required().isNumber().isPositive(),
+    body("description").required().isString().minLength(3),
+]), adminController.debitWallet);
 
 export default router;

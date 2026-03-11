@@ -231,11 +231,11 @@ export class SettlementService {
                     metadata
                 );
                 driverDebited = true;
-            } catch (err: any) {
+            } catch (err) {
                 log.warn("Driver wallet debit failed (insufficient balance?)", {
                     driverId: order.driverId,
                     amount: driverOwes,
-                    error: err.message,
+                    error: (err as Error).message,
                 });
                 // Don't fail settlement — flag it for admin review
             }
@@ -306,11 +306,11 @@ export class SettlementService {
                     metadata
                 );
                 merchantDebited = true;
-            } catch (err: any) {
+            } catch (err) {
                 log.warn("Merchant wallet debit failed for pickup fee", {
                     merchantId: order.merchantId,
                     amount: platformFee,
-                    error: err.message,
+                    error: (err as Error).message,
                 });
             }
         }

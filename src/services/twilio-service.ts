@@ -37,8 +37,8 @@ export class TwilioService {
             log.info('SMS sent successfully', { sid: message.sid });
             notificationEventsTotal.inc({ channel: 'sms', status: 'success' });
             return message.sid;
-        } catch (error: any) {
-            log.error('Failed to send SMS', { error: error.message });
+        } catch (error) {
+            log.error('Failed to send SMS', { error: (error as Error).message });
             notificationEventsTotal.inc({ channel: 'sms', status: 'failed' });
             throw error;
         }
@@ -57,14 +57,14 @@ export class TwilioService {
             log.info('WhatsApp message sent successfully', { sid: message.sid });
             notificationEventsTotal.inc({ channel: 'whatsapp', status: 'success' });
             return message.sid;
-        } catch (error: any) {
-            log.error('Failed to send WhatsApp message', { error: error.message });
+        } catch (error) {
+            log.error('Failed to send WhatsApp message', { error: (error as Error).message });
             notificationEventsTotal.inc({ channel: 'whatsapp', status: 'failed' });
             throw error;
         }
     }
 
-    async getMessageStatus(sid: string): Promise<any> {
+    async getMessageStatus(sid: string): Promise<{ status: string; errorCode: number | null; errorMessage: string | null; dateUpdated: Date }> {
         try {
             const message = await this.client.messages(sid).fetch();
             return {
@@ -73,21 +73,21 @@ export class TwilioService {
                 errorMessage: message.errorMessage,
                 dateUpdated: message.dateUpdated
             };
-        } catch (error: any) {
-            log.error('Failed to fetch message status', { sid, error: error.message });
+        } catch (error) {
+            log.error('Failed to fetch message status', { sid, error: (error as Error).message });
             throw error;
         }
     }
 
-    async sendVerification(to: string, channel: 'sms' | 'whatsapp' = 'sms'): Promise<any> {
+    async sendVerification(to: string, channel: 'sms' | 'whatsapp' = 'sms'): Promise<{ status: string; sid: string }> {
         try {
             const verification = await this.client.verify.v2
                 .services(this.verifyServiceSid)
                 .verifications.create({ to, channel });
             log.info('Verification sent', { channel, status: verification.status });
             return verification;
-        } catch (error: any) {
-            log.error('Failed to send verification', { channel, error: error.message });
+        } catch (error) {
+            log.error('Failed to send verification', { channel, error: (error as Error).message });
             throw error;
         }
     }
@@ -99,8 +99,8 @@ export class TwilioService {
                 .verificationChecks.create({ to, code });
             log.info('Verification check completed', { status: check.status });
             return check.status === 'approved';
-        } catch (error: any) {
-            log.error('Failed to check verification', { error: error.message });
+        } catch (error) {
+            log.error('Failed to check verification', { error: (error as Error).message });
             return false;
         }
     }

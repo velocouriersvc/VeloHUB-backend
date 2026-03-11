@@ -23,8 +23,8 @@ export class NotificationController {
 
             const result = await this.notificationService.getUserNotifications(userId, limit, offset);
             return res.json(result);
-        } catch (error: any) {
-            log.error("Error getting notifications", { error: error.message });
+        } catch (error) {
+            log.error("Error getting notifications", { error: (error as Error).message });
             return res.status(500).json({ message: "Internal server error" });
         }
     };
@@ -40,8 +40,8 @@ export class NotificationController {
 
             await this.notificationService.markAsRead(req.params.id, userId);
             return res.json({ message: "Notification marked as read" });
-        } catch (error: any) {
-            log.error("Error marking notification", { error: error.message });
+        } catch (error) {
+            log.error("Error marking notification", { error: (error as Error).message });
             return res.status(500).json({ message: "Internal server error" });
         }
     };
@@ -57,8 +57,8 @@ export class NotificationController {
 
             await this.notificationService.markAllAsRead(userId);
             return res.json({ message: "All notifications marked as read" });
-        } catch (error: any) {
-            log.error("Error marking all notifications", { error: error.message });
+        } catch (error) {
+            log.error("Error marking all notifications", { error: (error as Error).message });
             return res.status(500).json({ message: "Internal server error" });
         }
     };
@@ -84,8 +84,8 @@ export class NotificationController {
 
             const pushToken = await this.notificationService.registerPushToken(userId, token, platform);
             return res.status(201).json({ pushToken });
-        } catch (error: any) {
-            log.error("Error registering push token", { error: error.message });
+        } catch (error) {
+            log.error("Error registering push token", { error: (error as Error).message });
             return res.status(500).json({ message: "Internal server error" });
         }
     };
@@ -107,8 +107,8 @@ export class NotificationController {
 
             await this.notificationService.removePushToken(userId, token);
             return res.json({ message: "Push token removed" });
-        } catch (error: any) {
-            log.error("Error removing push token", { error: error.message });
+        } catch (error) {
+            log.error("Error removing push token", { error: (error as Error).message });
             return res.status(500).json({ message: "Internal server error" });
         }
     };

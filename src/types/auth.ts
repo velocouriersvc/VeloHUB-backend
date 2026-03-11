@@ -25,7 +25,7 @@ export interface SupabaseUser {
     id: string;
     email?: string;
     phone?: string;
-    [key: string]: any;
+    [key: string]: unknown;
 }
 
 export interface AuthenticatedRequest extends Request {

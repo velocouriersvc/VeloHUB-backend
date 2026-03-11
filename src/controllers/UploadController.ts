@@ -43,20 +43,21 @@ export class UploadController {
         message: "File uploaded successfully",
         data: result,
       });
-    } catch (error: any) {
+    } catch (error) {
+      const msg = (error as Error).message;
       // Validation errors from UploadService
       if (
-        error.message?.includes("not allowed") ||
-        error.message?.includes("too large") ||
-        error.message?.includes("does not match") ||
-        error.message?.includes("suspicious") ||
-        error.message?.includes("Invalid category") ||
-        error.message?.includes("empty")
+        msg?.includes("not allowed") ||
+        msg?.includes("too large") ||
+        msg?.includes("does not match") ||
+        msg?.includes("suspicious") ||
+        msg?.includes("Invalid category") ||
+        msg?.includes("empty")
       ) {
-        return res.status(400).json({ message: error.message });
+        return res.status(400).json({ message: msg });
       }
 
-      log.error("Upload error", { error: error.message });
+      log.error("Upload error", { error: msg });
       return res.status(500).json({ message: "Internal server error" });
     }
   };

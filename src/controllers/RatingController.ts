@@ -25,9 +25,9 @@ export class RatingController {
 
             const result = await this.ratingService.rateRide(rideId, userId, Number(rating), comment);
             return res.status(201).json({ rating: result });
-        } catch (error: any) {
+        } catch (error) {
             log.error("Error rating ride", { error: (error as Error).message });
-            return res.status(400).json({ message: error.message || "Internal server error" });
+            return res.status(400).json({ message: (error as Error).message || "Internal server error" });
         }
     };
 
@@ -39,7 +39,7 @@ export class RatingController {
         try {
             const rating = await this.ratingService.getRideRating(req.params.rideId);
             return res.json({ rating });
-        } catch (error: any) {
+        } catch (error) {
             log.error("Error getting rating", { error: (error as Error).message });
             return res.status(500).json({ message: "Internal server error" });
         }
@@ -57,7 +57,7 @@ export class RatingController {
 
             const result = await this.ratingService.getDriverRatings(driverId, limit, offset);
             return res.json(result);
-        } catch (error: any) {
+        } catch (error) {
             log.error("Error getting driver ratings", { error: (error as Error).message });
             return res.status(500).json({ message: "Internal server error" });
         }

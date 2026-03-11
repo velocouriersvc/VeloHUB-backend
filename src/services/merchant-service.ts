@@ -9,7 +9,9 @@ import { NotificationService } from "./notification-service";
 import { NotificationType } from "../models/notification";
 import { createServiceLogger } from "../utils/logger";
 import { formatCurrency } from "../utils/currency";
-import { Between, In } from "typeorm";
+import { Between, In, FindOptionsWhere } from "typeorm";
+import { SettlementResult } from "./settlement-service";
+import { WalletTransactionResponse } from "../types/merchant";
 
 const log = createServiceLogger("MerchantService");
 
@@ -36,7 +38,7 @@ export interface MerchantFinances {
     totalEarnings: number;
     pendingSettlement: number;
     completedOrders: number;
-    recentTransactions: any[];
+    recentTransactions: WalletTransactionResponse[];
 }
 
 // ── Service ─────────────────────────────────────────────────────────
@@ -233,7 +235,7 @@ export class MerchantService {
         const limit = Math.min(params.limit || 20, 50);
         const offset = (page - 1) * limit;
 
-        const where: any = { merchantId };
+        const where: FindOptionsWhere<Order> = { merchantId };
         if (params.status) where.status = params.status;
 
         const [orders, total] = await this.orderRepo.findAndCount({
@@ -445,7 +447,7 @@ export class MerchantService {
         merchantId: string,
         orderId: string,
         pickupCode: string
-    ): Promise<{ order: Order; settlement: any }> {
+    ): Promise<{ order: Order; settlement: SettlementResult }> {
         // Import here to avoid circular dependency
         const { SettlementService } = await import("./settlement-service");
         const settlementService = new SettlementService();
@@ -564,7 +566,7 @@ export class MerchantService {
                   .where("tx.walletId = :walletId", { walletId: wallet.id })
                   .orderBy("tx.createdAt", "DESC")
                   .limit(10)
-                  .getMany()
+                  .getMany() as unknown as WalletTransactionResponse[]
             : [];
 
         return {

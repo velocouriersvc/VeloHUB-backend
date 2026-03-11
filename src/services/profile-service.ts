@@ -1,4 +1,5 @@
-import { AppDataSource } from "../db/data-source";
+import { AppDataSource, } from "../db/data-source";
+import { QueryRunner } from "typeorm";
 import { BuyerProfile } from "../models/buyer-profile";
 import { DriverProfile, DriverVerificationStatus } from "../models/driver-profile";
 import { MerchantProfile, MerchantVerificationStatus } from "../models/merchant-profile";
@@ -17,7 +18,7 @@ export class ProfileService {
     private userRepository = AppDataSource.getRepository(User);
     private roleRepository = AppDataSource.getRepository(Role);
 
-    private async syncToSupabase(userId: string, data: any) {
+    private async syncToSupabase(userId: string, data: Record<string, unknown>) {
         try {
             const { error } = await supabaseAdmin
                 .from('profiles')
@@ -179,7 +180,7 @@ export class ProfileService {
         }
     }
 
-    private async ensureRole(queryRunner: any, userId: string, roleName: RoleType) {
+    private async ensureRole(queryRunner: QueryRunner, userId: string, roleName: RoleType) {
         const role = await queryRunner.manager.findOne(Role, { where: { name: roleName } });
         if (role) {
             const existingUserRole = await queryRunner.manager.findOne(UserRole, {

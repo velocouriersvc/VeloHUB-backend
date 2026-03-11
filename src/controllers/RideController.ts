@@ -31,9 +31,9 @@ export class RideController {
             );
 
             return res.json({ estimates });
-        } catch (error: any) {
-            log.error("Error getting estimates", { error: error.message });
-            return res.status(500).json({ message: error.message || "Internal server error" });
+        } catch (error) {
+            log.error("Error getting estimates", { error: (error as Error).message });
+            return res.status(500).json({ message: (error as Error).message || "Internal server error" });
         }
     };
 
@@ -60,9 +60,9 @@ export class RideController {
             );
 
             return res.json({ estimate });
-        } catch (error: any) {
-            log.error("Error getting estimate", { error: error.message });
-            return res.status(500).json({ message: error.message || "Internal server error" });
+        } catch (error) {
+            log.error("Error getting estimate", { error: (error as Error).message });
+            return res.status(500).json({ message: (error as Error).message || "Internal server error" });
         }
     };
 
@@ -105,9 +105,9 @@ export class RideController {
             });
 
             return res.status(201).json({ ride });
-        } catch (error: any) {
-            log.error("Error requesting ride", { error: error.message });
-            return res.status(500).json({ message: error.message || "Internal server error" });
+        } catch (error) {
+            log.error("Error requesting ride", { error: (error as Error).message });
+            return res.status(500).json({ message: (error as Error).message || "Internal server error" });
         }
     };
 
@@ -133,9 +133,9 @@ export class RideController {
             );
 
             return res.json({ ride });
-        } catch (error: any) {
-            log.error("Error setting payment", { error: error.message });
-            return res.status(400).json({ message: error.message || "Internal server error" });
+        } catch (error) {
+            log.error("Error setting payment", { error: (error as Error).message });
+            return res.status(400).json({ message: (error as Error).message || "Internal server error" });
         }
     };
 
@@ -158,9 +158,9 @@ export class RideController {
 
             const ride = await this.rideService.cancelRide(rideId, cancelledBy, reason);
             return res.json({ ride });
-        } catch (error: any) {
-            log.error("Error cancelling ride", { error: error.message });
-            return res.status(400).json({ message: error.message || "Internal server error" });
+        } catch (error) {
+            log.error("Error cancelling ride", { error: (error as Error).message });
+            return res.status(400).json({ message: (error as Error).message || "Internal server error" });
         }
     };
 
@@ -173,8 +173,8 @@ export class RideController {
             const ride = await this.rideService.getRideById(req.params.id);
             if (!ride) return res.status(404).json({ message: "Ride not found" });
             return res.json({ ride });
-        } catch (error: any) {
-            log.error("Error getting ride", { error: error.message });
+        } catch (error) {
+            log.error("Error getting ride", { error: (error as Error).message });
             return res.status(500).json({ message: "Internal server error" });
         }
     };
@@ -190,8 +190,8 @@ export class RideController {
 
             const ride = await this.rideService.getActiveRide(userId);
             return res.json({ ride });
-        } catch (error: any) {
-            log.error("Error getting active ride", { error: error.message });
+        } catch (error) {
+            log.error("Error getting active ride", { error: (error as Error).message });
             return res.status(500).json({ message: "Internal server error" });
         }
     };
@@ -210,8 +210,8 @@ export class RideController {
 
             const result = await this.rideService.getCustomerRides(userId, limit, offset);
             return res.json(result);
-        } catch (error: any) {
-            log.error("Error getting ride history", { error: error.message });
+        } catch (error) {
+            log.error("Error getting ride history", { error: (error as Error).message });
             return res.status(500).json({ message: "Internal server error" });
         }
     };

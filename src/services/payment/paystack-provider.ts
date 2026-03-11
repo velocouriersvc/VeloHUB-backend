@@ -1,4 +1,4 @@
-import axios from "axios";
+import axios, { AxiosError } from "axios";
 import crypto from "crypto";
 import {
     PaymentProvider,
@@ -76,8 +76,9 @@ export class PaystackProvider implements PaymentProvider {
                 providerRef: data.reference || data.id?.toString() || "",
                 authorizationUrl: data.authorization_url,
             };
-        } catch (error: any) {
-            log.error("Paystack charge error", { error: error.response?.data?.message || error.message });
+        } catch (error) {
+            const axErr = error as AxiosError<{ message?: string }>;
+            log.error("Paystack charge error", { error: axErr.response?.data?.message || axErr.message });
             return {
                 success: false,
                 reference: request.reference,
@@ -107,8 +108,9 @@ export class PaystackProvider implements PaymentProvider {
                 currency: data.currency,
                 metadata: data.metadata,
             };
-        } catch (error: any) {
-            log.error("Paystack verify error", { reference, error: error.response?.data?.message || error.message });
+        } catch (error) {
+            const axErr = error as AxiosError<{ message?: string }>;
+            log.error("Paystack verify error", { reference, error: axErr.response?.data?.message || axErr.message });
             return {
                 success: false,
                 reference,
