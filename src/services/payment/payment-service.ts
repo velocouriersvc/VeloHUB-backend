@@ -1,7 +1,8 @@
 import { AppDataSource } from "../../db/data-source";
 import { Payment, PaymentMethodType, PaymentRecordStatus } from "../../models/payment";
+import { PlatformSettings } from "../../models/platform-settings";
 import { PaymentProvider } from "./payment-provider.interface";
-import { PaystackProvider } from "./paystack-provider";
+import { paymentProviderRegistry } from "./payment-provider-registry";
 import { WalletService } from "../wallet-service";
 import { v4 as uuidv4 } from "uuid";
 import { createServiceLogger } from "../../utils/logger";
@@ -9,8 +10,9 @@ import { paymentEventsTotal } from "../../utils/metrics";
 
 const log = createServiceLogger("PaymentService");
 
-const PLATFORM_COMMISSION = 0.2; // 20%
-const DRIVER_SHARE = 0.8; // 80%
+// Fallbacks — used only when platform_settings lookup fails
+const DEFAULT_PLATFORM_COMMISSION = 0.2;
+const DEFAULT_DRIVER_SHARE = 0.8;
 
 export interface PaymentResult {
     success: boolean;
@@ -23,13 +25,39 @@ export interface PaymentResult {
 
 export class PaymentService {
     private paymentRepo = AppDataSource.getRepository(Payment);
-    private provider: PaymentProvider;
+    private settingsRepo = AppDataSource.getRepository(PlatformSettings);
     private walletService: WalletService;
 
     constructor() {
-        this.provider = new PaystackProvider();
         this.walletService = new WalletService();
     }
+
+    // ── Helpers ──────────────────────────────────────────────────────
+
+    /**
+     * Resolve provider + currency + commission from the user's country.
+     */
+    private async resolveCountryContext(country: string): Promise<{
+        provider: PaymentProvider;
+        currency: string;
+        commissionRate: number;
+    }> {
+        const provider = paymentProviderRegistry.getProvider(country);
+
+        const settings = await this.settingsRepo.findOne({
+            where: { country, isActive: true },
+        });
+
+        const currency = settings?.currency || "GHS";
+        // defaultCommissionRate is stored as a percentage (e.g. 15 = 15%)
+        const commissionRate = settings
+            ? Number(settings.defaultCommissionRate) / 100
+            : DEFAULT_PLATFORM_COMMISSION;
+
+        return { provider, currency, commissionRate };
+    }
+
+    // ── Ride Payments ───────────────────────────────────────────────
 
     /**
      * Process a ride payment based on payment method
@@ -39,22 +67,26 @@ export class PaymentService {
         userId: string;
         amount: number;
         method: PaymentMethodType;
+        country?: string;
         email?: string;
         phoneNumber?: string;
     }): Promise<PaymentResult> {
         const { rideId, userId, amount, method } = params;
+        const country = params.country || "GH";
+        const { provider, currency, commissionRate } = await this.resolveCountryContext(country);
+
         const reference = `RIDE-${uuidv4().slice(0, 12)}`;
-        const platformFee = Math.round(amount * PLATFORM_COMMISSION * 100) / 100;
-        const driverAmount = Math.round(amount * DRIVER_SHARE * 100) / 100;
+        const platformFee = Math.round(amount * commissionRate * 100) / 100;
+        const driverAmount = Math.round(amount * (1 - commissionRate) * 100) / 100;
 
         // Create payment record
         const payment = this.paymentRepo.create({
             rideId,
             userId,
             amount,
-            currency: "GHS",
+            currency,
             method,
-            provider: method === PaymentMethodType.WALLET ? "wallet" : this.provider.name,
+            provider: method === PaymentMethodType.WALLET ? "wallet" : provider.name,
             providerRef: null,
             providerStatus: null,
             platformFee,
@@ -63,11 +95,11 @@ export class PaymentService {
             metadata: { reference },
         });
         const saved = await this.paymentRepo.save(payment);
-        log.info("Payment record created", { paymentId: saved.id, rideId, method, amount });
+        log.info("Payment record created", { paymentId: saved.id, rideId, method, amount, currency });
 
         switch (method) {
             case PaymentMethodType.MOMO:
-                return this.processMomoPayment(saved, reference, params);
+                return this.processMomoPayment(saved, reference, params, provider, currency);
 
             case PaymentMethodType.WALLET:
                 return this.processWalletPayment(saved, reference, userId, amount);
@@ -80,25 +112,91 @@ export class PaymentService {
         }
     }
 
+    // ── Order Payments ──────────────────────────────────────────────
+
     /**
-     * Mobile money payment via provider (Paystack)
+     * Process a marketplace order payment (country-aware from day one)
+     */
+    async processOrderPayment(params: {
+        orderId: string;
+        userId: string;
+        amount: number;
+        method: PaymentMethodType;
+        country?: string;
+        email?: string;
+        phoneNumber?: string;
+    }): Promise<PaymentResult> {
+        const { orderId, userId, amount, method } = params;
+        const country = params.country || "GH";
+        const { provider, currency, commissionRate } = await this.resolveCountryContext(country);
+
+        const reference = `ORD-${uuidv4().slice(0, 12)}`;
+        const platformFee = Math.round(amount * commissionRate * 100) / 100;
+        const merchantAmount = Math.round(amount * (1 - commissionRate) * 100) / 100;
+
+        const payment = this.paymentRepo.create({
+            orderId,
+            userId,
+            amount,
+            currency,
+            method,
+            provider: method === PaymentMethodType.WALLET ? "wallet" : provider.name,
+            providerRef: null,
+            providerStatus: null,
+            platformFee,
+            driverAmount: merchantAmount, // reuse column for merchant earnings
+            status: PaymentRecordStatus.PENDING,
+            metadata: { reference },
+        });
+        const saved = await this.paymentRepo.save(payment);
+        log.info("Order payment record created", { paymentId: saved.id, orderId, method, amount, currency });
+
+        switch (method) {
+            case PaymentMethodType.MOMO:
+                return this.processMomoPayment(saved, reference, params, provider, currency);
+
+            case PaymentMethodType.CARD:
+                // Card payments go through same Momo flow on Paystack (charge endpoint)
+                return this.processMomoPayment(saved, reference, params, provider, currency);
+
+            case PaymentMethodType.WALLET:
+                return this.processWalletPayment(saved, reference, userId, amount);
+
+            case PaymentMethodType.CASH:
+                return this.processCashPayment(saved, reference);
+
+            default:
+                throw new Error(`Unsupported payment method: ${method}`);
+        }
+    }
+
+    // ── Method-specific processors ──────────────────────────────────
+
+    /**
+     * Mobile money payment via provider
      */
     private async processMomoPayment(
         payment: Payment,
         reference: string,
-        params: { email?: string; phoneNumber?: string; amount: number }
+        params: { email?: string; phoneNumber?: string; amount: number },
+        provider: PaymentProvider,
+        currency: string
     ): Promise<PaymentResult> {
         if (!params.phoneNumber) {
             throw new Error("Phone number is required for momo payment");
         }
 
-        const result = await this.provider.initiateMomoPayment({
+        const result = await provider.initiateMomoPayment({
             amount: params.amount,
-            currency: "GHS",
+            currency,
             email: params.email || `${params.phoneNumber}@velo.app`,
             phoneNumber: params.phoneNumber,
             reference,
-            metadata: { rideId: payment.rideId, paymentId: payment.id },
+            metadata: {
+                rideId: payment.rideId,
+                orderId: payment.orderId,
+                paymentId: payment.id,
+            },
         });
 
         // Update payment record with provider info
@@ -153,8 +251,9 @@ export class PaymentService {
         }
 
         // Debit customer wallet
-        await this.walletService.debit(userId, amount, `Ride payment`, {
+        await this.walletService.debit(userId, amount, `Payment`, {
             rideId: payment.rideId,
+            orderId: payment.orderId,
             paymentId: payment.id,
         });
 
@@ -178,7 +277,7 @@ export class PaymentService {
     }
 
     /**
-     * Cash payment — just mark as pending, driver collects later
+     * Cash payment — just mark as pending, driver/merchant collects later
      */
     private async processCashPayment(
         payment: Payment,
@@ -195,15 +294,18 @@ export class PaymentService {
             paymentId: payment.id,
             reference,
             status: PaymentRecordStatus.PENDING,
-            message: "Cash payment — pay driver after ride",
+            message: "Cash payment — pay after service",
         };
     }
+
+    // ── Webhooks & Verification ─────────────────────────────────────
 
     /**
      * Handle webhook from payment provider (Paystack)
      */
-    async handleWebhook(payload: string, signature: string): Promise<void> {
-        const isValid = this.provider.verifyWebhookSignature(payload, signature);
+    async handleWebhook(payload: string, signature: string, country?: string): Promise<void> {
+        const provider = paymentProviderRegistry.getProvider(country || "GH");
+        const isValid = provider.verifyWebhookSignature(payload, signature);
         if (!isValid) {
             log.warn("Invalid webhook signature received");
             throw new Error("Invalid webhook signature");
@@ -214,14 +316,16 @@ export class PaymentService {
 
         if (event.event === "charge.success") {
             const reference = event.data.reference;
-            await this.confirmPayment(reference);
+            await this.confirmPayment(reference, country);
         }
     }
 
     /**
      * Confirm a pending payment (called by webhook or manual verification)
      */
-    async confirmPayment(reference: string): Promise<Payment | null> {
+    async confirmPayment(reference: string, country?: string): Promise<Payment | null> {
+        const provider = paymentProviderRegistry.getProvider(country || "GH");
+
         // Find payment by reference in metadata
         const payments = await this.paymentRepo.find({
             where: { status: PaymentRecordStatus.PENDING },
@@ -234,7 +338,7 @@ export class PaymentService {
         if (!payment) return null;
 
         // Verify with provider
-        const verification = await this.provider.verifyPayment(reference);
+        const verification = await provider.verifyPayment(reference);
 
         if (verification.success) {
             payment.status = PaymentRecordStatus.SUCCESS;
@@ -252,21 +356,27 @@ export class PaymentService {
         return this.paymentRepo.save(payment);
     }
 
+    // ── Earnings ────────────────────────────────────────────────────
+
     /**
-     * Credit driver earnings after a completed ride
+     * Credit driver earnings after a completed ride.
+     * Reads commission from platform_settings instead of hardcoded constants.
      */
     async creditDriverEarnings(
         driverId: string,
         rideId: string,
-        totalFare: number
+        totalFare: number,
+        country?: string
     ): Promise<void> {
-        const driverAmount = Math.round(totalFare * DRIVER_SHARE * 100) / 100;
+        const { commissionRate } = await this.resolveCountryContext(country || "GH");
+        const driverShare = 1 - commissionRate;
+        const driverAmount = Math.round(totalFare * driverShare * 100) / 100;
 
         await this.walletService.credit(driverId, driverAmount, "Ride earnings", {
             rideId,
             totalFare,
-            driverShare: DRIVER_SHARE,
-            platformCommission: PLATFORM_COMMISSION,
+            driverShare,
+            platformCommission: commissionRate,
         });
     }
 
@@ -286,6 +396,8 @@ export class PaymentService {
 
         return this.paymentRepo.save(payment);
     }
+
+    // ── Queries ─────────────────────────────────────────────────────
 
     /**
      * Get payment by ride ID

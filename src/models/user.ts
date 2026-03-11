@@ -32,6 +32,9 @@ export class User {
     @Column({ type: "varchar", length: 20, nullable: true })
     activeRole: string | null;
 
+    @Column({ type: "varchar", length: 2, default: "GH" })
+    country: string;
+
     @CreateDateColumn()
     createdAt: Date;
 

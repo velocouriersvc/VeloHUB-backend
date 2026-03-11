@@ -33,19 +33,20 @@ export class FareService {
         vehicleType: VehicleType,
         distanceKm: number,
         durationMin: number,
-        promoCode?: string
+        promoCode?: string,
+        country: string = "GH"
     ): Promise<FareBreakdown> {
-        // 1. Get vehicle pricing
+        // 1. Get vehicle pricing for this country
         const pricing = await this.pricingRepo.findOne({
-            where: { vehicleType, isActive: true },
+            where: { vehicleType, country, isActive: true },
         });
 
         if (!pricing) {
-            throw new Error(`No pricing found for vehicle type: ${vehicleType}`);
+            throw new Error(`No pricing found for vehicle type: ${vehicleType} in country: ${country}`);
         }
 
         // 2. Calculate base subtotal
-        const baseFare = Number(pricing.basePriceCedis);
+        const baseFare = Number(pricing.basePrice);
         const distanceCost = Number(pricing.pricePerKm) * distanceKm;
         const timeCost = Number(pricing.pricePerMin) * durationMin;
         let subtotal = baseFare + distanceCost + timeCost;
@@ -57,7 +58,7 @@ export class FareService {
         }
 
         // 3. Apply surge
-        const surgeMultiplier = await this.getSurgeMultiplier();
+        const surgeMultiplier = await this.getSurgeMultiplier(country);
         const surgeAmount = surgeMultiplier > 1 ? subtotal * (surgeMultiplier - 1) : 0;
         let afterSurge = subtotal + surgeAmount;
 
@@ -95,26 +96,26 @@ export class FareService {
     }
 
     /**
-     * Get all vehicle pricing options (for showing customer fare estimates)
+     * Get all vehicle pricing options for a country (for showing customer fare estimates)
      */
-    async getVehiclePricing(): Promise<VehiclePricing[]> {
+    async getVehiclePricing(country: string = "GH"): Promise<VehiclePricing[]> {
         return this.pricingRepo.find({
-            where: { isActive: true },
-            order: { basePriceCedis: "ASC" },
+            where: { isActive: true, country },
+            order: { basePrice: "ASC" },
         });
     }
 
     /**
-     * Get current surge multiplier based on time & day
+     * Get current surge multiplier based on time, day and country
      */
-    async getSurgeMultiplier(): Promise<number> {
+    async getSurgeMultiplier(country: string = "GH"): Promise<number> {
         const now = new Date();
         const currentHour = now.getHours();
         const dayOfWeek = now.getDay(); // 0=Sunday, 6=Saturday
         const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
 
         const rules = await this.surgeRepo.find({
-            where: { isActive: true },
+            where: { isActive: true, country },
         });
 
         let highestMultiplier = 1.0;

@@ -1,4 +1,4 @@
-import { Entity, PrimaryGeneratedColumn, Column, UpdateDateColumn } from "typeorm";
+import { Entity, PrimaryGeneratedColumn, Column, UpdateDateColumn, Unique } from "typeorm";
 
 export enum VehicleType {
     BIKE = "bike",
@@ -8,15 +8,19 @@ export enum VehicleType {
 }
 
 @Entity("vehicle_pricing")
+@Unique(["vehicleType", "country"])
 export class VehiclePricing {
     @PrimaryGeneratedColumn("uuid")
     id: string;
 
-    @Column({ type: "enum", enum: VehicleType, unique: true })
+    @Column({ type: "enum", enum: VehicleType })
     vehicleType: VehicleType;
 
+    @Column({ type: "varchar", length: 2, default: "GH" })
+    country: string;
+
     @Column({ type: "decimal", precision: 8, scale: 2 })
-    basePriceCedis: number;
+    basePrice: number;
 
     @Column({ type: "decimal", precision: 8, scale: 2 })
     pricePerKm: number;

@@ -79,6 +79,10 @@ export class Ride {
     @Column({ type: "enum", enum: VehicleType })
     vehicleType: VehicleType;
 
+    // Currency
+    @Column({ type: "varchar", length: 3, default: "GHS" })
+    currency: string;
+
     // Distance & Duration
     @Column({ type: "decimal", precision: 8, scale: 2 })
     distanceKm: number;

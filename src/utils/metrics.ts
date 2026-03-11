@@ -91,6 +91,47 @@ export const driverMatchEventsTotal = new client.Counter({
   registers: [register],
 });
 
+// ─── Marketplace Metrics ────────────────────────────────────────────
+
+/** Marketplace order lifecycle counter */
+export const orderEventsTotal = new client.Counter({
+  name: "velo_order_events_total",
+  help: "Total marketplace order events",
+  labelNames: ["status", "type"], // pending/accepted/completed/cancelled, delivery/pickup
+  registers: [register],
+});
+
+/** Cart activity counter */
+export const cartEventsTotal = new client.Counter({
+  name: "velo_cart_events_total",
+  help: "Total cart actions",
+  labelNames: ["action"], // add_item, remove_item, clear, checkout
+  registers: [register],
+});
+
+/** Settlement counter */
+export const settlementEventsTotal = new client.Counter({
+  name: "velo_settlement_events_total",
+  help: "Total settlement events",
+  labelNames: ["type", "method"], // merchant/driver, cash/wallet/momo/card
+  registers: [register],
+});
+
+/** Merchant/product search counter */
+export const merchantSearchTotal = new client.Counter({
+  name: "velo_merchant_search_total",
+  help: "Total merchant and product search requests",
+  registers: [register],
+});
+
+/** Product view counter */
+export const productViewsTotal = new client.Counter({
+  name: "velo_product_views_total",
+  help: "Total product detail views",
+  labelNames: ["category"], // food, grocery, pharmacy, etc.
+  registers: [register],
+});
+
 // ─── HTTP Metrics Middleware ────────────────────────────────────────
 
 /**

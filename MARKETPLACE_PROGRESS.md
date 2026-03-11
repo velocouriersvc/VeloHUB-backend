@@ -14,39 +14,39 @@
 - [x] Add `products` & `merchants` to `UploadService` categories
 - [x] Create migration file (`CreateMarketplaceTables`)
 - [x] Fix data-source migrations path
-- [ ] Seed script for `platform_settings`
-- [ ] Add new Prometheus metrics (orders, carts, settlements, search, product views)
+- [x] Seed script for `platform_settings`
+- [x] Add new Prometheus metrics (orders, carts, settlements, search, product views)
 - [ ] Deploy & verify tables created
 
 ## Phase 2A+ — Multi-Country Readiness
 
 ### Model Changes
-- [ ] Add `country` column to `User` model (VARCHAR 2, default `'GH'`)
-- [ ] Add `country` column to `VehiclePricing` model + rename `basePriceCedis` → `basePrice`
-- [ ] Drop unique on `vehicleType` alone → unique on `(vehicleType, country)`
-- [ ] Add `country` column to `SurgeRule` model
-- [ ] Add `currency` column to `Ride` model (VARCHAR 3, default `'GHS'`)
-- [ ] Add `currency` column to `Order` model (VARCHAR 3, default `'GHS'`)
-- [ ] Add `CARD` to `PaymentMethodType` enum
+- [x] Add `country` column to `User` model (VARCHAR 2, default `'GH'`)
+- [x] Add `country` column to `VehiclePricing` model + rename `basePriceCedis` → `basePrice`
+- [x] Drop unique on `vehicleType` alone → unique on `(vehicleType, country)`
+- [x] Add `country` column to `SurgeRule` model
+- [x] Add `currency` column to `Ride` model (VARCHAR 3, default `'GHS'`)
+- [x] Add `currency` column to `Order` model (VARCHAR 3, default `'GHS'`)
+- [x] Add `CARD` to `PaymentMethodType` enum
 
 ### Migration
-- [ ] Create migration `AddMultiCountrySupport` (all ALTERs above)
+- [x] Create migration `AddMultiCountrySupport` (all ALTERs above)
 
 ### New Files
-- [ ] Create `src/utils/currency.ts` — currency symbol map + `formatCurrency()` helper
-- [ ] Create `src/services/payment/payment-provider-registry.ts` — country → provider mapping
+- [x] Create `src/utils/currency.ts` — currency symbol map + `formatCurrency()` helper
+- [x] Create `src/services/payment/payment-provider-registry.ts` — country → provider mapping
 
 ### Service Refactors
-- [ ] `PaymentService` — remove hardcoded `"GHS"`, resolve currency from user country via `platform_settings`
-- [ ] `PaymentService` — remove `new PaystackProvider()` constructor, resolve from provider registry
-- [ ] `PaymentService` — add `processOrderPayment()` method (country-aware from day one)
-- [ ] `PaymentService.creditDriverEarnings()` — read commission from `platform_settings` not hardcoded 80/20
-- [ ] `WalletService.createWallet()` — accept country, resolve currency from `platform_settings`
-- [ ] `FareService.calculateFare()` — filter `vehicle_pricing` by country
-- [ ] `FareService.getVehiclePricing()` — filter by country, use renamed `basePrice` field
-- [ ] `FareService.getSurgeMultiplier()` — filter `surge_rules` by country
-- [ ] `NotificationService` — replace all `GHS ${amount}` with `formatCurrency(amount, currency)`
-- [ ] `PaystackProvider.detectMomoProvider()` — make country-aware
+- [x] `PaymentService` — remove hardcoded `"GHS"`, resolve currency from user country via `platform_settings`
+- [x] `PaymentService` — remove `new PaystackProvider()` constructor, resolve from provider registry
+- [x] `PaymentService` — add `processOrderPayment()` method (country-aware from day one)
+- [x] `PaymentService.creditDriverEarnings()` — read commission from `platform_settings` not hardcoded 80/20
+- [x] `WalletService.createWallet()` — accept country, resolve currency from `platform_settings`
+- [x] `FareService.calculateFare()` — filter `vehicle_pricing` by country
+- [x] `FareService.getVehiclePricing()` — filter by country, use renamed `basePrice` field
+- [x] `FareService.getSurgeMultiplier()` — filter `surge_rules` by country
+- [x] `NotificationService` — replace all `GHS ${amount}` with `formatCurrency(amount, currency)`
+- [x] `PaystackProvider.detectMomoProvider()` — make country-aware
 
 ## Phase 2B — Products & Merchant
 

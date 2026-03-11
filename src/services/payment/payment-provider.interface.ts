@@ -3,7 +3,7 @@
  * by implementing this interface.
  */
 export interface MomoPaymentRequest {
-    amount: number; // in GHS
+    amount: number; // in the currency's major unit (e.g. GHS, NGN, USD)
     currency: string;
     email: string;
     phoneNumber: string;

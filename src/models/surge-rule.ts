@@ -26,6 +26,9 @@ export class SurgeRule {
     @Column({ type: "decimal", precision: 3, scale: 2 })
     multiplier: number;
 
+    @Column({ type: "varchar", length: 2, default: "GH" })
+    country: string;
+
     @Column({ type: "boolean", default: true })
     isActive: boolean;
 }

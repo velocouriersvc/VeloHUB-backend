@@ -3,6 +3,7 @@ import { User } from "./user";
 
 export enum PaymentMethodType {
     MOMO = "momo",
+    CARD = "card",
     CASH = "cash",
     WALLET = "wallet",
 }

@@ -1,23 +1,34 @@
 import { AppDataSource } from "../db/data-source";
 import { Wallet } from "../models/wallet";
 import { WalletTransaction, TransactionType } from "../models/wallet-transaction";
+import { PlatformSettings } from "../models/platform-settings";
 import { v4 as uuidv4 } from "uuid";
 import { createServiceLogger } from "../utils/logger";
+import { currencyForCountry } from "../utils/currency";
 
 const log = createServiceLogger("WalletService");
 
 export class WalletService {
     private walletRepo = AppDataSource.getRepository(Wallet);
     private txRepo = AppDataSource.getRepository(WalletTransaction);
+    private settingsRepo = AppDataSource.getRepository(PlatformSettings);
 
     /**
-     * Create a wallet for a user (called on signup)
+     * Create a wallet for a user (called on signup).
+     * Resolves currency from platform_settings based on the user's country.
      */
-    async createWallet(userId: string): Promise<Wallet> {
+    async createWallet(userId: string, country: string = "GH"): Promise<Wallet> {
         const existing = await this.walletRepo.findOne({ where: { userId } });
         if (existing) return existing;
 
-        const wallet = this.walletRepo.create({ userId, balance: 0, currency: "GHS" });
+        // Try to resolve currency from platform_settings, fall back to static map
+        let currency: string;
+        const settings = await this.settingsRepo.findOne({
+            where: { country, isActive: true },
+        });
+        currency = settings?.currency || currencyForCountry(country);
+
+        const wallet = this.walletRepo.create({ userId, balance: 0, currency });
         return this.walletRepo.save(wallet);
     }
 

@@ -93,6 +93,9 @@ export class Order {
     }>;
 
     // ── Money ──
+    @Column({ type: "varchar", length: 3, default: "GHS" })
+    currency: string;
+
     @Column({ type: "decimal", precision: 12, scale: 2 })
     subtotal: number;
 

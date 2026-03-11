@@ -133,21 +133,32 @@ export class PaystackProvider implements PaymentProvider {
     }
 
     /**
-     * Detect mobile money provider from Ghana phone number
-     * MTN: 024, 054, 055, 059
-     * Vodafone: 020, 050
-     * AirtelTigo: 027, 057, 026, 056
+     * Detect mobile money provider from phone number.
+     * Currently supports Ghana & Nigeria prefixes.
+     *
+     * Ghana — MTN: 024,054,055,059 | Vodafone: 020,050 | AirtelTigo: 027,057,026,056
+     * Nigeria — MTN: 0803,0806,0703,0903 | Airtel: 0802,0708,0902 | Glo: 0805,0705,0905 | 9mobile: 0809,0909
      */
     private detectMomoProvider(phone: string): string {
-        // Strip country code if present
-        const local = phone.replace(/^\+233/, "0");
-        const prefix = local.substring(0, 3);
+        // Strip common country codes
+        let local = phone.replace(/^\+233/, "0").replace(/^\+234/, "0");
 
-        const mtnPrefixes = ["024", "054", "055", "059"];
-        const vodaPrefixes = ["020", "050"];
+        // Ghana detection (3-digit prefix)
+        const ghPrefix = local.substring(0, 3);
+        const ghMtn = ["024", "054", "055", "059"];
+        const ghVoda = ["020", "050"];
 
-        if (mtnPrefixes.includes(prefix)) return "mtn";
-        if (vodaPrefixes.includes(prefix)) return "vod";
-        return "tgo"; // AirtelTigo as default for others
+        if (ghMtn.includes(ghPrefix)) return "mtn";
+        if (ghVoda.includes(ghPrefix)) return "vod";
+
+        // Nigeria detection (4-digit prefix)
+        const ngPrefix = local.substring(0, 4);
+        const ngMtn = ["0803", "0806", "0703", "0903", "0816"];
+        const ngAirtel = ["0802", "0708", "0902", "0812"];
+
+        if (ngMtn.includes(ngPrefix)) return "mtn";
+        if (ngAirtel.includes(ngPrefix)) return "airtel";
+
+        return "tgo"; // AirtelTigo as default fallback
     }
 }

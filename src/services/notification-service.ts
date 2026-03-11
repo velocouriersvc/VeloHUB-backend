@@ -4,6 +4,7 @@ import { PushToken, DevicePlatform } from "../models/push-token";
 import { TwilioService } from "./twilio-service";
 import { createServiceLogger } from "../utils/logger";
 import { notificationEventsTotal } from "../utils/metrics";
+import { formatCurrency } from "../utils/currency";
 
 const log = createServiceLogger("NotificationService");
 
@@ -225,20 +226,20 @@ export class NotificationService {
         return this.notify(customerId, NotificationType.RIDE_STARTED, "Ride Started 🚀", "Your ride is now in progress", { rideId });
     }
 
-    async notifyRideCompleted(customerId: string, fare: number, rideId: string) {
-        return this.notify(customerId, NotificationType.RIDE_COMPLETED, "Ride Completed ✅", `Your ride is complete. Fare: GHS ${fare.toFixed(2)}`, { rideId, fare });
+    async notifyRideCompleted(customerId: string, fare: number, rideId: string, currency: string = "GHS") {
+        return this.notify(customerId, NotificationType.RIDE_COMPLETED, "Ride Completed ✅", `Your ride is complete. Fare: ${formatCurrency(fare, currency)}`, { rideId, fare });
     }
 
     async notifyRideCancelled(userId: string, reason: string, rideId: string) {
         return this.notify(userId, NotificationType.RIDE_CANCELLED, "Ride Cancelled ❌", reason, { rideId });
     }
 
-    async notifyPaymentReceived(userId: string, amount: number, rideId: string) {
-        return this.notify(userId, NotificationType.PAYMENT_RECEIVED, "Payment Received 💰", `GHS ${amount.toFixed(2)} received`, { rideId, amount });
+    async notifyPaymentReceived(userId: string, amount: number, rideId: string, currency: string = "GHS") {
+        return this.notify(userId, NotificationType.PAYMENT_RECEIVED, "Payment Received 💰", `${formatCurrency(amount, currency)} received`, { rideId, amount });
     }
 
-    async notifyDriverEarnings(driverId: string, amount: number, rideId: string) {
-        return this.notify(driverId, NotificationType.WALLET_CREDITED, "Earnings Credited 💵", `GHS ${amount.toFixed(2)} added to your wallet`, { rideId, amount });
+    async notifyDriverEarnings(driverId: string, amount: number, rideId: string, currency: string = "GHS") {
+        return this.notify(driverId, NotificationType.WALLET_CREDITED, "Earnings Credited 💵", `${formatCurrency(amount, currency)} added to your wallet`, { rideId, amount });
     }
 
     async notifyNewRating(driverId: string, rating: number, rideId: string) {
