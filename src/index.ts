@@ -4,6 +4,8 @@ import swaggerUi from "swagger-ui-express";
 import { AppDataSource } from "./db/data-source";
 import { swaggerSpec } from "./swagger";
 import { ensureBucket } from "./utils/minio-client";
+import logger from "./utils/logger";
+import { metricsMiddleware, register } from "./utils/metrics";
 
 import orderRoutes from "./routes/orderRoutes";
 import profileRoutes from "./routes/profileRoutes";
@@ -28,6 +30,13 @@ app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static('public'));
+app.use(metricsMiddleware);
+
+// Prometheus metrics endpoint
+app.get("/metrics", async (_req: Request, res: Response) => {
+  res.set("Content-Type", register.contentType);
+  res.end(await register.metrics());
+});
 
 // Swagger docs
 app.use("/docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
@@ -180,23 +189,24 @@ app.get("/", (_req: Request, res: Response) => {
 // Initialize database connection
 AppDataSource.initialize()
   .then(async () => {
-    console.log("Data Source has been initialized!");
+    logger.info("Data Source has been initialized");
 
     // Ensure MinIO bucket exists
     try {
       await ensureBucket();
-      console.log("🪣 MinIO bucket ready");
+      logger.info("MinIO bucket ready");
     } catch (err) {
-      console.warn("⚠️  MinIO bucket init failed (uploads may not work):", err);
+      logger.warn("MinIO bucket init failed (uploads may not work)", { error: (err as Error).message });
     }
 
     // Start server
     app.listen(PORT, async () => {
-      console.log(`Server is running on port ${PORT}`);
-      console.log(`📖 API Docs: http://localhost:${PORT}/docs`);
-      console.log(`💚 Health:   http://localhost:${PORT}/health`);
+      logger.info(`Server is running on port ${PORT}`);
+      logger.info(`API Docs: http://localhost:${PORT}/docs`);
+      logger.info(`Health: http://localhost:${PORT}/health`);
+      logger.info(`Metrics: http://localhost:${PORT}/metrics`);
     });
   })
   .catch((error: Error) => {
-    console.error("Error during Data Source initialization:", error);
+    logger.error("Error during Data Source initialization", { error: error.message });
   });

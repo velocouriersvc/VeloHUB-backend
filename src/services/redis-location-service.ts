@@ -1,4 +1,7 @@
 import { redis } from "../utils/redis";
+import { createServiceLogger } from "../utils/logger";
+
+const log = createServiceLogger("RedisLocationService");
 
 // Redis key prefixes
 const DRIVER_LOCATION_KEY = "driver:location";       // Hash: {lat, lng, heading, speed}

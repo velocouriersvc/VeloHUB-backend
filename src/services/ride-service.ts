@@ -10,6 +10,10 @@ import { PaymentService } from "./payment/payment-service";
 import { NotificationService } from "./notification-service";
 import { RedisLocationService } from "./redis-location-service";
 import { TwilioService } from "./twilio-service";
+import { createServiceLogger } from "../utils/logger";
+import { rideEventsTotal } from "../utils/metrics";
+
+const log = createServiceLogger("RideService");
 
 export interface RideRequest {
     customerId: string;
@@ -166,6 +170,8 @@ export class RideService {
         });
 
         const savedRide = await this.rideRepo.save(ride);
+        log.info("Ride created", { rideId: savedRide.id, vehicleType: request.vehicleType, status: RideStatus.SEARCHING });
+        rideEventsTotal.inc({ event: "requested" });
 
         // Save stops if any
         if (request.stops && request.stops.length > 0) {
@@ -238,6 +244,8 @@ export class RideService {
 
         // Mark driver as busy
         await this.redisLocation.setDriverStatus(driverUserId, "busy");
+        log.info("Ride accepted", { rideId, driverUserId });
+        rideEventsTotal.inc({ event: "accepted" });
 
         // Update ride tracking
         await this.redisLocation.setRideTracking(rideId, {
@@ -358,6 +366,7 @@ export class RideService {
 
         ride.status = RideStatus.DRIVER_ENROUTE;
         const updated = await this.rideRepo.save(ride);
+        log.info("Driver en route to pickup", { rideId });
 
         await this.redisLocation.setRideTracking(rideId, { status: RideStatus.DRIVER_ENROUTE });
         await this.notificationService.notifyDriverEnroute(ride.customerId, driverName, rideId);
@@ -377,6 +386,7 @@ export class RideService {
 
         ride.status = RideStatus.ARRIVED;
         const updated = await this.rideRepo.save(ride);
+        log.info("Driver arrived at pickup", { rideId });
 
         await this.redisLocation.setRideTracking(rideId, { status: RideStatus.ARRIVED });
         await this.notificationService.notifyDriverArrived(ride.customerId, driverName, rideId);
@@ -397,6 +407,7 @@ export class RideService {
         ride.status = RideStatus.ONGOING;
         ride.startedAt = new Date();
         const updated = await this.rideRepo.save(ride);
+        log.info("Ride started", { rideId });
 
         await this.redisLocation.setRideTracking(rideId, { status: RideStatus.ONGOING });
         await this.notificationService.notifyRideStarted(ride.customerId, rideId);
@@ -420,6 +431,8 @@ export class RideService {
         ride.status = RideStatus.COMPLETED;
         ride.completedAt = new Date();
         const updated = await this.rideRepo.save(ride);
+        log.info("Ride completed", { rideId, fare: Number(ride.finalFare) });
+        rideEventsTotal.inc({ event: "completed" });
 
         // Credit driver earnings (for momo/wallet payments)
         if (
@@ -499,6 +512,8 @@ export class RideService {
         ride.cancelReason = reason || null;
         ride.cancelledAt = new Date();
         const updated = await this.rideRepo.save(ride);
+        log.info("Ride cancelled", { rideId, cancelledBy, reason: reason || "none" });
+        rideEventsTotal.inc({ event: "cancelled" });
 
         // Notify the other party
         const cancelledByLabel = cancelledBy === CancelledBy.CUSTOMER ? "Customer" : "Driver";
@@ -626,7 +641,7 @@ export class RideService {
                 contact.notified = true;
                 await this.contactRepo.save(contact);
             } catch (err: any) {
-                console.error(`Failed to notify contact ${contact.phone}:`, err.message);
+                log.error("Failed to notify shared contact", { rideId, error: err.message });
             }
         }
     }

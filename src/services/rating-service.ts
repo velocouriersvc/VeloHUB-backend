@@ -3,6 +3,9 @@ import { Rating } from "../models/rating";
 import { DriverStats } from "../models/driver-stats";
 import { Ride, RideStatus } from "../models/ride";
 import { NotificationService } from "./notification-service";
+import { createServiceLogger } from "../utils/logger";
+
+const log = createServiceLogger("RatingService");
 
 export class RatingService {
     private ratingRepo = AppDataSource.getRepository(Rating);
@@ -52,6 +55,8 @@ export class RatingService {
 
         // Notify driver
         await this.notificationService.notifyNewRating(ride.driverId, rating, rideId);
+
+        log.info("Ride rated", { rideId, rating, driverId: ride.driverId });
 
         return savedRating;
     }

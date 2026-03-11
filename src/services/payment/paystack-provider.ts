@@ -5,6 +5,9 @@ import {
     MomoPaymentRequest,
     PaymentVerification,
 } from "./payment-provider.interface";
+import { createServiceLogger } from "../../utils/logger";
+
+const log = createServiceLogger("PaystackProvider");
 
 const PAYSTACK_BASE_URL = "https://api.paystack.co";
 
@@ -15,7 +18,7 @@ export class PaystackProvider implements PaymentProvider {
     constructor() {
         this.secretKey = process.env.PAYSTACK_SECRET_KEY || "";
         if (!this.secretKey) {
-            console.warn("⚠️ PAYSTACK_SECRET_KEY not set");
+            log.warn("PAYSTACK_SECRET_KEY not set");
         }
     }
 
@@ -74,7 +77,7 @@ export class PaystackProvider implements PaymentProvider {
                 authorizationUrl: data.authorization_url,
             };
         } catch (error: any) {
-            console.error("Paystack charge error:", error.response?.data || error.message);
+            log.error("Paystack charge error", { error: error.response?.data?.message || error.message });
             return {
                 success: false,
                 reference: request.reference,
@@ -105,7 +108,7 @@ export class PaystackProvider implements PaymentProvider {
                 metadata: data.metadata,
             };
         } catch (error: any) {
-            console.error("Paystack verify error:", error.response?.data || error.message);
+            log.error("Paystack verify error", { reference, error: error.response?.data?.message || error.message });
             return {
                 success: false,
                 reference,

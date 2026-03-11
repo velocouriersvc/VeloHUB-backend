@@ -2,6 +2,9 @@ import { AppDataSource } from "../db/data-source";
 import { VehiclePricing, VehicleType } from "../models/vehicle-pricing";
 import { SurgeRule, DayType } from "../models/surge-rule";
 import { PromoCode } from "../models/promo-code";
+import { createServiceLogger } from "../utils/logger";
+
+const log = createServiceLogger("FareService");
 
 export interface FareBreakdown {
     baseFare: number;

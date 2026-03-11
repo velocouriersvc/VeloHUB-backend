@@ -4,6 +4,10 @@ import { PaymentProvider } from "./payment-provider.interface";
 import { PaystackProvider } from "./paystack-provider";
 import { WalletService } from "../wallet-service";
 import { v4 as uuidv4 } from "uuid";
+import { createServiceLogger } from "../../utils/logger";
+import { paymentEventsTotal } from "../../utils/metrics";
+
+const log = createServiceLogger("PaymentService");
 
 const PLATFORM_COMMISSION = 0.2; // 20%
 const DRIVER_SHARE = 0.8; // 80%
@@ -59,6 +63,7 @@ export class PaymentService {
             metadata: { reference },
         });
         const saved = await this.paymentRepo.save(payment);
+        log.info("Payment record created", { paymentId: saved.id, rideId, method, amount });
 
         switch (method) {
             case PaymentMethodType.MOMO:
@@ -101,6 +106,11 @@ export class PaymentService {
         payment.providerStatus = result.success ? "pending" : "failed";
         if (!result.success) {
             payment.status = PaymentRecordStatus.FAILED;
+            log.warn("Momo payment initiation failed", { paymentId: payment.id });
+            paymentEventsTotal.inc({ method: "momo", status: "failed" });
+        } else {
+            log.info("Momo payment initiated", { paymentId: payment.id, reference });
+            paymentEventsTotal.inc({ method: "momo", status: "pending" });
         }
         await this.paymentRepo.save(payment);
 
@@ -130,6 +140,8 @@ export class PaymentService {
             payment.status = PaymentRecordStatus.FAILED;
             payment.providerStatus = "insufficient_balance";
             await this.paymentRepo.save(payment);
+            log.warn("Wallet payment failed — insufficient balance", { paymentId: payment.id });
+            paymentEventsTotal.inc({ method: "wallet", status: "failed" });
 
             return {
                 success: false,
@@ -153,6 +165,9 @@ export class PaymentService {
         payment.completedAt = new Date();
         await this.paymentRepo.save(payment);
 
+        log.info("Wallet payment successful", { paymentId: payment.id, amount });
+        paymentEventsTotal.inc({ method: "wallet", status: "success" });
+
         return {
             success: true,
             paymentId: payment.id,
@@ -172,6 +187,8 @@ export class PaymentService {
         payment.providerStatus = "cash_on_delivery";
         payment.providerRef = reference;
         await this.paymentRepo.save(payment);
+        log.info("Cash payment registered", { paymentId: payment.id });
+        paymentEventsTotal.inc({ method: "cash", status: "success" });
 
         return {
             success: true,
@@ -188,10 +205,12 @@ export class PaymentService {
     async handleWebhook(payload: string, signature: string): Promise<void> {
         const isValid = this.provider.verifyWebhookSignature(payload, signature);
         if (!isValid) {
+            log.warn("Invalid webhook signature received");
             throw new Error("Invalid webhook signature");
         }
 
         const event = JSON.parse(payload);
+        log.info("Webhook received", { event: event.event });
 
         if (event.event === "charge.success") {
             const reference = event.data.reference;
@@ -222,9 +241,12 @@ export class PaymentService {
             payment.providerStatus = verification.providerStatus;
             payment.providerRef = verification.providerRef;
             payment.completedAt = new Date();
+            log.info("Payment confirmed", { paymentId: payment.id, reference });
+            paymentEventsTotal.inc({ method: "momo", status: "success" });
         } else {
             payment.status = PaymentRecordStatus.FAILED;
             payment.providerStatus = verification.providerStatus;
+            log.warn("Payment verification failed", { paymentId: payment.id, reference });
         }
 
         return this.paymentRepo.save(payment);

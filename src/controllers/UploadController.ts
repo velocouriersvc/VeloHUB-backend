@@ -1,6 +1,9 @@
 import { Response } from "express";
 import { UploadService, UploadCategory } from "../services/upload-service";
 import { AuthRequest } from "../middleware/role-middleware";
+import { createServiceLogger } from "../utils/logger";
+
+const log = createServiceLogger("UploadController");
 
 export class UploadController {
   private uploadService = new UploadService();
@@ -53,7 +56,7 @@ export class UploadController {
         return res.status(400).json({ message: error.message });
       }
 
-      console.error("Upload error:", error);
+      log.error("Upload error", { error: error.message });
       return res.status(500).json({ message: "Internal server error" });
     }
   };
@@ -84,7 +87,7 @@ export class UploadController {
 
       return res.status(200).json({ message: "File deleted successfully" });
     } catch (error) {
-      console.error("Delete file error:", error);
+      log.error("Delete file error", { error: (error as Error).message });
       return res.status(500).json({ message: "Internal server error" });
     }
   };
@@ -113,7 +116,7 @@ export class UploadController {
         data: { url, expiresInHours: expiryHours },
       });
     } catch (error) {
-      console.error("Presigned URL error:", error);
+      log.error("Presigned URL error", { error: (error as Error).message });
       return res.status(500).json({ message: "Internal server error" });
     }
   };

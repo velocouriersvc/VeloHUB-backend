@@ -2,6 +2,10 @@ import { v4 as uuid } from "uuid";
 import path from "path";
 import crypto from "crypto";
 import { minioClient, BUCKET_NAME } from "../utils/minio-client";
+import { createServiceLogger } from "../utils/logger";
+import { uploadEventsTotal } from "../utils/metrics";
+
+const log = createServiceLogger("UploadService");
 
 // ─── Security Config ────────────────────────────────────────────────
 
@@ -191,6 +195,9 @@ export class UploadService {
       `${protocol}://${endpoint}:${port}`;
 
     const url = `${publicUrl}/${BUCKET_NAME}/${key}`;
+
+    log.info("File uploaded successfully", { key, category, mimeType, size: buffer.length });
+    uploadEventsTotal.inc({ category, status: "success" });
 
     return {
       url,

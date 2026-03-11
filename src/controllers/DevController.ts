@@ -8,6 +8,9 @@ import { MerchantProfile } from "../models/merchant-profile";
 import { Role } from "../models/role";
 import { Otp } from "../models/otp";
 import { Identification } from "../models/identification";
+import { createServiceLogger } from "../utils/logger";
+
+const log = createServiceLogger("DevController");
 
 export class DevController {
     getAllData = async (req: Request, res: Response) => {
@@ -35,7 +38,7 @@ export class DevController {
                 identifications
             });
         } catch (error) {
-            console.error("Error fetching dev data:", error);
+            log.error("Error fetching dev data", { error: (error as Error).message });
             return res.status(500).json({ message: "Internal server error" });
         }
     };

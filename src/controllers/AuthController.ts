@@ -1,6 +1,9 @@
 import { Request, Response } from "express";
 import { AuthService } from "../services/auth-service";
 import { RequestOtpPayload, VerifyOtpPayload, AuthenticatedRequest } from "../types/auth";
+import { createServiceLogger } from "../utils/logger";
+
+const log = createServiceLogger("AuthController");
 
 export class AuthController {
     private authService = new AuthService();
@@ -19,7 +22,7 @@ export class AuthController {
                 message: "OTP sent successfully"
             });
         } catch (error) {
-            console.error("Error requesting OTP:", error);
+            log.error("Error requesting OTP", { error: (error as Error).message });
             return res.status(500).json({ message: "Internal server error" });
         }
     };
@@ -40,7 +43,7 @@ export class AuthController {
 
             return res.status(200).json(result);
         } catch (error) {
-            console.error("Error verifying OTP:", error);
+            log.error("Error verifying OTP", { error: (error as Error).message });
             return res.status(500).json({ message: "Internal server error" });
         }
     };
@@ -59,7 +62,7 @@ export class AuthController {
 
             return res.status(200).json(result);
         } catch (error) {
-            console.error("Error syncing user:", error);
+            log.error("Error syncing user", { error: (error as Error).message });
             return res.status(500).json({ message: "Internal server error" });
         }
     };

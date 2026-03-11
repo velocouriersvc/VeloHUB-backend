@@ -1,5 +1,8 @@
 import { AppDataSource } from "../db/data-source";
 import { SavedLocation } from "../models/saved-location";
+import { createServiceLogger } from "../utils/logger";
+
+const log = createServiceLogger("LocationService");
 
 export class LocationService {
     private locationRepo = AppDataSource.getRepository(SavedLocation);

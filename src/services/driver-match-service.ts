@@ -3,6 +3,10 @@ import { DriverProfile, DriverVerificationStatus } from "../models/driver-profil
 import { RedisLocationService } from "./redis-location-service";
 import { NotificationService } from "./notification-service";
 import { VehicleType } from "../models/vehicle-pricing";
+import { createServiceLogger } from "../utils/logger";
+import { driverMatchEventsTotal } from "../utils/metrics";
+
+const log = createServiceLogger("DriverMatchService");
 
 // Search radius escalation in km
 const SEARCH_RADII = [15, 30, 45];
@@ -47,9 +51,15 @@ export class DriverMatchService {
                 excludeDriverIds
             );
 
-            if (drivers.length > 0) return drivers;
+            if (drivers.length > 0) {
+                log.info("Drivers found", { count: drivers.length, radiusKm, vehicleType });
+                driverMatchEventsTotal.inc({ result: "found" });
+                return drivers;
+            }
         }
 
+        log.info("No drivers found in any radius", { vehicleType });
+        driverMatchEventsTotal.inc({ result: "not_found" });
         return []; // No drivers found in any radius
     }
 
@@ -114,6 +124,7 @@ export class DriverMatchService {
     ): Promise<void> {
         // Track broadcast in Redis
         await this.redisLocation.addToBroadcast(rideId, driverUserIds);
+        log.info("Ride broadcasted to drivers", { rideId, driverCount: driverUserIds.length });
 
         // Notify each driver
         for (const driverUserId of driverUserIds) {

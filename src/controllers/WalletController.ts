@@ -1,6 +1,9 @@
 import { Response } from "express";
 import { AuthRequest } from "../middleware/role-middleware";
 import { WalletService } from "../services/wallet-service";
+import { createServiceLogger } from "../utils/logger";
+
+const log = createServiceLogger("WalletController");
 
 export class WalletController {
     private walletService = new WalletService();
@@ -23,7 +26,7 @@ export class WalletController {
 
             return res.json({ wallet });
         } catch (error: any) {
-            console.error("Error getting wallet:", error);
+            log.error("Error getting wallet", { error: error.message });
             return res.status(500).json({ message: "Internal server error" });
         }
     };
@@ -43,7 +46,7 @@ export class WalletController {
             const result = await this.walletService.getTransactions(userId, limit, offset);
             return res.json(result);
         } catch (error: any) {
-            console.error("Error getting transactions:", error);
+            log.error("Error getting transactions", { error: error.message });
             return res.status(500).json({ message: "Internal server error" });
         }
     };

@@ -2,6 +2,9 @@ import { Request, Response } from "express";
 import { ProfileService } from "../services/profile-service";
 import { BuyerSetupPayload, DriverSetupPayload, MerchantSetupPayload } from "../types/profile";
 import { AuthRequest } from "../middleware/role-middleware";
+import { createServiceLogger } from "../utils/logger";
+
+const log = createServiceLogger("ProfileController");
 
 export class ProfileController {
     private profileService = new ProfileService();
@@ -16,7 +19,7 @@ export class ProfileController {
             const profile = await this.profileService.setupBuyerProfile(userId, payload);
             return res.status(200).json(profile);
         } catch (error) {
-            console.error("Error setting up buyer profile:", error);
+            log.error("Error setting up buyer profile", { error: (error as Error).message });
             return res.status(500).json({ message: "Internal server error" });
         }
     };
@@ -31,7 +34,7 @@ export class ProfileController {
             const profile = await this.profileService.setupDriverProfile(userId, payload);
             return res.status(200).json(profile);
         } catch (error) {
-            console.error("Error setting up driver profile:", error);
+            log.error("Error setting up driver profile", { error: (error as Error).message });
             return res.status(500).json({ message: "Internal server error" });
         }
     };
@@ -46,7 +49,7 @@ export class ProfileController {
             const profile = await this.profileService.setupMerchantProfile(userId, payload);
             return res.status(200).json(profile);
         } catch (error) {
-            console.error("Error setting up merchant profile:", error);
+            log.error("Error setting up merchant profile", { error: (error as Error).message });
             return res.status(500).json({ message: "Internal server error" });
         }
     };

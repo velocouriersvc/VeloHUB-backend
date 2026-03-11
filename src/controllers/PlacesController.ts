@@ -1,6 +1,9 @@
 import { Response } from "express";
 import { AuthRequest } from "../middleware/role-middleware";
 import { PlacesService } from "../services/places-service";
+import { createServiceLogger } from "../utils/logger";
+
+const log = createServiceLogger("PlacesController");
 
 export class PlacesController {
     private placesService = new PlacesService();
@@ -21,7 +24,7 @@ export class PlacesController {
             const predictions = await this.placesService.autocomplete(input, sessionToken);
             return res.json({ predictions });
         } catch (error: any) {
-            console.error("Error in autocomplete:", error);
+            log.error("Error in autocomplete", { error: (error as Error).message });
             return res.status(500).json({ message: "Internal server error" });
         }
     };
@@ -38,7 +41,7 @@ export class PlacesController {
             const details = await this.placesService.getPlaceDetails(placeId, sessionToken);
             return res.json({ place: details });
         } catch (error: any) {
-            console.error("Error getting place details:", error);
+            log.error("Error getting place details", { error: (error as Error).message });
             return res.status(400).json({ message: error.message || "Internal server error" });
         }
     };
@@ -64,7 +67,7 @@ export class PlacesController {
 
             return res.json({ distance: result });
         } catch (error: any) {
-            console.error("Error getting distance:", error);
+            log.error("Error getting distance", { error: (error as Error).message });
             return res.status(400).json({ message: error.message || "Internal server error" });
         }
     };
@@ -84,7 +87,7 @@ export class PlacesController {
             const address = await this.placesService.reverseGeocode(Number(lat), Number(lng));
             return res.json({ address });
         } catch (error: any) {
-            console.error("Error reverse geocoding:", error);
+            log.error("Error reverse geocoding", { error: (error as Error).message });
             return res.status(400).json({ message: error.message || "Internal server error" });
         }
     };

@@ -2,6 +2,9 @@ import { Request, Response } from "express";
 import { AuthRequest } from "../middleware/role-middleware";
 import { PaymentService } from "../services/payment/payment-service";
 import { WalletService } from "../services/wallet-service";
+import { createServiceLogger } from "../utils/logger";
+
+const log = createServiceLogger("PaymentController");
 
 export class PaymentController {
     private paymentService = new PaymentService();
@@ -25,7 +28,7 @@ export class PaymentController {
             // Always respond 200 to Paystack
             return res.status(200).json({ message: "ok" });
         } catch (error: any) {
-            console.error("Webhook error:", error);
+            log.error("Webhook error", { error: error.message });
             // Still return 200 to prevent retries on our errors
             return res.status(200).json({ message: "ok" });
         }
@@ -46,7 +49,7 @@ export class PaymentController {
 
             return res.json({ payment });
         } catch (error: any) {
-            console.error("Error verifying payment:", error);
+            log.error("Error verifying payment", { error: error.message });
             return res.status(500).json({ message: "Internal server error" });
         }
     };
@@ -66,7 +69,7 @@ export class PaymentController {
             const result = await this.paymentService.getUserPayments(userId, limit, offset);
             return res.json(result);
         } catch (error: any) {
-            console.error("Error getting payment history:", error);
+            log.error("Error getting payment history", { error: error.message });
             return res.status(500).json({ message: "Internal server error" });
         }
     };

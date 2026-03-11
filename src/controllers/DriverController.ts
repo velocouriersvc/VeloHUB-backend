@@ -3,6 +3,9 @@ import { AuthRequest } from "../middleware/role-middleware";
 import { RideService } from "../services/ride-service";
 import { RedisLocationService } from "../services/redis-location-service";
 import { RatingService } from "../services/rating-service";
+import { createServiceLogger } from "../utils/logger";
+
+const log = createServiceLogger("DriverController");
 
 export class DriverController {
     private rideService = new RideService();
@@ -27,7 +30,7 @@ export class DriverController {
             await this.redisLocation.updateDriverLocation(userId, Number(lat), Number(lng), heading, speed);
             return res.json({ message: "Location updated" });
         } catch (error: any) {
-            console.error("Error updating location:", error);
+            log.error("Error updating location", { error: (error as Error).message });
             return res.status(500).json({ message: "Internal server error" });
         }
     };
@@ -52,7 +55,7 @@ export class DriverController {
 
             return res.json({ message: "You are now online", status: "online" });
         } catch (error: any) {
-            console.error("Error going online:", error);
+            log.error("Error going online", { error: (error as Error).message });
             return res.status(500).json({ message: "Internal server error" });
         }
     };
@@ -69,7 +72,7 @@ export class DriverController {
             await this.redisLocation.removeDriver(userId);
             return res.json({ message: "You are now offline", status: "offline" });
         } catch (error: any) {
-            console.error("Error going offline:", error);
+            log.error("Error going offline", { error: (error as Error).message });
             return res.status(500).json({ message: "Internal server error" });
         }
     };
@@ -93,7 +96,7 @@ export class DriverController {
             const ride = await this.rideService.acceptRide(rideId, userId, driverName);
             return res.json({ ride });
         } catch (error: any) {
-            console.error("Error accepting ride:", error);
+            log.error("Error accepting ride", { error: (error as Error).message });
             return res.status(400).json({ message: error.message || "Internal server error" });
         }
     };
@@ -110,7 +113,7 @@ export class DriverController {
             const ride = await this.rideService.driverEnroute(rideId, driverName || "Driver");
             return res.json({ ride });
         } catch (error: any) {
-            console.error("Error setting enroute:", error);
+            log.error("Error setting enroute", { error: (error as Error).message });
             return res.status(400).json({ message: error.message || "Internal server error" });
         }
     };
@@ -127,7 +130,7 @@ export class DriverController {
             const ride = await this.rideService.driverArrived(rideId, driverName || "Driver");
             return res.json({ ride });
         } catch (error: any) {
-            console.error("Error setting arrived:", error);
+            log.error("Error setting arrived", { error: (error as Error).message });
             return res.status(400).json({ message: error.message || "Internal server error" });
         }
     };
@@ -141,7 +144,7 @@ export class DriverController {
             const ride = await this.rideService.startRide(req.params.id);
             return res.json({ ride });
         } catch (error: any) {
-            console.error("Error starting ride:", error);
+            log.error("Error starting ride", { error: (error as Error).message });
             return res.status(400).json({ message: error.message || "Internal server error" });
         }
     };
@@ -155,7 +158,7 @@ export class DriverController {
             const ride = await this.rideService.completeRide(req.params.id);
             return res.json({ ride });
         } catch (error: any) {
-            console.error("Error completing ride:", error);
+            log.error("Error completing ride", { error: (error as Error).message });
             return res.status(400).json({ message: error.message || "Internal server error" });
         }
     };
@@ -172,7 +175,7 @@ export class DriverController {
             const ride = await this.rideService.getDriverActiveRide(userId);
             return res.json({ ride });
         } catch (error: any) {
-            console.error("Error getting active ride:", error);
+            log.error("Error getting active ride", { error: (error as Error).message });
             return res.status(500).json({ message: "Internal server error" });
         }
     };
@@ -192,7 +195,7 @@ export class DriverController {
             const result = await this.rideService.getDriverRides(userId, limit, offset);
             return res.json(result);
         } catch (error: any) {
-            console.error("Error getting ride history:", error);
+            log.error("Error getting ride history", { error: (error as Error).message });
             return res.status(500).json({ message: "Internal server error" });
         }
     };
@@ -209,7 +212,7 @@ export class DriverController {
             const stats = await this.ratingService.getOrCreateDriverStats(userId);
             return res.json({ stats });
         } catch (error: any) {
-            console.error("Error getting stats:", error);
+            log.error("Error getting stats", { error: (error as Error).message });
             return res.status(500).json({ message: "Internal server error" });
         }
     };

@@ -1,7 +1,10 @@
 import { Client } from "minio";
 import dotenv from "dotenv";
+import { createServiceLogger } from "./logger";
 
 dotenv.config();
+
+const log = createServiceLogger("MinIO");
 
 const endpoint = process.env.MINIO_ENDPOINT || "localhost";
 const port = parseInt(process.env.MINIO_PORT || "9000");
@@ -28,7 +31,7 @@ export async function ensureBucket(): Promise<void> {
     const exists = await minioClient.bucketExists(BUCKET_NAME);
     if (!exists) {
       await minioClient.makeBucket(BUCKET_NAME);
-      console.log(`✅ MinIO bucket "${BUCKET_NAME}" created`);
+      log.info("MinIO bucket created", { bucket: BUCKET_NAME });
 
       // Set bucket policy to allow public read (so URLs work without signed links)
       const policy = {
@@ -44,11 +47,11 @@ export async function ensureBucket(): Promise<void> {
         ],
       };
       await minioClient.setBucketPolicy(BUCKET_NAME, JSON.stringify(policy));
-      console.log(`✅ MinIO bucket policy set to public-read`);
+      log.info("MinIO bucket policy set to public-read");
     } else {
-      console.log(`✅ MinIO bucket "${BUCKET_NAME}" exists`);
+      log.info("MinIO bucket exists", { bucket: BUCKET_NAME });
     }
   } catch (error) {
-    console.error("❌ MinIO bucket initialization failed:", error);
+    log.error("MinIO bucket initialization failed", { error: (error as Error).message });
   }
 }

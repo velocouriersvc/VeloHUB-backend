@@ -1,7 +1,11 @@
 import twilio from 'twilio';
 import dotenv from 'dotenv';
+import { createServiceLogger } from '../utils/logger';
+import { notificationEventsTotal } from '../utils/metrics';
 
 dotenv.config();
+
+const log = createServiceLogger('TwilioService');
 
 export class TwilioService {
     private client: twilio.Twilio;
@@ -17,7 +21,7 @@ export class TwilioService {
         this.verifyServiceSid = process.env.TWILIO_VERIFY_SERVICE_SID || '';
 
         if (!accountSid || !authToken || !this.fromNumber || !this.verifyServiceSid) {
-            console.warn('Twilio credentials, phone number, or Verify Service SID are missing from environment variables.');
+            log.warn('Twilio credentials, phone number, or Verify Service SID are missing from environment variables');
         }
 
         this.client = twilio(accountSid, authToken);
@@ -30,10 +34,12 @@ export class TwilioService {
                 from: this.fromNumber,
                 to,
             });
-            console.log(`SMS sent successfully to ${to}. SID: ${message.sid}`);
+            log.info('SMS sent successfully', { sid: message.sid });
+            notificationEventsTotal.inc({ channel: 'sms', status: 'success' });
             return message.sid;
-        } catch (error) {
-            console.error(`Failed to send SMS to ${to}:`, error);
+        } catch (error: any) {
+            log.error('Failed to send SMS', { error: error.message });
+            notificationEventsTotal.inc({ channel: 'sms', status: 'failed' });
             throw error;
         }
     }
@@ -48,10 +54,12 @@ export class TwilioService {
                 from,
                 to: toWhatsApp,
             });
-            console.log(`WhatsApp message sent successfully to ${to}. SID: ${message.sid}`);
+            log.info('WhatsApp message sent successfully', { sid: message.sid });
+            notificationEventsTotal.inc({ channel: 'whatsapp', status: 'success' });
             return message.sid;
-        } catch (error) {
-            console.error(`Failed to send WhatsApp message to ${to}:`, error);
+        } catch (error: any) {
+            log.error('Failed to send WhatsApp message', { error: error.message });
+            notificationEventsTotal.inc({ channel: 'whatsapp', status: 'failed' });
             throw error;
         }
     }
@@ -65,8 +73,8 @@ export class TwilioService {
                 errorMessage: message.errorMessage,
                 dateUpdated: message.dateUpdated
             };
-        } catch (error) {
-            console.error(`Failed to fetch status for SID ${sid}:`, error);
+        } catch (error: any) {
+            log.error('Failed to fetch message status', { sid, error: error.message });
             throw error;
         }
     }
@@ -76,10 +84,10 @@ export class TwilioService {
             const verification = await this.client.verify.v2
                 .services(this.verifyServiceSid)
                 .verifications.create({ to, channel });
-            console.log(`Verification sent to ${to} via ${channel}. Status: ${verification.status}`);
+            log.info('Verification sent', { channel, status: verification.status });
             return verification;
-        } catch (error) {
-            console.error(`Failed to send verification to ${to}:`, error);
+        } catch (error: any) {
+            log.error('Failed to send verification', { channel, error: error.message });
             throw error;
         }
     }
@@ -89,10 +97,10 @@ export class TwilioService {
             const check = await this.client.verify.v2
                 .services(this.verifyServiceSid)
                 .verificationChecks.create({ to, code });
-            console.log(`Verification check for ${to}. Status: ${check.status}`);
+            log.info('Verification check completed', { status: check.status });
             return check.status === 'approved';
-        } catch (error) {
-            console.error(`Failed to check verification for ${to}:`, error);
+        } catch (error: any) {
+            log.error('Failed to check verification', { error: error.message });
             return false;
         }
     }

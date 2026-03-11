@@ -3,6 +3,9 @@ import { AppDataSource } from "../db/data-source";
 import { User } from "../models/user";
 import { UserRole, RoleStatus } from "../models/user-role";
 import { validatePhoneNumber } from "../utils/phone-validator";
+import { createServiceLogger } from "../utils/logger";
+
+const log = createServiceLogger("RoleMiddleware");
 
 export interface AuthRequest extends Request {
   user?: {
@@ -68,7 +71,7 @@ export const requireRole = (requiredRoles: string[]) => {
       };
       next();
     } catch (error) {
-      console.error("Role check error:", error);
+      log.error("Role check error", { error: (error as Error).message });
       return res.status(500).json({ message: "Role check failed" });
     }
   };

@@ -2,6 +2,10 @@ import { AppDataSource } from "../db/data-source";
 import { Notification, NotificationType } from "../models/notification";
 import { PushToken, DevicePlatform } from "../models/push-token";
 import { TwilioService } from "./twilio-service";
+import { createServiceLogger } from "../utils/logger";
+import { notificationEventsTotal } from "../utils/metrics";
+
+const log = createServiceLogger("NotificationService");
 
 export class NotificationService {
     private notifRepo = AppDataSource.getRepository(Notification);
@@ -49,7 +53,8 @@ export class NotificationService {
 
         // 2. Send push notification (fire-and-forget, don't block)
         this.sendPushNotification(userId, title, body, data).catch((err) => {
-            console.error(`Push notification failed for user ${userId}:`, err.message);
+            log.error("Push notification failed", { userId, error: err.message });
+            notificationEventsTotal.inc({ channel: "push", status: "failed" });
         });
 
         return notification;
@@ -65,7 +70,7 @@ export class NotificationService {
         try {
             await this.twilioService.sendSMS(phoneNumber, message);
         } catch (err: any) {
-            console.error(`SMS notification failed for ${phoneNumber}:`, err.message);
+            log.error("SMS notification failed", { error: err.message });
         }
     }
 
@@ -79,7 +84,7 @@ export class NotificationService {
         try {
             await this.twilioService.sendWhatsApp(phoneNumber, message);
         } catch (err: any) {
-            console.error(`WhatsApp notification failed for ${phoneNumber}:`, err.message);
+            log.error("WhatsApp notification failed", { error: err.message });
         }
     }
 
@@ -189,7 +194,8 @@ export class NotificationService {
 
         // TODO: Replace with actual FCM send when firebase-admin is added
         // For now, just log that we would send a push
-        console.log(`📱 Push notification for user ${userId}: "${title}" → ${tokens.length} device(s)`);
+        log.info("Push notification queued", { userId, title, deviceCount: tokens.length });
+        notificationEventsTotal.inc({ channel: "push", status: "success" });
 
         // When ready, implement like this:
         // import admin from "firebase-admin";

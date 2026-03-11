@@ -9,6 +9,9 @@ import { User, UserStatus } from "../models/user";
 import { UserRole, RoleStatus } from "../models/user-role";
 import { Role } from "../models/role";
 import { BuyerSetupPayload, DriverSetupPayload, MerchantSetupPayload } from "../types/profile";
+import { createServiceLogger } from "../utils/logger";
+
+const log = createServiceLogger("ProfileService");
 
 export class ProfileService {
     private userRepository = AppDataSource.getRepository(User);
@@ -25,7 +28,7 @@ export class ProfileService {
                 });
             if (error) throw error;
         } catch (error) {
-            console.error(`[PROFILE SERVICE] Supabase sync failed for ${userId}:`, error);
+            log.error("Supabase sync failed", { userId, error: (error as Error).message });
             throw error;
         }
     }
@@ -54,9 +57,11 @@ export class ProfileService {
             // });
 
             await queryRunner.commitTransaction();
+            log.info("Buyer profile setup completed", { userId });
             return savedProfile;
         } catch (error) {
             await queryRunner.rollbackTransaction();
+            log.error("Buyer profile setup failed", { userId, error: (error as Error).message });
             throw error;
         } finally {
             await queryRunner.release();
@@ -106,9 +111,11 @@ export class ProfileService {
             // });
 
             await queryRunner.commitTransaction();
+            log.info("Driver profile setup completed", { userId });
             return savedProfile;
         } catch (error) {
             await queryRunner.rollbackTransaction();
+            log.error("Driver profile setup failed", { userId, error: (error as Error).message });
             throw error;
         } finally {
             await queryRunner.release();
@@ -161,9 +168,11 @@ export class ProfileService {
             // });
 
             await queryRunner.commitTransaction();
+            log.info("Merchant profile setup completed", { userId });
             return savedProfile;
         } catch (error) {
             await queryRunner.rollbackTransaction();
+            log.error("Merchant profile setup failed", { userId, error: (error as Error).message });
             throw error;
         } finally {
             await queryRunner.release();

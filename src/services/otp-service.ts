@@ -2,6 +2,10 @@ import { AppDataSource } from "../db/data-source";
 import { Otp } from "../models/otp";
 import { TwilioService } from "./twilio-service";
 import { MoreThan } from "typeorm";
+import { createServiceLogger } from "../utils/logger";
+import { authEventsTotal } from "../utils/metrics";
+
+const log = createServiceLogger("OtpService");
 
 export class OtpService {
     private otpRepository = AppDataSource.getRepository(Otp);
@@ -9,7 +13,8 @@ export class OtpService {
     async createOtp(phoneNumber: string): Promise<string> {
         // Generate 6-digit code
         const code = Math.floor(100000 + Math.random() * 900000).toString();
-        console.log(`[OTP SERVICE] Generated OTP for ${phoneNumber}: ${code}`);
+        log.info("OTP generated for phone number", { phoneNumber: "[MASKED]" });
+        authEventsTotal.inc({ event: "otp_requested" });
 
         // Set expiry to 10 minutes from now
         const expiresAt = new Date();
@@ -30,10 +35,9 @@ export class OtpService {
         const twilioService = new TwilioService();
         try {
             await twilioService.sendSMS(phoneNumber, `Your verification code is: ${code}`);
-        } catch (error) {
-            console.error("Failed to send OTP SMS:", error);
-            // We might want to throw here or handle it gracefully depending on requirements
-            // For now, logging it is sufficient as the code is returned
+            log.info("OTP SMS sent successfully");
+        } catch (error: any) {
+            log.error("Failed to send OTP SMS", { error: error.message });
         }
         return code;
     }
@@ -49,6 +53,8 @@ export class OtpService {
         });
 
         if (!otp) {
+            log.warn("OTP verification failed — invalid or expired");
+            authEventsTotal.inc({ event: "otp_failed" });
             return false;
         }
 
@@ -56,15 +62,20 @@ export class OtpService {
         otp.isVerified = true;
         await this.otpRepository.save(otp);
 
+        log.info("OTP verified successfully");
+        authEventsTotal.inc({ event: "otp_verified" });
+
         return true;
     }
 
     async cleanup(): Promise<void> {
         // Delete expired or verified OTPs
-        await this.otpRepository.createQueryBuilder()
+        const result = await this.otpRepository.createQueryBuilder()
             .delete()
             .where("expiresAt < :now", { now: new Date() })
             .orWhere("isVerified = :verified", { verified: true })
             .execute();
+
+        log.info("OTP cleanup completed", { deletedCount: result.affected || 0 });
     }
 }

@@ -8,6 +8,9 @@ import { AuthResponse, AuthUserResponse, SupabaseUser, SyncUserResponse } from "
 import { TwilioService } from "./twilio-service";
 import { Role, RoleType } from "../models/role";
 import { UserRole, RoleStatus } from "../models/user-role";
+import { createServiceLogger } from "../utils/logger";
+
+const log = createServiceLogger("AuthService");
 
 export class AuthService {
     private userRepository = AppDataSource.getRepository(User);
@@ -33,10 +36,10 @@ export class AuthService {
     async requestOtp(phoneNumber: string): Promise<void> {
         // 1. Generate and Send OTP via OtpService (Local DB + Twilio SMS)
         try {
-            const code = await this.otpService.createOtp(phoneNumber);
-            console.log(`[AUTH SERVICE] OTP generated for ${phoneNumber}: ${code}`);
-        } catch (error) {
-            console.error(`[AUTH SERVICE] Failed to request OTP for ${phoneNumber}:`, error);
+            await this.otpService.createOtp(phoneNumber);
+            log.info("OTP request initiated");
+        } catch (error: any) {
+            log.error("Failed to request OTP", { error: error.message });
             throw new Error("Failed to send verification code. Please try again later.");
         }
     }
@@ -67,10 +70,13 @@ export class AuthService {
                 status: UserStatus.ACTIVE,
             });
             await this.userRepository.save(user);
+            log.info("New user created", { userId: user.id });
         }
 
         user.lastLoginAt = new Date();
         await this.userRepository.save(user);
+
+        log.info("User login successful", { userId: user.id, isNewUser });
 
         return {
             token: "mock-jwt-token",

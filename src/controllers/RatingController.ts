@@ -1,6 +1,9 @@
 import { Response } from "express";
 import { AuthRequest } from "../middleware/role-middleware";
 import { RatingService } from "../services/rating-service";
+import { createServiceLogger } from "../utils/logger";
+
+const log = createServiceLogger("RatingController");
 
 export class RatingController {
     private ratingService = new RatingService();
@@ -23,7 +26,7 @@ export class RatingController {
             const result = await this.ratingService.rateRide(rideId, userId, Number(rating), comment);
             return res.status(201).json({ rating: result });
         } catch (error: any) {
-            console.error("Error rating ride:", error);
+            log.error("Error rating ride", { error: (error as Error).message });
             return res.status(400).json({ message: error.message || "Internal server error" });
         }
     };
@@ -37,7 +40,7 @@ export class RatingController {
             const rating = await this.ratingService.getRideRating(req.params.rideId);
             return res.json({ rating });
         } catch (error: any) {
-            console.error("Error getting rating:", error);
+            log.error("Error getting rating", { error: (error as Error).message });
             return res.status(500).json({ message: "Internal server error" });
         }
     };
@@ -55,7 +58,7 @@ export class RatingController {
             const result = await this.ratingService.getDriverRatings(driverId, limit, offset);
             return res.json(result);
         } catch (error: any) {
-            console.error("Error getting driver ratings:", error);
+            log.error("Error getting driver ratings", { error: (error as Error).message });
             return res.status(500).json({ message: "Internal server error" });
         }
     };

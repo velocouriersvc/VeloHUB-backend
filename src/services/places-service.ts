@@ -1,4 +1,7 @@
 import axios from "axios";
+import { createServiceLogger } from "../utils/logger";
+
+const log = createServiceLogger("PlacesService");
 
 export interface PlacePrediction {
     placeId: string;
@@ -29,7 +32,7 @@ export class PlacesService {
     constructor() {
         this.apiKey = process.env.GOOGLE_MAPS_API_KEY || "";
         if (!this.apiKey) {
-            console.warn("⚠️ GOOGLE_MAPS_API_KEY not set");
+            log.warn("GOOGLE_MAPS_API_KEY not set");
         }
     }
 

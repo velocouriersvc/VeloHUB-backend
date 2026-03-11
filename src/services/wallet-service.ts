@@ -2,6 +2,9 @@ import { AppDataSource } from "../db/data-source";
 import { Wallet } from "../models/wallet";
 import { WalletTransaction, TransactionType } from "../models/wallet-transaction";
 import { v4 as uuidv4 } from "uuid";
+import { createServiceLogger } from "../utils/logger";
+
+const log = createServiceLogger("WalletService");
 
 export class WalletService {
     private walletRepo = AppDataSource.getRepository(Wallet);
@@ -67,6 +70,7 @@ export class WalletService {
             metadata: metadata || null,
         });
 
+        log.info("Wallet credited", { userId, amount, balanceAfter });
         return this.txRepo.save(tx);
     }
 
@@ -107,6 +111,7 @@ export class WalletService {
             metadata: metadata || null,
         });
 
+        log.info("Wallet debited", { userId, amount, balanceAfter });
         return this.txRepo.save(tx);
     }
 
