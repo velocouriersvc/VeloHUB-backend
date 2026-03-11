@@ -1,5 +1,5 @@
 # Build stage
-FROM node:20-alpine AS builder
+FROM node:20-alpine3.24 AS builder
 
 WORKDIR /app
 
@@ -16,7 +16,7 @@ COPY . .
 RUN npm run build
 
 # Production stage
-FROM node:20-alpine
+FROM node:20-alpine3.24
 
 WORKDIR /app
 
@@ -25,6 +25,9 @@ COPY package*.json ./
 
 # Install production dependencies only
 RUN npm install --omit=dev
+
+# ensure zlib is upgraded to the patched release (CVE-2026-22184)
+RUN apk update && apk upgrade zlib
 
 # Copy built assets and necessary files from builder
 COPY --from=builder /app/dist ./dist
