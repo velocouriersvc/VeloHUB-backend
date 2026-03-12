@@ -69,7 +69,7 @@ router.get("/health", async (_req: Request, res: Response) => {
 
   const payload = {
     status: allHealthy ? "healthy" : "degraded",
-    version: "1.0.0",
+    version: "1.0.1",
     uptime: Math.floor(process.uptime()),
     timestamp: new Date().toISOString(),
     services: checks,
