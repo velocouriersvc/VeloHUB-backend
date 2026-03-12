@@ -19,7 +19,7 @@ const buyerRole = requireRole(["buyer"]);
 
 /**
  * @openapi
- * /orders/quote:
+ * /marketplace/orders/quote:
  *   post:
  *     tags: [Orders]
  *     summary: Get order quote
@@ -103,7 +103,7 @@ router.post("/quote", buyerRole, validate([
 
 /**
  * @openapi
- * /orders/checkout:
+ * /marketplace/orders/checkout:
  *   post:
  *     tags: [Orders]
  *     summary: Place an order (checkout)
@@ -215,7 +215,7 @@ router.post("/checkout", buyerRole, validate([
 
 /**
  * @openapi
- * /orders:
+ * /marketplace/orders:
  *   get:
  *     tags: [Orders]
  *     summary: Get my orders
@@ -269,7 +269,7 @@ router.get("/", buyerRole, orderController.getMyOrders);
 
 /**
  * @openapi
- * /orders/{id}:
+ * /marketplace/orders/{id}:
  *   get:
  *     tags: [Orders]
  *     summary: Get order details
@@ -298,7 +298,7 @@ router.get("/:id", buyerRole, orderController.getOrder);
 
 /**
  * @openapi
- * /orders/{id}/cancel:
+ * /marketplace/orders/{id}/cancel:
  *   post:
  *     tags: [Orders]
  *     summary: Cancel order (customer)

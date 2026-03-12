@@ -5,7 +5,7 @@ const options: swaggerJsdoc.Options = {
     openapi: "3.0.0",
     info: {
       title: "Velo Backend API",
-      version: "1.0.0",
+      version: "1.0.1",
       description: `
 ## Ride-hailing, delivery & wallet API for the VeloHub platform.
 
@@ -45,10 +45,26 @@ This is used for role-based access (buyer, driver, merchant). Use a real registe
       { name: "Payments", description: "Paystack payments, webhook, verification" },
       { name: "Wallet", description: "Wallet balance & transaction history" },
       { name: "Locations", description: "Saved locations (Home, Work, etc.)" },
-      { name: "Ratings", description: "Rate completed rides, view driver ratings" },
+      { name: "Ratings", description: "Rate completed rides & marketplace orders" },
       { name: "Places", description: "Google Places — autocomplete, details, distance, reverse geocode" },
       { name: "Notifications", description: "In-app notifications & push token management" },
       { name: "Uploads", description: "File uploads to MinIO — images & PDFs for ID verification" },
+      { name: "Waitlist", description: "Join waitlist & manage countries" },
+      { name: "Products", description: "Marketplace products — browse, create, manage stock & customizations" },
+      { name: "Merchant", description: "Merchant profile, store settings, hours, orders & analytics" },
+      { name: "Search", description: "Unified search — merchants & products with geo filtering" },
+      { name: "Cart", description: "Shopping cart — add items, update quantities, clear" },
+      { name: "Orders", description: "Marketplace orders — quote, checkout, track, cancel" },
+      { name: "Driver - Deliveries", description: "Driver marketplace delivery operations — accept, pickup, deliver" },
+      { name: "Admin", description: "Admin — users, drivers, merchants, rides (legacy)" },
+      { name: "Admin - Dashboard", description: "Admin dashboard overview & analytics" },
+      { name: "Admin - Orders", description: "Admin order management & status overrides" },
+      { name: "Admin - Products", description: "Admin product moderation — suspend, reactivate, delete" },
+      { name: "Admin - Merchants", description: "Admin merchant verification, rates & management" },
+      { name: "Admin - Payouts", description: "Admin payout approval & rejection" },
+      { name: "Admin - Settings", description: "Platform settings per country — rates, fees, limits" },
+      { name: "Admin - Reports", description: "Revenue & order distribution reports" },
+      { name: "Admin - Support", description: "Driver assignment, wallet credits/debits" },
       { name: "Dev", description: "Development/debug endpoints — **not for production**" },
     ],
     components: {
@@ -433,7 +449,7 @@ This is used for role-based access (buyer, driver, merchant). Use a real registe
     // Global security — applies to ALL endpoints unless overridden with `security: []`
     security: [{ ApiKeyAuth: [] }],
   },
-  apis: ["./src/routes/*.ts", "./src/routes/*.js"],
+  apis: ["./src/routes/*.ts", "./src/routes/*.js", "./dist/routes/*.js"],
 };
 
 export const swaggerSpec = swaggerJsdoc(options);

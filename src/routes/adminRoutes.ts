@@ -18,7 +18,7 @@ const adminRole = requireRole(["admin"]);
 
 /**
  * @openapi
- * /api/v1/admin/drivers:
+ * /admin/drivers:
  *   get:
  *     tags: [Admin]
  *     summary: List all drivers
@@ -32,7 +32,7 @@ router.get("/drivers", adminRole, adminController.getDrivers);
 
 /**
  * @openapi
- * /api/v1/admin/merchants:
+ * /admin/merchants:
  *   get:
  *     tags: [Admin]
  *     summary: List all merchants
@@ -46,7 +46,7 @@ router.get("/merchants", adminRole, adminController.getMerchants);
 
 /**
  * @openapi
- * /api/v1/admin/rides:
+ * /admin/rides:
  *   get:
  *     tags: [Admin]
  *     summary: List all rides
@@ -60,7 +60,7 @@ router.get("/rides", adminRole, adminController.getRides);
 
 /**
  * @openapi
- * /api/v1/admin/users:
+ * /admin/users:
  *   get:
  *     tags: [Admin]
  *     summary: List all users
@@ -74,7 +74,7 @@ router.get("/users", adminRole, adminController.getUsers);
 
 /**
  * @openapi
- * /api/v1/admin/drivers/{id}:
+ * /admin/drivers/{id}:
  *   patch:
  *     tags: [Admin]
  *     summary: Update driver approval status
@@ -104,7 +104,7 @@ router.patch("/drivers/:id", adminRole, adminController.updateDriverStatus);
 
 /**
  * @openapi
- * /api/v1/admin/merchants/{id}:
+ * /admin/merchants/{id}:
  *   patch:
  *     tags: [Admin]
  *     summary: Update merchant verification status (legacy)
@@ -138,7 +138,7 @@ router.patch("/merchants/:id", adminRole, adminController.updateMerchantStatus);
 
 /**
  * @openapi
- * /api/v1/admin/dashboard:
+ * /admin/dashboard:
  *   get:
  *     tags: [Admin - Dashboard]
  *     summary: Get admin dashboard overview
@@ -182,7 +182,7 @@ router.get("/dashboard", adminRole, adminController.getDashboard);
 
 /**
  * @openapi
- * /api/v1/admin/orders:
+ * /admin/orders:
  *   get:
  *     tags: [Admin - Orders]
  *     summary: List orders with filters & pagination
@@ -240,7 +240,7 @@ router.get("/orders", adminRole, adminController.getOrders);
 
 /**
  * @openapi
- * /api/v1/admin/orders/{id}:
+ * /admin/orders/{id}:
  *   get:
  *     tags: [Admin - Orders]
  *     summary: Get order detail
@@ -262,7 +262,7 @@ router.get("/orders/:id", adminRole, adminController.getOrderDetail);
 
 /**
  * @openapi
- * /api/v1/admin/orders/{id}/status:
+ * /admin/orders/{id}/status:
  *   patch:
  *     tags: [Admin - Orders]
  *     summary: Override order status
@@ -300,7 +300,7 @@ router.patch("/orders/:id/status", adminRole, validate([
 
 /**
  * @openapi
- * /api/v1/admin/orders/{id}/refund:
+ * /admin/orders/{id}/refund:
  *   post:
  *     tags: [Admin - Orders]
  *     summary: Refund an order (credits customer wallet)
@@ -332,7 +332,7 @@ router.post("/orders/:id/refund", adminRole, adminController.refundOrder);
 
 /**
  * @openapi
- * /api/v1/admin/orders/{id}/cancel:
+ * /admin/orders/{id}/cancel:
  *   post:
  *     tags: [Admin - Orders]
  *     summary: Admin cancel an order
@@ -364,7 +364,7 @@ router.post("/orders/:id/cancel", adminRole, adminController.adminCancelOrder);
 
 /**
  * @openapi
- * /api/v1/admin/orders/{id}/assign-driver:
+ * /admin/orders/{id}/assign-driver:
  *   post:
  *     tags: [Admin - Support]
  *     summary: Assign a driver to an order
@@ -400,7 +400,7 @@ router.post("/orders/:id/assign-driver", adminRole, validate([
 
 /**
  * @openapi
- * /api/v1/admin/orders/{id}/reassign-driver:
+ * /admin/orders/{id}/reassign-driver:
  *   post:
  *     tags: [Admin - Support]
  *     summary: Reassign a different driver to an order
@@ -441,7 +441,7 @@ router.post("/orders/:id/reassign-driver", adminRole, validate([
 
 /**
  * @openapi
- * /api/v1/admin/products:
+ * /admin/products:
  *   get:
  *     tags: [Admin - Products]
  *     summary: List products with filters (including soft-deleted)
@@ -482,7 +482,7 @@ router.get("/products", adminRole, adminController.getProducts);
 
 /**
  * @openapi
- * /api/v1/admin/products/{id}:
+ * /admin/products/{id}:
  *   patch:
  *     tags: [Admin - Products]
  *     summary: Suspend or reactivate a product
@@ -515,7 +515,7 @@ router.patch("/products/:id", adminRole, adminController.updateProduct);
 
 /**
  * @openapi
- * /api/v1/admin/products/{id}:
+ * /admin/products/{id}:
  *   delete:
  *     tags: [Admin - Products]
  *     summary: Soft-delete a product
@@ -541,7 +541,7 @@ router.delete("/products/:id", adminRole, adminController.deleteProduct);
 
 /**
  * @openapi
- * /api/v1/admin/merchants/{id}/details:
+ * /admin/merchants/{id}/details:
  *   get:
  *     tags: [Admin - Merchants]
  *     summary: Get merchant profile, stats, wallet & recent orders
@@ -563,7 +563,7 @@ router.get("/merchants/:id/details", adminRole, adminController.getMerchantDetai
 
 /**
  * @openapi
- * /api/v1/admin/merchants/{id}/rates:
+ * /admin/merchants/{id}/rates:
  *   patch:
  *     tags: [Admin - Merchants]
  *     summary: Update merchant commission/service/pickup fee rates
@@ -606,7 +606,7 @@ router.patch("/merchants/:id/rates", adminRole, adminController.updateMerchantRa
 
 /**
  * @openapi
- * /api/v1/admin/merchants/{id}/suspend:
+ * /admin/merchants/{id}/suspend:
  *   post:
  *     tags: [Admin - Merchants]
  *     summary: Suspend a merchant
@@ -636,7 +636,7 @@ router.post("/merchants/:id/suspend", adminRole, adminController.suspendMerchant
 
 /**
  * @openapi
- * /api/v1/admin/merchants/{id}/approve:
+ * /admin/merchants/{id}/approve:
  *   post:
  *     tags: [Admin - Merchants]
  *     summary: Approve a merchant (creates wallet, approves role)
@@ -658,7 +658,7 @@ router.post("/merchants/:id/approve", adminRole, adminController.approveMerchant
 
 /**
  * @openapi
- * /api/v1/admin/merchants/{id}/orders:
+ * /admin/merchants/{id}/orders:
  *   get:
  *     tags: [Admin - Merchants]
  *     summary: Get orders for a specific merchant
@@ -692,7 +692,7 @@ router.get("/merchants/:id/orders", adminRole, adminController.getMerchantOrders
 
 /**
  * @openapi
- * /api/v1/admin/merchants/{id}/finances:
+ * /admin/merchants/{id}/finances:
  *   get:
  *     tags: [Admin - Merchants]
  *     summary: Get merchant financial overview (wallet, rates, stats, payouts)
@@ -716,7 +716,7 @@ router.get("/merchants/:id/finances", adminRole, adminController.getMerchantFina
 
 /**
  * @openapi
- * /api/v1/admin/payouts:
+ * /admin/payouts:
  *   get:
  *     tags: [Admin - Payouts]
  *     summary: List payout requests with filters
@@ -746,7 +746,7 @@ router.get("/payouts", adminRole, adminController.getPayouts);
 
 /**
  * @openapi
- * /api/v1/admin/payouts/{id}/approve:
+ * /admin/payouts/{id}/approve:
  *   patch:
  *     tags: [Admin - Payouts]
  *     summary: Approve a payout request
@@ -770,7 +770,7 @@ router.patch("/payouts/:id/approve", adminRole, adminController.approvePayout);
 
 /**
  * @openapi
- * /api/v1/admin/payouts/{id}/reject:
+ * /admin/payouts/{id}/reject:
  *   patch:
  *     tags: [Admin - Payouts]
  *     summary: Reject a payout request (refunds amount to wallet)
@@ -808,7 +808,7 @@ router.patch("/payouts/:id/reject", adminRole, validate([
 
 /**
  * @openapi
- * /api/v1/admin/settings:
+ * /admin/settings:
  *   get:
  *     tags: [Admin - Settings]
  *     summary: Get all platform settings (all countries)
@@ -822,7 +822,7 @@ router.get("/settings", adminRole, adminController.getSettings);
 
 /**
  * @openapi
- * /api/v1/admin/settings/{country}:
+ * /admin/settings/{country}:
  *   put:
  *     tags: [Admin - Settings]
  *     summary: Upsert platform settings for a country
@@ -867,7 +867,7 @@ router.put("/settings/:country", adminRole, adminController.updateSettings);
 
 /**
  * @openapi
- * /api/v1/admin/reports/revenue:
+ * /admin/reports/revenue:
  *   get:
  *     tags: [Admin - Reports]
  *     summary: Revenue report for a date range
@@ -896,7 +896,7 @@ router.get("/reports/revenue", adminRole, adminController.getRevenueReport);
 
 /**
  * @openapi
- * /api/v1/admin/reports/orders:
+ * /admin/reports/orders:
  *   get:
  *     tags: [Admin - Reports]
  *     summary: Order distribution report for a date range
@@ -929,7 +929,7 @@ router.get("/reports/orders", adminRole, adminController.getOrderReport);
 
 /**
  * @openapi
- * /api/v1/admin/users/{id}/credit-wallet:
+ * /admin/users/{id}/credit-wallet:
  *   post:
  *     tags: [Admin - Support]
  *     summary: Credit a user's wallet (admin adjustment)
@@ -967,7 +967,7 @@ router.post("/users/:id/credit-wallet", adminRole, validate([
 
 /**
  * @openapi
- * /api/v1/admin/users/{id}/debit-wallet:
+ * /admin/users/{id}/debit-wallet:
  *   post:
  *     tags: [Admin - Support]
  *     summary: Debit a user's wallet (admin adjustment)

@@ -121,6 +121,43 @@ router.post("/verify-otp", authController.verifyOTP);
  *         description: Server error
  */
 router.post("/sync", authController.syncUser);
+
+/**
+ * @openapi
+ * /auth/me:
+ *   get:
+ *     tags: [Auth]
+ *     summary: Get current user
+ *     description: Returns the authenticated user's profile, roles, and approval status.
+ *     security:
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - $ref: '#/components/parameters/PhoneNumber'
+ *     responses:
+ *       200:
+ *         description: Current user data with roles
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 user:
+ *                   type: object
+ *                   properties:
+ *                     id:
+ *                       type: string
+ *                       format: uuid
+ *                     phoneNumber:
+ *                       type: string
+ *                     roles:
+ *                       type: array
+ *                       items:
+ *                         type: string
+ *       401:
+ *         description: Not authenticated
+ *       403:
+ *         description: Invalid API key or role not approved
+ */
 router.get("/me", requireRole(["admin", "buyer", "driver", "merchant"]), authController.getMe);
 
 export default router;
