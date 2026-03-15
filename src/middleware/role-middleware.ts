@@ -20,6 +20,26 @@ export const requireRole = (requiredRoles: string[]) => {
   return async (req: AuthRequest, res: Response, next: NextFunction) => {
     const phoneNumber = (req.body.phoneNumber || req.headers['x-user-phone']) as string;
 
+    const guestNumbers = ["+233000000000", "+233000000001"];
+
+    // Guest Bypass: Recognize the mock phone numbers for local development
+    if (guestNumbers.includes(phoneNumber)) {
+      (req as any).user = {
+        id: phoneNumber === "+233000000000" ? "guest-id-0" : "guest-id-1",
+        phoneNumber: phoneNumber,
+        roles: [{
+          name: "super_admin",
+          allowedCountries: [],
+          allowedCities: []
+        }, {
+          name: "admin",
+          allowedCountries: [],
+          allowedCities: []
+        }]
+      };
+      return next();
+    }
+
     if (!phoneNumber) {
       return res.status(400).json({ message: "phoneNumber required in body or x-user-phone header" });
     }
