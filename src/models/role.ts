@@ -6,6 +6,11 @@ export enum RoleType {
     DRIVER = "driver",
     MERCHANT = "merchant",
     ADMIN = "admin",
+    SUPER_ADMIN = "super_admin",
+    COUNTRY_MANAGER = "country_manager",
+    CITY_OPERATOR = "city_operator",
+    SUPPORT_AGENT = "support_agent",
+    FINANCE_VIEWER = "finance_viewer",
 }
 
 @Entity("roles")

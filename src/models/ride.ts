@@ -59,6 +59,12 @@ export class Ride {
     @Column({ type: "text" })
     pickupAddress: string;
 
+    @Column({ type: "varchar", length: 100, nullable: true })
+    country: string;
+
+    @Column({ type: "varchar", length: 100, nullable: true })
+    city: string;
+
     @Column({ type: "double precision" })
     pickupLat: number;
 

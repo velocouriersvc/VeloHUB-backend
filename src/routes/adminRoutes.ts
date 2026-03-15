@@ -17,4 +17,19 @@ router.get("/users", adminRole, adminController.getUsers);
 router.patch("/drivers/:id", adminRole, adminController.updateDriverStatus);
 router.patch("/merchants/:id", adminRole, adminController.updateMerchantStatus);
 
+// Zones
+router.get("/zones", adminRole, adminController.getZones);
+router.post("/zones", adminRole, adminController.createZone);
+router.patch("/zones/:id", adminRole, adminController.updateZone);
+router.delete("/zones/:id", adminRole, adminController.deleteZone);
+
+// Settings
+router.get("/settings", adminRole, adminController.getSettings);
+router.post("/settings", adminRole, adminController.updateSetting);
+
+// Withdrawals
+router.get("/withdrawals", adminRole, adminController.getWithdrawals);
+router.post("/withdrawals", adminRole, adminController.createWithdrawal);
+router.patch("/withdrawals/:id", adminRole, adminController.updateWithdrawal);
+
 export default router;

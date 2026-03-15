@@ -31,6 +31,12 @@ export class MerchantProfile {
     @Column({ type: "text" })
     address: string;
 
+    @Column({ type: "varchar", length: 100, nullable: true })
+    country: string;
+
+    @Column({ type: "varchar", length: 100, nullable: true })
+    city: string;
+
     @Column({ type: "double precision", nullable: true })
     latitude: number | null;
 

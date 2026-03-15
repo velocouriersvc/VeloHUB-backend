@@ -31,6 +31,12 @@ export class DriverProfile {
     @Column({ type: "varchar", length: 20 })
     plateNumber: string;
 
+    @Column({ type: "varchar", length: 100, nullable: true })
+    country: string;
+
+    @Column({ type: "varchar", length: 100, nullable: true })
+    city: string;
+
     @Column({
         type: "enum",
         enum: DriverVerificationStatus,

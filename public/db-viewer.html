@@ -354,6 +354,11 @@
                     <option value="buyerProfiles">Buyer Profiles</option>
                     <option value="merchantProfiles">Merchant Profiles</option>
                     <option value="driverProfiles">Driver Profiles</option>
+                    <option value="rides">Rides & Deliveries</option>
+                    <option value="zones">Zones & Pricing</option>
+                    <option value="withdrawals">Withdrawals</option>
+                    <option value="settings">Settings</option>
+                    <option value="waitlist">Waitlist</option>
                 </select>
             </div>
 
@@ -508,6 +513,87 @@
                         </tr>
                     `,
                     headers: ['Name', 'Vehicle', 'Plate', 'Status', 'Docs']
+                },
+                {
+                    id: 'rides',
+                    title: 'Rides & Deliveries',
+                    icon: 'ri-truck-line',
+                    data: currentData.rides,
+                    renderRow: (r) => `
+                        <tr>
+                            <td class="font-mono" title="${r.id}">${r.id.substring(0, 8)}...</td>
+                            <td><span class="status-badge ${r.type === 'ride' ? 'status-neutral' : 'status-warning'}">${r.type}</span></td>
+                            <td>${renderStatus(r.status)}</td>
+                            <td>₵${r.finalFare}</td>
+                            <td>${r.city || '-'}</td>
+                            <td class="timestamp">${formatDate(r.createdAt)}</td>
+                        </tr>
+                    `,
+                    headers: ['ID', 'Type', 'Status', 'Fare', 'City', 'Time']
+                },
+                {
+                    id: 'zones',
+                    title: 'Zones & Pricing',
+                    icon: 'ri-map-pin-line',
+                    data: currentData.zones,
+                    renderRow: (z) => `
+                        <tr>
+                            <td><strong>${z.name}</strong></td>
+                            <td>${z.city}</td>
+                            <td>${renderStatus(z.status)}</td>
+                            <td>₵${z.base_delivery_fee}/${z.base_ride_fare}</td>
+                            <td>${z.surge_multiplier}x</td>
+                            <td>${z.radius_km}km</td>
+                        </tr>
+                    `,
+                    headers: ['Name', 'City', 'Status', 'Base (D/R)', 'Surge', 'Radius']
+                },
+                {
+                    id: 'withdrawals',
+                    title: 'Platform Withdrawals',
+                    icon: 'ri-bank-card-line',
+                    data: currentData.withdrawals,
+                    renderRow: (w) => `
+                        <tr>
+                            <td class="font-mono" title="${w.id}">${w.id.substring(0, 8)}...</td>
+                            <td>₵${w.amount}</td>
+                            <td>${w.withdrawal_method}</td>
+                            <td>${renderStatus(w.status)}</td>
+                            <td>${w.country || '-'}</td>
+                            <td class="timestamp">${formatDate(w.createdAt)}</td>
+                        </tr>
+                    `,
+                    headers: ['ID', 'Amount', 'Method', 'Status', 'Country', 'Time']
+                },
+                {
+                    id: 'settings',
+                    title: 'Platform Settings',
+                    icon: 'ri-settings-4-line',
+                    data: currentData.settings,
+                    renderRow: (s) => `
+                        <tr>
+                            <td><strong>${s.setting_key}</strong></td>
+                            <td class="font-mono">${s.setting_value}</td>
+                            <td class="timestamp">${formatDate(s.updatedAt)}</td>
+                        </tr>
+                    `,
+                    headers: ['Key', 'Value', 'Last Updated']
+                },
+                {
+                    id: 'waitlist',
+                    title: 'Waitlist Signups',
+                    icon: 'ri-user-add-line',
+                    data: currentData.waitlist,
+                    renderRow: (w) => `
+                        <tr>
+                            <td>${w.fullName}</td>
+                            <td>${w.email}</td>
+                            <td>${w.phoneNumber}</td>
+                            <td>${w.country ? w.country.name : '-'}</td>
+                            <td class="timestamp">${formatDate(w.createdAt)}</td>
+                        </tr>
+                    `,
+                    headers: ['Name', 'Email', 'Phone', 'Country', 'Joined']
                 }
             ];
 

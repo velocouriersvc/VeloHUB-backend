@@ -22,6 +22,9 @@ export class User {
     @Column({ type: "varchar", length: 255, nullable: true, unique: true })
     email: string | null;
 
+    @Column({ type: "varchar", length: 150, nullable: true })
+    fullName: string | null;
+
     @Column({
         type: "enum",
         enum: UserStatus,
@@ -31,6 +34,12 @@ export class User {
 
     @Column({ type: "varchar", length: 20, nullable: true })
     activeRole: string | null;
+
+    @Column({ type: "varchar", length: 100, nullable: true })
+    country: string | null;
+
+    @Column({ type: "varchar", length: 100, nullable: true })
+    city: string | null;
 
     @CreateDateColumn()
     createdAt: Date;

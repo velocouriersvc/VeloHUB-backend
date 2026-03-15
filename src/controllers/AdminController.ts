@@ -4,19 +4,74 @@ import { DriverProfile } from "../models/driver-profile";
 import { MerchantProfile, MerchantVerificationStatus } from "../models/merchant-profile";
 import { Ride } from "../models/ride";
 import { User, UserStatus } from "../models/user";
+import { Zone } from "../models/zone";
+import { PlatformSettings } from "../models/platform-settings";
+import { PlatformWithdrawal } from "../models/platform-withdrawal";
 
 export class AdminController {
     private userRepo = AppDataSource.getRepository(User);
     private driverRepo = AppDataSource.getRepository(DriverProfile);
     private merchantRepo = AppDataSource.getRepository(MerchantProfile);
     private rideRepo = AppDataSource.getRepository(Ride);
+    private zoneRepo = AppDataSource.getRepository(Zone);
+    private settingsRepo = AppDataSource.getRepository(PlatformSettings);
+    private withdrawalRepo = AppDataSource.getRepository(PlatformWithdrawal);
+
+    private applyLocationFilter = (req: Request, where: any = {}) => {
+        const user = (req as any).user;
+        if (!user) return where;
+
+        const isSuperAdmin = user.roles.some((r: any) => r.name === "super_admin" || r.name === "admin");
+        
+        // Super Admin can override scope with a header
+        const scopeCountry = req.headers['x-country-scope'] as string;
+        const scopeCity = req.headers['x-city-scope'] as string;
+
+        if (isSuperAdmin) {
+            if (scopeCountry) where.country = scopeCountry;
+            if (scopeCity) where.city = scopeCity;
+            return where;
+        }
+
+        // For other roles, find the most permissive role's scope
+        // Simplified: take the first role that has allowedCountries set
+        const role = user.roles.find((r: any) => r.allowedCountries && r.allowedCountries.length > 0);
+        
+        if (role) {
+            // If the admin is requesting a specific scope, check if they are allowed
+            if (scopeCountry) {
+                if (role.allowedCountries.includes(scopeCountry)) {
+                    where.country = scopeCountry;
+                } else {
+                    // Not allowed, filter by all their allowed countries
+                    where.country = { $in: role.allowedCountries };
+                }
+            } else {
+                // No specific scope requested, filter by all allowed countries
+                // TypeORM's In operator for where clause
+                const { In } = require("typeorm");
+                where.country = In(role.allowedCountries);
+            }
+
+            if (scopeCity && role.allowedCities && role.allowedCities.includes(scopeCity)) {
+                where.city = scopeCity;
+            } else if (role.allowedCities && role.allowedCities.length > 0) {
+                const { In } = require("typeorm");
+                where.city = In(role.allowedCities);
+            }
+        }
+
+        return where;
+    };
 
     /**
      * GET /admin/drivers
      */
     getDrivers = async (req: Request, res: Response) => {
         try {
+            const where = this.applyLocationFilter(req);
             const drivers = await this.driverRepo.find({
+                where,
                 relations: ["user"]
             });
             return res.json(drivers.map(d => ({
@@ -27,6 +82,8 @@ export class AdminController {
                 vehicle_type: d.vehicleType,
                 vehicle_number: d.plateNumber,
                 status: d.user.status,
+                country: d.country,
+                city: d.city,
                 created_date: d.user.createdAt,
             })));
         } catch (error) {
@@ -40,17 +97,21 @@ export class AdminController {
      */
     getMerchants = async (req: Request, res: Response) => {
         try {
+            const where = this.applyLocationFilter(req);
             const merchants = await this.merchantRepo.find({
+                where,
                 relations: ["user"]
             });
             return res.json(merchants.map(m => ({
                 id: m.userId,
                 business_name: m.businessName,
-                owner_name: m.user.email, // Or some other name field if available
+                owner_name: m.user.email,
                 email: m.businessEmail || m.user.email,
                 phone: m.businessPhone || m.user.phoneNumber,
                 category: m.category,
                 status: m.status,
+                country: m.country,
+                city: m.city,
                 created_date: m.user.createdAt,
             })));
         } catch (error) {
@@ -64,14 +125,16 @@ export class AdminController {
      */
     getRides = async (req: Request, res: Response) => {
         try {
+            const where = this.applyLocationFilter(req);
             const rides = await this.rideRepo.find({
+                where,
                 order: { createdAt: "DESC" },
                 take: 100,
                 relations: ["customer", "driver"]
             });
             return res.json(rides.map(r => ({
                 ...r,
-                rider_name: r.customer?.email, // Simplification
+                rider_name: r.customer?.email,
                 driver_name: r.driver?.email,
                 created_date: r.createdAt,
                 order_number: `RIDE-${r.id.split('-')[0].toUpperCase()}`,
@@ -87,13 +150,24 @@ export class AdminController {
      */
     getUsers = async (req: Request, res: Response) => {
         try {
-            const users = await this.userRepo.find();
+            const where = this.applyLocationFilter(req);
+            const users = await this.userRepo.find({ 
+                where,
+                relations: ["userRoles", "userRoles.role"]
+            });
             return res.json(users.map(u => ({
                 id: u.id,
-                full_name: u.email, // Simplification
+                full_name: u.fullName || u.email,
                 email: u.email,
                 phone: u.phoneNumber,
                 status: u.status,
+                country: u.country,
+                city: u.city,
+                roles: u.userRoles?.map((ur: any) => ({
+                    name: ur.role?.name,
+                    allowedCountries: ur.allowedCountries,
+                    allowedCities: ur.allowedCities
+                })),
                 created_date: u.createdAt,
             })));
         } catch (error) {
@@ -132,7 +206,7 @@ export class AdminController {
             const { status } = req.body;
 
             const merchant = await this.merchantRepo.findOneBy({ userId });
-            if (!merchant) return res.status(404).json({ message: "Merchant not found" });
+            if (!merchant) return res.status(404).json({ message: "Merchant find by userId failed" });
 
             merchant.status = status as MerchantVerificationStatus;
             await this.merchantRepo.save(merchant);
@@ -141,6 +215,109 @@ export class AdminController {
         } catch (error) {
             console.error("Error updating merchant status:", error);
             return res.status(500).json({ message: "Internal server error" });
+        }
+    };
+
+    /**
+     * Zones
+     */
+    getZones = async (req: Request, res: Response) => {
+        try {
+            const where = this.applyLocationFilter(req);
+            const zones = await this.zoneRepo.find({ where, order: { createdAt: "DESC" } });
+            return res.json(zones);
+        } catch (error) {
+            return res.status(500).json({ message: "Error fetching zones" });
+        }
+    };
+
+    createZone = async (req: Request, res: Response) => {
+        try {
+            const zone = this.zoneRepo.create(req.body);
+            await this.zoneRepo.save(zone);
+            return res.status(201).json(zone);
+        } catch (error) {
+            return res.status(500).json({ message: "Error creating zone" });
+        }
+    };
+
+    updateZone = async (req: Request, res: Response) => {
+        try {
+            await this.zoneRepo.update(req.params.id, req.body);
+            const updated = await this.zoneRepo.findOneBy({ id: req.params.id });
+            return res.json(updated);
+        } catch (error) {
+            return res.status(500).json({ message: "Error updating zone" });
+        }
+    };
+
+    deleteZone = async (req: Request, res: Response) => {
+        try {
+            await this.zoneRepo.delete(req.params.id);
+            return res.status(204).send();
+        } catch (error) {
+            return res.status(500).json({ message: "Error deleting zone" });
+        }
+    };
+
+    /**
+     * Settings
+     */
+    getSettings = async (req: Request, res: Response) => {
+        try {
+            const settings = await this.settingsRepo.find();
+            return res.json(settings);
+        } catch (error) {
+            return res.status(500).json({ message: "Error fetching settings" });
+        }
+    };
+
+    updateSetting = async (req: Request, res: Response) => {
+        try {
+            const { setting_key, setting_value } = req.body;
+            let setting = await this.settingsRepo.findOneBy({ setting_key });
+            if (setting) {
+                setting.setting_value = setting_value;
+            } else {
+                setting = this.settingsRepo.create({ setting_key, setting_value });
+            }
+            await this.settingsRepo.save(setting);
+            return res.json(setting);
+        } catch (error) {
+            return res.status(500).json({ message: "Error updating setting" });
+        }
+    };
+
+    /**
+     * Withdrawals
+     */
+    getWithdrawals = async (req: Request, res: Response) => {
+        try {
+            const where = this.applyLocationFilter(req);
+            const withdrawals = await this.withdrawalRepo.find({ where, order: { createdAt: "DESC" } });
+            return res.json(withdrawals);
+        } catch (error) {
+            return res.status(500).json({ message: "Error fetching withdrawals" });
+        }
+    };
+
+    createWithdrawal = async (req: Request, res: Response) => {
+        try {
+            const withdrawal = this.withdrawalRepo.create(req.body);
+            await this.withdrawalRepo.save(withdrawal);
+            return res.status(201).json(withdrawal);
+        } catch (error) {
+            return res.status(500).json({ message: "Error creating withdrawal" });
+        }
+    };
+
+    updateWithdrawal = async (req: Request, res: Response) => {
+        try {
+            await this.withdrawalRepo.update(req.params.id, req.body);
+            const updated = await this.withdrawalRepo.findOneBy({ id: req.params.id });
+            return res.json(updated);
+        } catch (error) {
+            return res.status(500).json({ message: "Error updating withdrawal" });
         }
     };
 }
