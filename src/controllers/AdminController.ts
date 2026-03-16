@@ -7,6 +7,8 @@ import { User, UserStatus } from "../models/user";
 import { Zone } from "../models/zone";
 import { PlatformSettings } from "../models/platform-settings";
 import { PlatformWithdrawal } from "../models/platform-withdrawal";
+import { UserRole, RoleStatus } from "../models/user-role";
+import { Role, RoleType } from "../models/role";
 
 export class AdminController {
     private userRepo = AppDataSource.getRepository(User);
@@ -16,6 +18,8 @@ export class AdminController {
     private zoneRepo = AppDataSource.getRepository(Zone);
     private settingsRepo = AppDataSource.getRepository(PlatformSettings);
     private withdrawalRepo = AppDataSource.getRepository(PlatformWithdrawal);
+    private userRoleRepo = AppDataSource.getRepository(UserRole);
+    private roleRepo = AppDataSource.getRepository(Role);
 
     private applyLocationFilter = (req: Request, where: any = {}) => {
         const user = (req as any).user;
@@ -318,6 +322,98 @@ export class AdminController {
             return res.json(updated);
         } catch (error) {
             return res.status(500).json({ message: "Error updating withdrawal" });
+        }
+    };
+
+    /**
+     * Staff Management
+     */
+    getStaff = async (req: Request, res: Response) => {
+        try {
+            // Find all users who have at least one role
+            const users = await this.userRepo.createQueryBuilder("user")
+                .leftJoinAndSelect("user.userRoles", "userRole")
+                .leftJoinAndSelect("userRole.role", "role")
+                .where("userRole.id IS NOT NULL")
+                .getMany();
+
+            return res.json(users.map(u => ({
+                id: u.id,
+                full_name: u.fullName || (u.email?.split('@')[0]) || 'Admin',
+                email: u.email,
+                phone: u.phoneNumber,
+                status: u.status,
+                roles: u.userRoles?.map((ur: any) => ({
+                    name: ur.role?.name,
+                    allowedCountries: ur.allowedCountries,
+                    allowedCities: ur.allowedCities
+                })),
+                last_active: u.lastLoginAt,
+                created_date: u.createdAt,
+            })));
+        } catch (error) {
+            console.error("Error fetching staff:", error);
+            return res.status(500).json({ message: "Internal server error" });
+        }
+    };
+
+    updateStaffRole = async (req: Request, res: Response) => {
+        try {
+            const { email, phoneNumber, role: roleName, allowedCountries, allowedCities } = req.body;
+            
+            if (!email && !phoneNumber) {
+                return res.status(400).json({ message: "Email or phone number required" });
+            }
+
+            // 1. Find or create user
+            let user = await this.userRepo.findOne({
+                where: email ? { email } : { phoneNumber }
+            });
+
+            if (!user) {
+                user = this.userRepo.create({
+                    id: require("crypto").randomUUID(),
+                    email,
+                    phoneNumber,
+                    status: UserStatus.ACTIVE
+                });
+                await this.userRepo.save(user);
+            }
+
+            // 2. Find the role
+            const role = await this.roleRepo.findOneBy({ name: roleName as RoleType });
+            if (!role) {
+                return res.status(404).json({ message: `Role ${roleName} not found` });
+            }
+
+            // 3. Update or create UserRole
+            let userRole = await this.userRoleRepo.findOne({
+                where: { userId: user.id, roleId: role.id }
+            });
+
+            if (userRole) {
+                userRole.allowedCountries = allowedCountries;
+                userRole.allowedCities = allowedCities;
+                userRole.status = RoleStatus.APPROVED;
+            } else {
+                // If it's a new assignment, we might want to deactivate other admin roles 
+                // but for now let's just add it
+                userRole = this.userRoleRepo.create({
+                    userId: user.id,
+                    roleId: role.id,
+                    allowedCountries,
+                    allowedCities,
+                    status: RoleStatus.APPROVED,
+                    completedRequirements: true
+                });
+            }
+
+            await this.userRoleRepo.save(userRole);
+
+            return res.json({ message: "Staff role updated successfully", userId: user.id });
+        } catch (error) {
+            console.error("Error updating staff role:", error);
+            return res.status(500).json({ message: "Internal server error" });
         }
     };
 }

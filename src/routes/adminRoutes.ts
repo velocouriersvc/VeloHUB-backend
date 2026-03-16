@@ -32,4 +32,8 @@ router.get("/withdrawals", adminRole, adminController.getWithdrawals);
 router.post("/withdrawals", adminRole, adminController.createWithdrawal);
 router.patch("/withdrawals/:id", adminRole, adminController.updateWithdrawal);
 
+// Staff Management
+router.get("/staff", adminRole, adminController.getStaff);
+router.post("/staff/update", adminRole, adminController.updateStaffRole);
+
 export default router;
