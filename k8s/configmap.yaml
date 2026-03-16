@@ -21,3 +21,9 @@ data:
   MINIO_PORT: "9000"
   MINIO_USE_SSL: "false"
   MINIO_BUCKET: "velo-uploads"
+
+  # SMTP (Postfix on VPS host — see k8s/EMAIL_SETUP.md)
+  SMTP_HOST: "10.42.0.1"                    # pod gateway → host Postfix
+  SMTP_PORT: "25"
+  SMTP_FROM: "noreply@velocouriersvc.com"
+  SMTP_FROM_NAME: "Velo Courier"
