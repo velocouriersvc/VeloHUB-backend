@@ -92,6 +92,7 @@ export class AuthController {
                 return res.status(401).json({ message: "User not authenticated" });
             }
 
+            
             const userRepository = AppDataSource.getRepository(User);
             const user = await userRepository.findOne({
                 where: { id: userRef.id },
