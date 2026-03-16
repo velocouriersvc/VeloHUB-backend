@@ -152,7 +152,9 @@ export class RideController {
             const { reason } = req.body;
 
             // Determine who's cancelling based on their role
-            const cancelledBy = req.user?.roles.includes("driver")
+            const roles = req.user?.roles || [];
+            const isDriver = roles.some((r: any) => (typeof r === "string" ? r : r.name) === "driver");
+            const cancelledBy = isDriver
                 ? CancelledBy.DRIVER
                 : CancelledBy.CUSTOMER;
 

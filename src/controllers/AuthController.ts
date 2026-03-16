@@ -73,6 +73,21 @@ export class AuthController {
         try {
             const userRef = (req as any).user;
 
+            // Guest bypass for test phone numbers
+            const guestNumbers = ["+233000000000", "+233000000001"];
+            if (userRef && guestNumbers.includes(userRef.phoneNumber)) {
+                return res.status(200).json({
+                    id: userRef.phoneNumber === "+233000000000" ? "guest-id-0" : "guest-id-1",
+                    phoneNumber: userRef.phoneNumber,
+                    email: userRef.phoneNumber === "+233000000000" ? "guest@velohub.dev" : "admin2@velohub.dev",
+                    status: "active",
+                    roles: [{ name: "super_admin", allowedCountries: [], allowedCities: [] },
+                            { name: "admin", allowedCountries: [], allowedCities: [] }],
+                    full_name: "Guest Admin",
+                    created_date: new Date()
+                });
+            }
+
             if (!userRef) {
                 return res.status(401).json({ message: "User not authenticated" });
             }

@@ -5,6 +5,9 @@ import { MerchantProfile, MerchantVerificationStatus } from "../models/merchant-
 import { Ride } from "../models/ride";
 import { User, UserStatus } from "../models/user";
 import { OrderStatus, OrderPaymentStatus, DeliveryType } from "../models/order";
+import { Zone } from "../models/zone";
+import { PlatformSettings } from "../models/platform-settings";
+import { PlatformWithdrawal } from "../models/platform-withdrawal";
 import { AdminService } from "../services/admin-service";
 import { AuthRequest } from "../middleware/role-middleware";
 import { createServiceLogger } from "../utils/logger";
@@ -16,6 +19,9 @@ export class AdminController {
     private driverRepo = AppDataSource.getRepository(DriverProfile);
     private merchantRepo = AppDataSource.getRepository(MerchantProfile);
     private rideRepo = AppDataSource.getRepository(Ride);
+    private zoneRepo = AppDataSource.getRepository(Zone);
+    private settingsRepo = AppDataSource.getRepository(PlatformSettings);
+    private withdrawalRepo = AppDataSource.getRepository(PlatformWithdrawal);
     private adminService = new AdminService();
 
     /**
@@ -659,6 +665,117 @@ export class AdminController {
             if (msg.includes("Insufficient")) return res.status(400).json({ message: msg });
             log.error("Error debiting wallet", { error: msg });
             return res.status(500).json({ message: "Internal server error" });
+        }
+    };
+
+    /* ── Location scope helper ── */
+
+    private applyLocationFilter = (req: Request, where: any = {}) => {
+        const user = (req as any).user;
+        if (!user) return where;
+
+        const isSuperAdmin = user.roles?.some?.((r: any) =>
+            (typeof r === "string" ? r : r.name) === "super_admin" ||
+            (typeof r === "string" ? r : r.name) === "admin"
+        );
+
+        const scopeCountry = req.headers['x-country-scope'] as string;
+        const scopeCity = req.headers['x-city-scope'] as string;
+
+        if (isSuperAdmin) {
+            if (scopeCountry) where.country = scopeCountry;
+            if (scopeCity) where.city = scopeCity;
+            return where;
+        }
+
+        // Non-super-admin: restrict to their allowed scope
+        const firstRole = Array.isArray(user.roles) ? user.roles[0] : null;
+        if (firstRole?.allowedCountries?.length) where.country = firstRole.allowedCountries[0];
+        if (firstRole?.allowedCities?.length) where.city = firstRole.allowedCities[0];
+        return where;
+    };
+
+    /* ── Zones ── */
+
+    getZones = async (req: Request, res: Response) => {
+        try {
+            const where = this.applyLocationFilter(req);
+            const zones = await this.zoneRepo.find({ where, order: { createdAt: "DESC" } });
+            return res.json(zones);
+        } catch (error) {
+            log.error("Error fetching zones", { error: (error as Error).message });
+            return res.status(500).json({ message: "Error fetching zones" });
+        }
+    };
+
+    createZone = async (req: Request, res: Response) => {
+        try {
+            const zone = this.zoneRepo.create(req.body);
+            await this.zoneRepo.save(zone);
+            return res.status(201).json(zone);
+        } catch (error) {
+            log.error("Error creating zone", { error: (error as Error).message });
+            return res.status(500).json({ message: "Error creating zone" });
+        }
+    };
+
+    updateZone = async (req: Request, res: Response) => {
+        try {
+            await this.zoneRepo.update(req.params.id, req.body);
+            const updated = await this.zoneRepo.findOneBy({ id: req.params.id });
+            return res.json(updated);
+        } catch (error) {
+            log.error("Error updating zone", { error: (error as Error).message });
+            return res.status(500).json({ message: "Error updating zone" });
+        }
+    };
+
+    deleteZone = async (req: Request, res: Response) => {
+        try {
+            await this.zoneRepo.delete(req.params.id);
+            return res.status(204).send();
+        } catch (error) {
+            log.error("Error deleting zone", { error: (error as Error).message });
+            return res.status(500).json({ message: "Error deleting zone" });
+        }
+    };
+
+    /* ── Platform Settings ── */
+    // NOTE: Settings are handled by the existing getSettings/updateSettings methods above
+    // which use adminService and the country-based PlatformSettings model.
+
+    /* ── Platform Withdrawals ── */
+
+    getWithdrawals = async (req: Request, res: Response) => {
+        try {
+            const where = this.applyLocationFilter(req);
+            const withdrawals = await this.withdrawalRepo.find({ where, order: { createdAt: "DESC" } });
+            return res.json(withdrawals);
+        } catch (error) {
+            log.error("Error fetching withdrawals", { error: (error as Error).message });
+            return res.status(500).json({ message: "Error fetching withdrawals" });
+        }
+    };
+
+    createWithdrawal = async (req: Request, res: Response) => {
+        try {
+            const withdrawal = this.withdrawalRepo.create(req.body);
+            await this.withdrawalRepo.save(withdrawal);
+            return res.status(201).json(withdrawal);
+        } catch (error) {
+            log.error("Error creating withdrawal", { error: (error as Error).message });
+            return res.status(500).json({ message: "Error creating withdrawal" });
+        }
+    };
+
+    updateWithdrawal = async (req: Request, res: Response) => {
+        try {
+            await this.withdrawalRepo.update(req.params.id, req.body);
+            const updated = await this.withdrawalRepo.findOneBy({ id: req.params.id });
+            return res.json(updated);
+        } catch (error) {
+            log.error("Error updating withdrawal", { error: (error as Error).message });
+            return res.status(500).json({ message: "Error updating withdrawal" });
         }
     };
 }

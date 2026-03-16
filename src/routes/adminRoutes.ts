@@ -1005,4 +1005,161 @@ router.post("/users/:id/debit-wallet", adminRole, validate([
     body("description").required().isString().minLength(3),
 ]), adminController.debitWallet);
 
+// ────────────────────────────────────────────────────────────────
+//  Zones
+// ────────────────────────────────────────────────────────────────
+
+/**
+ * @openapi
+ * /admin/zones:
+ *   get:
+ *     tags: [Admin - Zones]
+ *     summary: List all zones
+ *     security:
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: header
+ *         name: x-country-scope
+ *         schema: { type: string }
+ *       - in: header
+ *         name: x-city-scope
+ *         schema: { type: string }
+ *     responses:
+ *       200:
+ *         description: List of zones
+ */
+router.get("/zones", adminRole, adminController.getZones);
+
+/**
+ * @openapi
+ * /admin/zones:
+ *   post:
+ *     tags: [Admin - Zones]
+ *     summary: Create a zone
+ *     security:
+ *       - ApiKeyAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [name, city]
+ *             properties:
+ *               name: { type: string }
+ *               city: { type: string }
+ *               country: { type: string }
+ *               base_delivery_fee: { type: number }
+ *               base_ride_fare: { type: number }
+ *               per_km_rate: { type: number }
+ *               radius_km: { type: number }
+ *     responses:
+ *       201:
+ *         description: Zone created
+ */
+router.post("/zones", adminRole, adminController.createZone);
+
+/**
+ * @openapi
+ * /admin/zones/{id}:
+ *   put:
+ *     tags: [Admin - Zones]
+ *     summary: Update a zone
+ *     security:
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200:
+ *         description: Zone updated
+ */
+router.put("/zones/:id", adminRole, adminController.updateZone);
+
+/**
+ * @openapi
+ * /admin/zones/{id}:
+ *   delete:
+ *     tags: [Admin - Zones]
+ *     summary: Delete a zone
+ *     security:
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       204:
+ *         description: Zone deleted
+ */
+router.delete("/zones/:id", adminRole, adminController.deleteZone);
+
+// ────────────────────────────────────────────────────────────────
+//  Platform Withdrawals
+// ────────────────────────────────────────────────────────────────
+
+/**
+ * @openapi
+ * /admin/withdrawals:
+ *   get:
+ *     tags: [Admin - Withdrawals]
+ *     summary: List platform withdrawals
+ *     security:
+ *       - ApiKeyAuth: []
+ *     responses:
+ *       200:
+ *         description: List of withdrawals
+ */
+router.get("/withdrawals", adminRole, adminController.getWithdrawals);
+
+/**
+ * @openapi
+ * /admin/withdrawals:
+ *   post:
+ *     tags: [Admin - Withdrawals]
+ *     summary: Create a withdrawal
+ *     security:
+ *       - ApiKeyAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [amount, withdrawal_method, account_details]
+ *             properties:
+ *               amount: { type: number }
+ *               withdrawal_method: { type: string }
+ *               account_details: { type: string }
+ *               notes: { type: string }
+ *               country: { type: string }
+ *               city: { type: string }
+ *     responses:
+ *       201:
+ *         description: Withdrawal created
+ */
+router.post("/withdrawals", adminRole, adminController.createWithdrawal);
+
+/**
+ * @openapi
+ * /admin/withdrawals/{id}:
+ *   put:
+ *     tags: [Admin - Withdrawals]
+ *     summary: Update a withdrawal
+ *     security:
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200:
+ *         description: Withdrawal updated
+ */
+router.put("/withdrawals/:id", adminRole, adminController.updateWithdrawal);
+
 export default router;

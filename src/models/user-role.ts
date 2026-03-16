@@ -30,6 +30,12 @@ export class UserRole {
     @Column({ type: "boolean", default: false })
     completedRequirements: boolean;
 
+    @Column({ type: "simple-json", nullable: true })
+    allowedCountries: string[];
+
+    @Column({ type: "simple-json", nullable: true })
+    allowedCities: string[];
+
     @CreateDateColumn()
     assignedAt: Date;
 
