@@ -30,6 +30,7 @@ import searchRoutes from "./routes/searchRoutes";
 import cartRoutes from "./routes/cartRoutes";
 import marketplaceOrderRoutes from "./routes/marketplaceOrderRoutes";
 import setupRoutes from "./routes/setupRoutes";
+import auditLogRoutes from "./routes/auditLogRoutes";
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -90,6 +91,7 @@ app.use("/api/v1/search", searchRoutes);
 app.use("/api/v1/cart", cartRoutes);
 app.use("/api/v1/marketplace/orders", marketplaceOrderRoutes);
 app.use("/api/v1/setup", setupRoutes);
+app.use("/api/v1/admin/audit-logs", auditLogRoutes);
 app.use("/api/orders", orderRoutes);
 
 // Root — Dashboard

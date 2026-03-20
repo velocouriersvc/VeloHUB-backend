@@ -11,6 +11,8 @@ import { PlatformWithdrawal } from "../models/platform-withdrawal";
 import { AdminService } from "../services/admin-service";
 import { AuthRequest } from "../middleware/role-middleware";
 import { createServiceLogger } from "../utils/logger";
+import { AuditLogController } from "./AuditLogController";
+import { AuditRiskLevel } from "../models/audit-log";
 
 const log = createServiceLogger("AdminController");
 
@@ -129,6 +131,15 @@ export class AdminController {
             user.status = status as UserStatus;
             await this.userRepo.save(user);
 
+            await AuditLogController.record({
+                action: "Update Driver Status",
+                entity_type: "driver",
+                entity_id: userId,
+                performed_by: (req as any).user?.email || "Admin",
+                details: `Status updated to ${status}`,
+                risk_level: AuditRiskLevel.LOW
+            });
+
             return res.json({ message: "Driver status updated", status: user.status });
         } catch (error) {
             console.error("Error updating driver status:", error);
@@ -149,6 +160,15 @@ export class AdminController {
 
             merchant.status = status as MerchantVerificationStatus;
             await this.merchantRepo.save(merchant);
+
+            await AuditLogController.record({
+                action: "Update Merchant Status",
+                entity_type: "merchant",
+                entity_id: userId,
+                performed_by: (req as any).user?.email || "Admin",
+                details: `Status updated to ${status}`,
+                risk_level: AuditRiskLevel.LOW
+            });
 
             return res.json({ message: "Merchant status updated", status: merchant.status });
         } catch (error) {
@@ -226,6 +246,16 @@ export class AdminController {
             }
 
             const order = await this.adminService.overrideOrderStatus(id, status, adminId, note);
+
+            await AuditLogController.record({
+                action: "Override Order Status",
+                entity_type: "order",
+                entity_id: id,
+                performed_by: req.user?.email || "Admin",
+                details: `Order status overridden to ${status}. Note: ${note || 'None'}`,
+                risk_level: AuditRiskLevel.MEDIUM
+            });
+
             return res.json({ message: "Order status updated", order: { id: order.id, orderNumber: order.orderNumber, status: order.status } });
         } catch (error) {
             const msg = (error as Error).message;
@@ -244,6 +274,16 @@ export class AdminController {
             const { reason } = req.body;
 
             const order = await this.adminService.refundOrder(id, adminId, reason);
+
+            await AuditLogController.record({
+                action: "Refund Order",
+                entity_type: "order",
+                entity_id: id,
+                performed_by: req.user?.email || "Admin",
+                details: `Order refunded. Reason: ${reason || 'None'}. Amount: ${order.totalAmount}`,
+                risk_level: AuditRiskLevel.HIGH
+            });
+
             return res.json({
                 message: "Order refunded",
                 order: { id: order.id, orderNumber: order.orderNumber, status: order.status, totalAmount: order.totalAmount },
@@ -631,6 +671,16 @@ export class AdminController {
             if (!reason) return res.status(400).json({ message: "reason is required" });
 
             const tx = await this.adminService.creditUserWallet(id, Number(amount), reason, adminId);
+            
+            await AuditLogController.record({
+                action: "Credit Wallet",
+                entity_type: "user",
+                entity_id: id,
+                performed_by: req.user?.email || "Admin",
+                details: `Credited ${amount} to wallet. Reason: ${reason}`,
+                risk_level: AuditRiskLevel.MEDIUM
+            });
+
             return res.json({
                 message: "Wallet credited",
                 transaction: { reference: tx.reference, amount: Number(tx.amount), balanceAfter: Number(tx.balanceAfter) },
@@ -655,6 +705,16 @@ export class AdminController {
             if (!reason) return res.status(400).json({ message: "reason is required" });
 
             const tx = await this.adminService.debitUserWallet(id, Number(amount), reason, adminId);
+
+            await AuditLogController.record({
+                action: "Debit Wallet",
+                entity_type: "user",
+                entity_id: id,
+                performed_by: req.user?.email || "Admin",
+                details: `Debited ${amount} from wallet. Reason: ${reason}`,
+                risk_level: AuditRiskLevel.MEDIUM
+            });
+
             return res.json({
                 message: "Wallet debited",
                 transaction: { reference: tx.reference, amount: Number(tx.amount), balanceAfter: Number(tx.balanceAfter) },
@@ -710,8 +770,17 @@ export class AdminController {
 
     createZone = async (req: Request, res: Response) => {
         try {
-            const zone = this.zoneRepo.create(req.body);
-            await this.zoneRepo.save(zone);
+            const zone = (await this.zoneRepo.save(this.zoneRepo.create(req.body))) as any;
+
+            await AuditLogController.record({
+                action: "Create Zone",
+                entity_type: "zone",
+                entity_id: Array.isArray(zone) ? zone[0]?.id : zone.id,
+                performed_by: (req as any).user?.email || "Admin",
+                details: `Created zone: ${Array.isArray(zone) ? zone[0]?.name : zone.name}`,
+                risk_level: AuditRiskLevel.LOW
+            });
+
             return res.status(201).json(zone);
         } catch (error) {
             log.error("Error creating zone", { error: (error as Error).message });

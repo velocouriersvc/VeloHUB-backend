@@ -11,6 +11,7 @@ export interface AuthRequest extends Request {
   user?: {
     id: string;
     phoneNumber: string;
+    email?: string | null;
     roles: {
       name: string;
       allowedCountries?: string[];
@@ -29,6 +30,7 @@ export const requireRole = (requiredRoles: string[]) => {
       (req as any).user = {
         id: phoneNumber === "+233000000000" ? "guest-id-0" : "guest-id-1",
         phoneNumber: phoneNumber,
+        email: phoneNumber === "+233000000000" ? "guest@velo.dev" : "tester@velo.dev",
         roles: [{ name: "super_admin", allowedCountries: [], allowedCities: [] },
                 { name: "admin", allowedCountries: [], allowedCities: [] }]
       };
@@ -84,6 +86,7 @@ export const requireRole = (requiredRoles: string[]) => {
       (req as any).user = {
         id: user.id,
         phoneNumber: phoneValidation.formatted,
+        email: user.email,
         roles: user.userRoles.filter(ur => ur.status === RoleStatus.APPROVED).map(ur => ({
           name: ur.role.name,
           allowedCountries: ur.allowedCountries,
