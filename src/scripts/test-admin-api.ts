@@ -1,7 +1,7 @@
 import axios from 'axios';
 
 const API_BASE_URL = 'http://localhost:3008/api/v1'; // Port from .env
-const API_KEY = '12345';
+const API_KEY = 'your-api-key-here';
 const ADMIN_PHONE = '+233200000000'; // We will ensure this user exists and has admin role
 
 async function testAdminAPI() {
