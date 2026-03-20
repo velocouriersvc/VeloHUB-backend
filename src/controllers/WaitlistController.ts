@@ -2,6 +2,8 @@ import { Request, Response } from "express";
 import { AppDataSource } from "../db/data-source";
 import { Waitlist } from "../models/waitlist";
 import { WaitlistCountry } from "../models/waitlist-country";
+import { AuditLogController } from "./AuditLogController";
+import { AuditRiskLevel } from "../models/audit-log";
 
 export class WaitlistController {
     private waitlistRepo = AppDataSource.getRepository(Waitlist);
@@ -55,16 +57,28 @@ export class WaitlistController {
     deleteEntry = async (req: Request, res: Response) => {
         try {
             const { id } = req.params;
+            const entry = await this.waitlistRepo.findOne({ where: { id }, relations: ["country"] });
             const result = await this.waitlistRepo.delete(id);
 
             if (result.affected === 0) {
                 return res.status(404).json({ message: "Entry not found" });
             }
 
+            if (entry) {
+                await AuditLogController.record({
+                    action: "Delete Waitlist Entry",
+                    entity_type: "waitlist",
+                    entity_id: id,
+                    performed_by: (req as any).user?.email || (req as any).user?.phoneNumber || "Admin",
+                    details: `Deleted entry for ${entry.fullName} (${entry.phoneNumber}) in ${entry.country?.name || 'Unknown'}`,
+                    risk_level: AuditRiskLevel.MEDIUM
+                });
+            }
+
             return res.status(204).send();
         } catch (error) {
             console.error("Error deleting waitlist entry:", error);
-            return res.status(500).json({ message: "Internal server error" });
+            return res.status(500).json({ message: "Internal server error", error: (error as Error).message });
         }
     };
 
@@ -95,13 +109,31 @@ export class WaitlistController {
                 return res.status(400).json({ message: "Name and code are required" });
             }
 
+            const existing = await this.countryRepo.findOneBy({ code });
+            if (existing) {
+                return res.status(400).json({ message: `Country with code ${code} already exists` });
+            }
+
             const country = this.countryRepo.create({ name, code });
             await this.countryRepo.save(country);
+
+            await AuditLogController.record({
+                action: "Add Waitlist Country",
+                entity_type: "waitlist_country",
+                entity_id: country.id,
+                performed_by: (req as any).user?.email || (req as any).user?.phoneNumber || "Admin",
+                details: `Added country: ${name} (${code})`,
+                risk_level: AuditRiskLevel.LOW
+            });
 
             return res.status(201).json(country);
         } catch (error) {
             console.error("Error adding waitlist country:", error);
-            return res.status(500).json({ message: "Internal server error" });
+            const message = (error as Error).message;
+            if (message.includes("unique constraint")) {
+                return res.status(400).json({ message: "Country code already exists" });
+            }
+            return res.status(500).json({ message: "Internal server error", error: message });
         }
     };
 }
