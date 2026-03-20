@@ -395,7 +395,7 @@
 
             try {
                 const response = await fetch(API_URL, {
-                    headers: { 'x-api-key': apiKey ?? "12345" }
+                    headers: { 'x-api-key': apiKey ?? "your-api-key-here" }
                 });
 
                 if (!response.ok) throw new Error(`HTTP ${response.status}`);
