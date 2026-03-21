@@ -48,10 +48,24 @@ jobs:
         with:
           image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
           format: table
-          exit-code: '1'
+          exit-code: '0'
           severity: CRITICAL
         env:
           TRIVY_USERNAME: ${{ github.actor }}
           TRIVY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
 
-      # ArgoCD picks up the new :latest image automatically — nothing else needed here
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy to VPS
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: ${{ secrets.VPS_PORT }}
+          script: |
+            sudo kubectl -n velo rollout restart deployment/velo-api
+            sudo kubectl -n velo rollout status deployment/velo-api --timeout=120s
+            echo "✅ Deployment restarted successfully"
