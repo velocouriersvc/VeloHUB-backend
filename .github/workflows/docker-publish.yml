@@ -59,6 +59,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Deploy to VPS
+        id: deploy
         uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.VPS_HOST }}
@@ -66,7 +67,117 @@ jobs:
           key: ${{ secrets.VPS_SSH_KEY }}
           port: ${{ secrets.VPS_PORT }}
           request_pty: true
+          command_timeout: 180s
           script: |
+            echo "=========================================="
+            echo "🚀 DEPLOYMENT STARTED"
+            echo "=========================================="
+            echo "⏰ Time: $(date '+%Y-%m-%d %H:%M:%S %Z')"
+            echo "📦 Image: ghcr.io/velocouriersvc/velo-backend:latest"
+            echo ""
+
+            # ── Step 1: Pre-deploy status ──
+            echo "── PRE-DEPLOY STATUS ──"
+            sudo kubectl -n velo get pods -l app=velo-api -o wide
+            echo ""
+
+            # ── Step 2: Restart deployment ──
+            echo "── RESTARTING DEPLOYMENT ──"
             sudo kubectl -n velo rollout restart deployment/velo-api
-            sudo kubectl -n velo rollout status deployment/velo-api --timeout=120s
-            echo "✅ Deployment restarted successfully"
+
+            # ── Step 3: Wait for rollout ──
+            echo "── WAITING FOR ROLLOUT (timeout: 120s) ──"
+            if sudo kubectl -n velo rollout status deployment/velo-api --timeout=120s; then
+              echo ""
+              echo "── POST-DEPLOY STATUS ──"
+              sudo kubectl -n velo get pods -l app=velo-api -o wide
+              echo ""
+
+              # ── Step 4: Health check ──
+              echo "── HEALTH CHECK ──"
+              sleep 5
+              HEALTH=$(sudo kubectl -n velo exec deploy/velo-api -- wget -qO- http://localhost:3000/health 2>/dev/null || echo "UNREACHABLE")
+              echo "Health endpoint: $HEALTH"
+              echo ""
+
+              # ── Step 5: Recent logs ──
+              echo "── RECENT LOGS (last 30 lines) ──"
+              sudo kubectl -n velo logs deploy/velo-api --tail=30
+              echo ""
+              echo "=========================================="
+              echo "✅ DEPLOYMENT SUCCESSFUL"
+              echo "=========================================="
+            else
+              echo ""
+              echo "=========================================="
+              echo "❌ ROLLOUT FAILED — COLLECTING DIAGNOSTICS"
+              echo "=========================================="
+
+              echo ""
+              echo "── POD STATUS ──"
+              sudo kubectl -n velo get pods -l app=velo-api -o wide
+              echo ""
+
+              echo "── POD DESCRIPTIONS ──"
+              sudo kubectl -n velo describe pods -l app=velo-api | tail -60
+              echo ""
+
+              echo "── POD LOGS (last 50 lines) ──"
+              sudo kubectl -n velo logs deploy/velo-api --tail=50 --all-containers=true
+              echo ""
+
+              echo "── EVENTS ──"
+              sudo kubectl -n velo get events --sort-by='.lastTimestamp' | tail -20
+              echo ""
+
+              echo "=========================================="
+              echo "❌ DEPLOYMENT FAILED"
+              echo "=========================================="
+              exit 1
+            fi
+
+      - name: Notify on failure
+        if: failure()
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: smtp.gmail.com
+          server_port: 465
+          secure: true
+          username: ${{ secrets.NOTIFY_EMAIL }}
+          password: ${{ secrets.NOTIFY_EMAIL_PASSWORD }}
+          subject: "❌ Velo API Deployment Failed — ${{ github.sha }}"
+          to: ${{ secrets.NOTIFY_EMAIL }}
+          from: "Velo CI/CD <${{ secrets.NOTIFY_EMAIL }}>"
+          body: |
+            ❌ Velo API deployment failed!
+
+            Repository: ${{ github.repository }}
+            Branch: ${{ github.ref_name }}
+            Commit: ${{ github.sha }}
+            Author: ${{ github.actor }}
+            Message: ${{ github.event.head_commit.message }}
+            Run: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+            Check the Actions logs for full diagnostics.
+
+      - name: Notify on success
+        if: success()
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: smtp.gmail.com
+          server_port: 465
+          secure: true
+          username: ${{ secrets.NOTIFY_EMAIL }}
+          password: ${{ secrets.NOTIFY_EMAIL_PASSWORD }}
+          subject: "✅ Velo API Deployed — ${{ github.sha }}"
+          to: ${{ secrets.NOTIFY_EMAIL }}
+          from: "Velo CI/CD <${{ secrets.NOTIFY_EMAIL }}>"
+          body: |
+            ✅ Velo API deployed successfully!
+
+            Repository: ${{ github.repository }}
+            Branch: ${{ github.ref_name }}
+            Commit: ${{ github.sha }}
+            Author: ${{ github.actor }}
+            Message: ${{ github.event.head_commit.message }}
+            Run: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
