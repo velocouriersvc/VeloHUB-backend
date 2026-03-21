@@ -65,6 +65,7 @@ jobs:
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
           port: ${{ secrets.VPS_PORT }}
+          request_pty: true
           script: |
             sudo kubectl -n velo rollout restart deployment/velo-api
             sudo kubectl -n velo rollout status deployment/velo-api --timeout=120s
