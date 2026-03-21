@@ -136,48 +136,30 @@ jobs:
               exit 1
             fi
 
-      - name: Notify on failure
-        if: failure()
-        uses: dawidd6/action-send-mail@v3
-        with:
-          server_address: smtp.gmail.com
-          server_port: 465
-          secure: true
-          username: ${{ secrets.NOTIFY_EMAIL }}
-          password: ${{ secrets.NOTIFY_EMAIL_PASSWORD }}
-          subject: "❌ Velo API Deployment Failed — ${{ github.sha }}"
-          to: ${{ secrets.NOTIFY_EMAIL }}
-          from: "Velo CI/CD <${{ secrets.NOTIFY_EMAIL }}>"
-          body: |
-            ❌ Velo API deployment failed!
-
-            Repository: ${{ github.repository }}
-            Branch: ${{ github.ref_name }}
-            Commit: ${{ github.sha }}
-            Author: ${{ github.actor }}
-            Message: ${{ github.event.head_commit.message }}
-            Run: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
-
-            Check the Actions logs for full diagnostics.
-
-      - name: Notify on success
-        if: success()
-        uses: dawidd6/action-send-mail@v3
-        with:
-          server_address: smtp.gmail.com
-          server_port: 465
-          secure: true
-          username: ${{ secrets.NOTIFY_EMAIL }}
-          password: ${{ secrets.NOTIFY_EMAIL_PASSWORD }}
-          subject: "✅ Velo API Deployed — ${{ github.sha }}"
-          to: ${{ secrets.NOTIFY_EMAIL }}
-          from: "Velo CI/CD <${{ secrets.NOTIFY_EMAIL }}>"
-          body: |
-            ✅ Velo API deployed successfully!
-
-            Repository: ${{ github.repository }}
-            Branch: ${{ github.ref_name }}
-            Commit: ${{ github.sha }}
-            Author: ${{ github.actor }}
-            Message: ${{ github.event.head_commit.message }}
-            Run: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      - name: Deployment summary
+        if: always()
+        run: |
+          if [ "${{ steps.deploy.outcome }}" == "success" ]; then
+            echo "## ✅ Deployment Successful" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "| Detail | Value |" >> $GITHUB_STEP_SUMMARY
+            echo "|--------|-------|" >> $GITHUB_STEP_SUMMARY
+            echo "| **Status** | ✅ Success |" >> $GITHUB_STEP_SUMMARY
+            echo "| **Commit** | \`${{ github.sha }}\` |" >> $GITHUB_STEP_SUMMARY
+            echo "| **Author** | ${{ github.actor }} |" >> $GITHUB_STEP_SUMMARY
+            echo "| **Message** | ${{ github.event.head_commit.message }} |" >> $GITHUB_STEP_SUMMARY
+            echo "| **Image** | \`ghcr.io/velocouriersvc/velo-backend:latest\` |" >> $GITHUB_STEP_SUMMARY
+            echo "| **Time** | $(date -u '+%Y-%m-%d %H:%M:%S UTC') |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "## ❌ Deployment Failed" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "| Detail | Value |" >> $GITHUB_STEP_SUMMARY
+            echo "|--------|-------|" >> $GITHUB_STEP_SUMMARY
+            echo "| **Status** | ❌ Failed |" >> $GITHUB_STEP_SUMMARY
+            echo "| **Commit** | \`${{ github.sha }}\` |" >> $GITHUB_STEP_SUMMARY
+            echo "| **Author** | ${{ github.actor }} |" >> $GITHUB_STEP_SUMMARY
+            echo "| **Message** | ${{ github.event.head_commit.message }} |" >> $GITHUB_STEP_SUMMARY
+            echo "| **Time** | $(date -u '+%Y-%m-%d %H:%M:%S UTC') |" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "Check the **Deploy to VPS** step logs above for full diagnostics." >> $GITHUB_STEP_SUMMARY
+          fi
