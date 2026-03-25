@@ -715,7 +715,7 @@ export class SettlementService {
                 order.merchantId,
                 NotificationType.WALLET_CREDITED,
                 "Earnings Received 💰",
-                `${formatCurrency(settlement.merchantEarnings, currency)} credited to your wallet for order #${order.orderNumber}.`,
+                `${formatCurrency(settlement.merchantEarnings ?? 0, currency)} credited to your wallet for order #${order.orderNumber}.`,
                 {
                     orderId: order.id,
                     orderNumber: order.orderNumber,
@@ -725,6 +725,7 @@ export class SettlementService {
             );
         }
 
+        
         // Notify merchant — fee deducted (cash pickup)
         if (settlement.merchantWalletDebited) {
             await this.notificationService.notify(
