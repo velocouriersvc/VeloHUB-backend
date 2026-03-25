@@ -109,8 +109,14 @@ export class Ride {
     @Column({ type: "decimal", precision: 10, scale: 2, default: 0 })
     discountAmount: number;
 
-    @Column({ type: "decimal", precision: 10, scale: 2 })
+    @Column({ type: "decimal", precision: 10, scale: 2, default: 0 })
     finalFare: number;
+
+    @Column({ type: "decimal", precision: 10, scale: 2, default: 0 })
+    commission: number;
+
+    @Column({ type: "decimal", precision: 10, scale: 2, default: 0 })
+    driverPayout: number;
 
     @Column({ type: "uuid", nullable: true })
     promoCodeId: string | null;

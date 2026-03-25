@@ -901,6 +901,11 @@ export class AdminService {
             defaultPickupFeeRate: number;
             deliveryBaseFee: number;
             deliveryPerKmFee: number;
+            rideCommissionRate: number;
+            deliveryTotalCommissionRate: number;
+            deliveryRidePortionRate: number;
+            deliveryServicePortionRate: number;
+            serviceCommissionRate: number;
             isActive: boolean;
         }>,
         adminId: string
@@ -919,6 +924,42 @@ export class AdminService {
 
         log.info("Admin updated platform settings", { country, data, adminId });
         return settings;
+    }
+
+    async getWallets(limit: number = 100, offset: number = 0) {
+        const [wallets, total] = await this.walletRepo.findAndCount({
+            relations: ["user"],
+            order: { createdAt: "DESC" },
+            take: limit,
+            skip: offset,
+        });
+
+        return { wallets, total };
+    }
+
+    async getWalletTransactions(userId: string, limit: number = 50, offset: number = 0) {
+        const wallet = await this.walletRepo.findOne({ where: { userId } });
+        if (!wallet) throw new Error("Wallet not found");
+
+        const [transactions, total] = await this.walletTxRepo.findAndCount({
+            where: { walletId: wallet.id },
+            order: { createdAt: "DESC" },
+            take: limit,
+            skip: offset,
+        });
+
+        return { transactions, total, wallet };
+    }
+
+    async getAllTransactions(limit: number = 50, offset: number = 0) {
+        const [transactions, total] = await this.walletTxRepo.findAndCount({
+            relations: ["wallet", "wallet.user"],
+            order: { createdAt: "DESC" },
+            take: limit,
+            skip: offset,
+        });
+
+        return { transactions, total };
     }
 
     // ════════════════════════════════════════════════════════════════

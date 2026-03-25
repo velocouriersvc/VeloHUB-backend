@@ -137,7 +137,7 @@ export class OrderService {
         const merchant = await this.merchantRepo.findOne({
             where: { userId: cart.merchantId },
         });
-        const commissionRate = this.getRate(merchant?.commissionRate, settings?.defaultCommissionRate, 15) / 100;
+        const commissionRate = this.getRate(merchant?.commissionRate, settings?.serviceCommissionRate, 15) / 100;
         const serviceFeeRate = this.getRate(merchant?.serviceFeeRate, settings?.defaultServiceFeeRate, 8) / 100;
 
         // 6. Calculate fees

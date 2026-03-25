@@ -34,6 +34,21 @@ export class PlatformSettings {
     @Column({ type: "decimal", precision: 10, scale: 2 })
     deliveryPerKmFee: number;
 
+    @Column({ type: "decimal", precision: 5, scale: 2, default: 20.00 })
+    rideCommissionRate: number;
+
+    @Column({ type: "decimal", precision: 5, scale: 2, default: 40.00 })
+    deliveryTotalCommissionRate: number;
+
+    @Column({ type: "decimal", precision: 5, scale: 2, default: 50.00 })
+    deliveryRidePortionRate: number;
+
+    @Column({ type: "decimal", precision: 5, scale: 2, default: 50.00 })
+    deliveryServicePortionRate: number;
+
+    @Column({ type: "decimal", precision: 5, scale: 2, default: 15.00 })
+    serviceCommissionRate: number;
+
     @Column({ type: "boolean", default: true })
     isActive: boolean;
 

@@ -12,6 +12,8 @@ import { RedisLocationService } from "./redis-location-service";
 import { TwilioService } from "./twilio-service";
 import { createServiceLogger } from "../utils/logger";
 import { rideEventsTotal } from "../utils/metrics";
+import { PlatformSettings } from "../models/platform-settings";
+import { SettlementService } from "./settlement-service";
 
 const log = createServiceLogger("RideService");
 
@@ -50,6 +52,7 @@ export class RideService {
     private notificationService: NotificationService;
     private redisLocation: RedisLocationService;
     private twilioService: TwilioService;
+    private settlementService: SettlementService;
 
     constructor() {
         this.fareService = new FareService();
@@ -58,6 +61,7 @@ export class RideService {
         this.notificationService = new NotificationService();
         this.redisLocation = new RedisLocationService();
         this.twilioService = new TwilioService();
+        this.settlementService = new SettlementService();
     }
 
     // ── Fare Estimate ──
@@ -421,72 +425,27 @@ export class RideService {
     /**
      * Step 7: Complete the ride
      */
-    async completeRide(rideId: string): Promise<Ride> {
+    async completeRide(rideId: string, completedBy: string = "system", role: "driver" | "system" | "admin" = "system"): Promise<Ride> {
         const ride = await this.getRideOrFail(rideId);
 
         if (ride.status !== RideStatus.ONGOING) {
             throw new Error("Ride must be ongoing to complete");
         }
 
-        ride.status = RideStatus.COMPLETED;
-        ride.completedAt = new Date();
-        const updated = await this.rideRepo.save(ride);
-        log.info("Ride completed", { rideId, fare: Number(ride.finalFare) });
-        rideEventsTotal.inc({ event: "completed" });
+        // Use SettlementService to handle everything:
+        // - Calculate final commission and earnings
+        // - Update ride status and timestamps
+        // - Credit/Debit wallets
+        // - Send notifications
+        await this.settlementService.settleRide(rideId, completedBy, role);
 
-        // Credit driver earnings (for momo/wallet payments)
-        if (
-            ride.driverId &&
-            ride.paymentMethod !== PaymentMethod.CASH
-        ) {
-            await this.paymentService.creditDriverEarnings(
-                ride.driverId,
-                rideId,
-                Number(ride.finalFare)
-            );
-
-            const driverAmount = Math.round(Number(ride.finalFare) * 0.8 * 100) / 100;
-            await this.notificationService.notifyDriverEarnings(
-                ride.driverId,
-                driverAmount,
-                rideId
-            );
-        }
-
-        // For cash payments, confirm cash payment and credit driver later
-        if (ride.paymentMethod === PaymentMethod.CASH && ride.driverId) {
-            await this.paymentService.confirmCashPayment(rideId);
-            await this.paymentService.creditDriverEarnings(
-                ride.driverId,
-                rideId,
-                Number(ride.finalFare)
-            );
-
-            const driverAmount = Math.round(Number(ride.finalFare) * 0.8 * 100) / 100;
-            await this.notificationService.notifyDriverEarnings(
-                ride.driverId,
-                driverAmount,
-                rideId
-            );
-        }
-
-        // Notify customer
-        await this.notificationService.notifyRideCompleted(
-            ride.customerId,
-            Number(ride.finalFare),
-            rideId
-        );
-
-        // Use promo code if one was applied
-        if (ride.promoCodeId && ride.discountPercent > 0) {
-            // We need to find the promo code — this is stored on the ride
-            // The fare service will handle incrementing usage
-        }
-
+        // Fetch refreshed ride
+        const updated = await this.getRideOrFail(rideId);
+        
         // Clean up Redis
         await this.redisLocation.removeRideTracking(rideId);
-        if (ride.driverId) {
-            await this.redisLocation.setDriverStatus(ride.driverId, "online");
+        if (updated.driverId) {
+            await this.redisLocation.setDriverStatus(updated.driverId, "online");
         }
 
         return updated;

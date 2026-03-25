@@ -1,6 +1,6 @@
 import { Request, Response } from "express";
 import { AppDataSource } from "../db/data-source";
-import { DriverProfile } from "../models/driver-profile";
+import { DriverProfile, DriverVerificationStatus } from "../models/driver-profile";
 import { MerchantProfile, MerchantVerificationStatus } from "../models/merchant-profile";
 import { Ride } from "../models/ride";
 import { User, UserStatus } from "../models/user";
@@ -13,6 +13,11 @@ import { AuthRequest } from "../middleware/role-middleware";
 import { createServiceLogger } from "../utils/logger";
 import { AuditLogController } from "./AuditLogController";
 import { AuditRiskLevel } from "../models/audit-log";
+import { SimulateController } from "./SimulateController";
+import { Wallet } from "../models/wallet";
+import { UserRole, RoleStatus } from "../models/user-role";
+import { Role, RoleType } from "../models/role";
+import crypto from "crypto";
 
 const log = createServiceLogger("AdminController");
 
@@ -24,7 +29,11 @@ export class AdminController {
     private zoneRepo = AppDataSource.getRepository(Zone);
     private settingsRepo = AppDataSource.getRepository(PlatformSettings);
     private withdrawalRepo = AppDataSource.getRepository(PlatformWithdrawal);
+    private walletRepo = AppDataSource.getRepository(Wallet);
+    private userRoleRepo = AppDataSource.getRepository(UserRole);
+    private roleRepo = AppDataSource.getRepository(Role);
     private adminService = new AdminService();
+    public simulateController = new SimulateController();
 
     /**
      * GET /admin/drivers
@@ -117,30 +126,118 @@ export class AdminController {
         }
     };
 
+
     /**
-     * PATCH /admin/drivers/:id
+     * POST /admin/drivers
      */
-    updateDriverStatus = async (req: Request, res: Response) => {
+    createDriver = async (req: Request, res: Response) => {
         try {
-            const userId = req.params.id;
-            const { status } = req.body;
+            const { full_name, email, phone, vehicle_type, vehicle_number, license_number, service_type } = req.body;
 
-            const user = await this.userRepo.findOneBy({ id: userId });
-            if (!user) return res.status(404).json({ message: "Driver not found" });
+            // Check existing
+            const checkWhere: any[] = [];
+            if (email) checkWhere.push({ email });
+            if (phone) checkWhere.push({ phoneNumber: phone });
 
-            user.status = status as UserStatus;
+            let existing = null;
+            if (checkWhere.length > 0) {
+                existing = await this.userRepo.findOne({ where: checkWhere });
+            }
+            if (existing) return res.status(400).json({ message: "User with this email or phone already exists" });
+
+            const userId = crypto.randomUUID();
+
+            // 1. Create User
+            const user = this.userRepo.create({
+                id: userId,
+                email,
+                phoneNumber: phone,
+                status: UserStatus.ACTIVE,
+                activeRole: "driver",
+                country: "GH"
+            });
             await this.userRepo.save(user);
 
+            // 2. Create User Role
+            const role = await this.roleRepo.findOneBy({ name: RoleType.DRIVER });
+            if (!role) throw new Error("Driver role not found");
+
+            const userRole = this.userRoleRepo.create({
+                userId,
+                roleId: role.id,
+                status: RoleStatus.APPROVED
+            });
+            await this.userRoleRepo.save(userRole);
+
+            // 3. Create Driver Profile
+            const driverProfile = this.driverRepo.create({
+                userId,
+                fullName: full_name,
+                vehicleType: vehicle_type,
+                plateNumber: vehicle_number,
+                licenseNumber: license_number || "PENDING",
+                status: DriverVerificationStatus.APPROVED
+            });
+            await this.driverRepo.save(driverProfile);
+
+            // 4. Create Wallet
+            const wallet = this.walletRepo.create({
+                userId,
+                balance: 0,
+                currency: "GHS"
+            });
+            await this.walletRepo.save(wallet);
+
             await AuditLogController.record({
-                action: "Update Driver Status",
+                action: "Create Driver",
                 entity_type: "driver",
                 entity_id: userId,
                 performed_by: (req as any).user?.email || "Admin",
-                details: `Status updated to ${status}`,
+                details: `Created driver ${full_name}`,
+                risk_level: AuditRiskLevel.MEDIUM
+            });
+
+            return res.status(201).json({ message: "Driver created successfully", id: userId });
+        } catch (error) {
+            console.error("Error creating driver:", error);
+            return res.status(500).json({ message: "Internal server error" });
+        }
+    };
+
+    /**
+     * PATCH /admin/drivers/:id
+     */
+    updateDriver = async (req: Request, res: Response) => {
+        try {
+            const userId = req.params.id;
+            const { full_name, email, phone, vehicle_type, vehicle_number, license_number, status } = req.body;
+
+            const user = await this.userRepo.findOneBy({ id: userId });
+            const driver = await this.driverRepo.findOneBy({ userId });
+
+            if (!user || !driver) return res.status(404).json({ message: "Driver not found" });
+
+            if (email) user.email = email;
+            if (phone) user.phoneNumber = phone;
+            if (status) user.status = status as UserStatus;
+            await this.userRepo.save(user);
+
+            if (full_name) driver.fullName = full_name;
+            if (vehicle_type) driver.vehicleType = vehicle_type;
+            if (vehicle_number) driver.plateNumber = vehicle_number;
+            if (license_number) driver.licenseNumber = license_number;
+            await this.driverRepo.save(driver);
+
+            await AuditLogController.record({
+                action: "Update Driver",
+                entity_type: "driver",
+                entity_id: userId,
+                performed_by: (req as any).user?.email || "Admin",
+                details: `Updated driver details/status`,
                 risk_level: AuditRiskLevel.LOW
             });
 
-            return res.json({ message: "Driver status updated", status: user.status });
+            return res.json({ message: "Driver updated successfully" });
         } catch (error) {
             console.error("Error updating driver status:", error);
             return res.status(500).json({ message: "Internal server error" });
@@ -552,7 +649,7 @@ export class AdminController {
     getSettings = async (req: AuthRequest, res: Response) => {
         try {
             const settings = await this.adminService.getSettings();
-            return res.json({ settings });
+            return res.json(settings);
         } catch (error) {
             log.error("Error getting settings", { error: (error as Error).message });
             return res.status(500).json({ message: "Internal server error" });
@@ -588,6 +685,50 @@ export class AdminController {
             return res.json({ report });
         } catch (error) {
             log.error("Error getting revenue report", { error: (error as Error).message });
+            return res.status(500).json({ message: "Internal server error" });
+        }
+    };
+
+    getWallets = async (req: AuthRequest, res: Response) => {
+        try {
+            const { page, limit } = req.query;
+            const result = await this.adminService.getWallets(
+                limit ? Number(limit) : 100,
+                page ? (Number(page) - 1) * Number(limit) : 0
+            );
+            return res.json(result);
+        } catch (error) {
+            log.error("Error getting wallets", { error: (error as Error).message });
+            return res.status(500).json({ message: "Internal server error" });
+        }
+    };
+
+    getWalletTransactions = async (req: AuthRequest, res: Response) => {
+        try {
+            const { id } = req.params;
+            const { page, limit } = req.query;
+            const result = await this.adminService.getWalletTransactions(
+                id,
+                limit ? Number(limit) : 50,
+                page ? (Number(page) - 1) * Number(limit) : 0
+            );
+            return res.json(result);
+        } catch (error) {
+            log.error("Error getting wallet transactions", { error: (error as Error).message });
+            return res.status(500).json({ message: "Internal server error" });
+        }
+    };
+
+    getAllTransactions = async (req: AuthRequest, res: Response) => {
+        try {
+            const { page, limit } = req.query;
+            const result = await this.adminService.getAllTransactions(
+                limit ? Number(limit) : 50,
+                page ? (Number(page) - 1) * Number(limit) : 0
+            );
+            return res.json(result);
+        } catch (error) {
+            log.error("Error getting all transactions", { error: (error as Error).message });
             return res.status(500).json({ message: "Internal server error" });
         }
     };

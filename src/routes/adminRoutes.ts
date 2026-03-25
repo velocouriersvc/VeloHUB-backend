@@ -27,8 +27,30 @@ const adminRole = requireRole(["admin"]);
  *     responses:
  *       200:
  *         description: List of drivers
+ *   post:
+ *     tags: [Admin]
+ *     summary: Create new driver
+ *     security:
+ *       - ApiKeyAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               full_name: { type: string }
+ *               email: { type: string }
+ *               phone: { type: string }
+ *               vehicle_type: { type: string }
+ *               vehicle_number: { type: string }
+ *               license_number: { type: string }
+ *     responses:
+ *       201:
+ *         description: Driver created
  */
 router.get("/drivers", adminRole, adminController.getDrivers);
+router.post("/drivers", adminRole, adminController.createDriver);
 
 /**
  * @openapi
@@ -77,7 +99,7 @@ router.get("/users", adminRole, adminController.getUsers);
  * /admin/drivers/{id}:
  *   patch:
  *     tags: [Admin]
- *     summary: Update driver approval status
+ *     summary: Update driver details or status
  *     security:
  *       - ApiKeyAuth: []
  *     parameters:
@@ -93,14 +115,18 @@ router.get("/users", adminRole, adminController.getUsers);
  *           schema:
  *             type: object
  *             properties:
+ *               full_name: { type: string }
+ *               email: { type: string }
+ *               phone: { type: string }
+ *               vehicle_type: { type: string }
+ *               vehicle_number: { type: string }
  *               status:
  *                 type: string
- *                 enum: [approved, rejected, suspended]
  *     responses:
  *       200:
- *         description: Driver status updated
+ *         description: Driver updated
  */
-router.patch("/drivers/:id", adminRole, adminController.updateDriverStatus);
+router.patch("/drivers/:id", adminRole, adminController.updateDriver);
 
 /**
  * @openapi
@@ -894,6 +920,77 @@ router.put("/settings/:country", adminRole, adminController.updateSettings);
  */
 router.get("/reports/revenue", adminRole, adminController.getRevenueReport);
 
+// ────────────────────────────────────────────────────────────────
+//  Wallets
+// ────────────────────────────────────────────────────────────────
+
+/**
+ * @openapi
+ * /admin/wallets:
+ *   get:
+ *     tags: [Admin - Wallets]
+ *     summary: List all user wallets
+ *     security:
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: page
+ *         schema: { type: integer, default: 1 }
+ *       - in: query
+ *         name: limit
+ *         schema: { type: integer, default: 100 }
+ *     responses:
+ *       200:
+ *         description: List of wallets
+ */
+router.get("/wallets", adminRole, adminController.getWallets);
+
+/**
+ * @openapi
+ * /admin/wallets/{id}/transactions:
+ *   get:
+ *     tags: [Admin - Wallets]
+ *     summary: Get transaction history for a specific user's wallet
+ *     security:
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *       - in: query
+ *         name: page
+ *         schema: { type: integer, default: 1 }
+ *       - in: query
+ *         name: limit
+ *         schema: { type: integer, default: 50 }
+ *     responses:
+ *       200:
+ *         description: Transaction history
+ */
+router.get("/wallets/:id/transactions", adminRole, adminController.getWalletTransactions);
+
+/**
+ * @openapi
+ * /admin/transactions:
+ *   get:
+ *     tags: [Admin - Wallets]
+ *     summary: List all transactions across the platform
+ *     security:
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: page
+ *         schema: { type: integer, default: 1 }
+ *       - in: query
+ *         name: limit
+ *         schema: { type: integer, default: 50 }
+ *     responses:
+ *       200:
+ *         description: List of transactions
+ */
+router.get("/transactions", adminRole, adminController.getAllTransactions);
+
 /**
  * @openapi
  * /admin/reports/orders:
@@ -1161,5 +1258,12 @@ router.post("/withdrawals", adminRole, adminController.createWithdrawal);
  *         description: Withdrawal updated
  */
 router.put("/withdrawals/:id", adminRole, adminController.updateWithdrawal);
+
+// ────────────────────────────────────────────────────────────────
+//  Simulation (Internal/Admin only)
+// ────────────────────────────────────────────────────────────────
+
+router.post("/simulate/ride", adminRole, adminController.simulateController.createSimulationRide);
+router.patch("/simulate/ride/:id/advance", adminRole, adminController.simulateController.advanceRideStatus);
 
 export default router;
