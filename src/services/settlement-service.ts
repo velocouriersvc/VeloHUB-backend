@@ -11,6 +11,7 @@ import { OrderStatusHistory } from "../models/order-status-history";
 import { PlatformSettings } from "../models/platform-settings";
 import { MerchantProfile } from "../models/merchant-profile";
 import { User } from "../models/user";
+import { ServiceBooking, ServiceBookingStatus, ServicePaymentStatus } from "../models/service-booking";
 import { WalletService } from "./wallet-service";
 import { MerchantService } from "./merchant-service";
 import { NotificationService } from "./notification-service";
@@ -28,6 +29,8 @@ export interface SettlementResult {
     rideId?: string;
     orderNumber?: string;
     rideReference?: string;
+    serviceBookingId?: string;
+    serviceBookingNumber?: string;
     settlementType: SettlementType;
     merchantEarnings?: number;
     driverEarnings: number;
@@ -45,7 +48,8 @@ export type SettlementType =
     | "online_delivery"
     | "online_pickup"
     | "cash_ride"
-    | "online_ride";
+    | "online_ride"
+    | "service_booking";
 
 // ── Service ─────────────────────────────────────────────────────────
 
@@ -66,6 +70,7 @@ export class SettlementService {
     private settingsRepo = AppDataSource.getRepository(PlatformSettings);
     private merchantProfileRepo = AppDataSource.getRepository(MerchantProfile);
     private userRepo = AppDataSource.getRepository(User);
+    private serviceBookingRepo = AppDataSource.getRepository(ServiceBooking);
 
     private walletService = new WalletService();
     private merchantService = new MerchantService();
@@ -794,5 +799,118 @@ export class SettlementService {
             note: note || null,
         });
         await this.historyRepo.save(entry);
+    }
+
+    // ── Service Booking Settlement ──────────────────────────────────
+
+    /**
+     * Settle a service booking — called when merchant marks as completed.
+     */
+    async settleServiceBooking(
+        bookingId: string,
+        completedBy: string,
+        completedByRole: "merchant" | "system" | "admin"
+    ): Promise<SettlementResult> {
+        const booking = await this.serviceBookingRepo.findOne({
+            where: { id: bookingId },
+            relations: { customer: true, merchant: true },
+        });
+
+        if (!booking) throw new Error("Service booking not found");
+
+        // Prevent double settlement
+        if (booking.paymentStatus === ServicePaymentStatus.PAID && booking.status === ServiceBookingStatus.COMPLETED) {
+            throw new Error("Service booking has already been settled");
+        }
+
+        // Resolve currency/country
+        const country = booking.customer?.country || "GH";
+        const settings = await this.settingsRepo.findOne({ where: { country, isActive: true } });
+        const currency = booking.currency || settings?.currency || "GHS";
+
+        // Calculate amounts
+        const finalPrice = Number(booking.price);
+        const commissionRate = settings?.serviceCommissionRate || 15;
+        const platformFee = Math.round(finalPrice * (Number(commissionRate) / 100) * 100) / 100;
+        const merchantEarnings = finalPrice - platformFee;
+
+        // Build metadata
+        const txMetadata = {
+            serviceBookingId: booking.id,
+            bookingNumber: booking.bookingNumber,
+            serviceTitle: booking.serviceTitle,
+            settlementType: "service_booking",
+            breakdown: {
+                finalPrice,
+                platformFee,
+                merchantEarnings,
+                commissionRate
+            },
+        };
+
+        let merchantCredited = false;
+
+        // Credit merchant
+        if (merchantEarnings > 0) {
+            await this.walletService.credit(
+                booking.merchantId,
+                merchantEarnings,
+                `Service Earnings: #${booking.bookingNumber}`,
+                txMetadata
+            );
+            merchantCredited = true;
+        }
+
+        // ── Post-settlement actions ─────────────────────────────────
+
+        // 1. Mark booking as completed + paid
+        booking.status = ServiceBookingStatus.COMPLETED;
+        booking.paymentStatus = ServicePaymentStatus.PAID;
+        booking.completedAt = new Date();
+        await this.serviceBookingRepo.save(booking);
+
+        // 2. Notifications
+        // Notify customer
+        await this.notificationService.notify(
+            booking.customerId,
+            NotificationType.ORDER_COMPLETED, // Reusing Order completed for now
+            "Service Completed! ✅",
+            `Your service "${booking.serviceTitle}" has been completed.`,
+            { bookingId: booking.id, bookingNumber: booking.bookingNumber }
+        );
+
+        // Notify merchant
+        if (merchantCredited) {
+            await this.notificationService.notify(
+                booking.merchantId,
+                NotificationType.WALLET_CREDITED,
+                "Service Earnings 💰",
+                `${formatCurrency(merchantEarnings, currency)} credited for service #${booking.bookingNumber}.`,
+                { bookingId: booking.id, amount: merchantEarnings }
+            );
+        }
+
+        // 3. Metrics
+        settlementEventsTotal.inc({ type: "service_booking", method: booking.paymentMethod });
+
+        log.info("Service booking settled", {
+            bookingId,
+            merchantEarnings,
+            platformFee,
+        });
+
+        return {
+            serviceBookingId: booking.id,
+            serviceBookingNumber: booking.bookingNumber,
+            settlementType: "service_booking",
+            merchantEarnings,
+            driverEarnings: 0,
+            platformFee,
+            currency,
+            merchantWalletCredited: merchantCredited,
+            driverWalletCredited: false,
+            driverWalletDebited: false,
+            merchantWalletDebited: false,
+        };
     }
 }

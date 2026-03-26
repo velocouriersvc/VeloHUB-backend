@@ -51,6 +51,15 @@ export enum NotificationType {
 
     // General
     SYSTEM = "system",
+
+    // Services
+    SERVICE_REQUESTED = "service_requested",
+    SERVICE_ACCEPTED = "service_accepted",
+    SERVICE_DECLINED = "service_declined",
+    SERVICE_SCHEDULED = "service_scheduled",
+    SERVICE_STARTED = "service_started",
+    SERVICE_COMPLETED = "service_completed",
+    SERVICE_CANCELLED = "service_cancelled",
 }
 
 @Entity("notifications")

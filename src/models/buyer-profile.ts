@@ -18,6 +18,9 @@ export class BuyerProfile {
     @Column({ type: "text", nullable: true })
     primaryLocation: string | null;
 
+    @Column({ type: "boolean", default: false })
+    hasServicesAccess: boolean;
+
     @CreateDateColumn()
     createdAt: Date;
 

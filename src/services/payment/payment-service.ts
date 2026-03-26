@@ -7,6 +7,8 @@ import { WalletService } from "../wallet-service";
 import { v4 as uuidv4 } from "uuid";
 import { createServiceLogger } from "../../utils/logger";
 import { paymentEventsTotal } from "../../utils/metrics";
+import { ServiceSubscription, ServiceSubscriptionStatus } from "../../models/service-subscription";
+import { BuyerProfile } from "../../models/buyer-profile";
 
 const log = createServiceLogger("PaymentService");
 
@@ -169,6 +171,121 @@ export class PaymentService {
                 throw new Error(`Unsupported payment method: ${method}`);
         }
     }
+
+    // ── Service Booking Payments ─────────────────────────────────────
+
+    /**
+     * Process a service booking payment
+     */
+    async processServiceBookingPayment(params: {
+        serviceBookingId: string;
+        userId: string;
+        amount: number;
+        method: PaymentMethodType;
+        country?: string;
+        email?: string;
+        phoneNumber?: string;
+    }): Promise<PaymentResult> {
+        const { serviceBookingId, userId, amount, method } = params;
+        const country = params.country || "GH";
+        const { provider, currency } = await this.resolveCountryContext(country);
+
+        // For service bookings, we use the specific serviceCommissionRate
+        const settings = await this.settingsRepo.findOne({
+            where: { country, isActive: true },
+        });
+        const commissionRate = settings
+            ? Number(settings.serviceCommissionRate) / 100
+            : 0.15; // default 15%
+
+        const reference = `SRV-${uuidv4().slice(0, 12)}`;
+        const platformFee = Math.round(amount * commissionRate * 100) / 100;
+        const merchantAmount = Math.round(amount * (1 - commissionRate) * 100) / 100;
+
+        const payment = this.paymentRepo.create({
+            serviceBookingId,
+            userId,
+            amount,
+            currency,
+            method,
+            provider: method === PaymentMethodType.WALLET ? "wallet" : provider.name,
+            providerRef: null,
+            providerStatus: null,
+            platformFee,
+            driverAmount: merchantAmount, // Use driverAmount column for merchant/provider earnings
+            status: PaymentRecordStatus.PENDING,
+            metadata: { reference },
+        });
+        const saved = await this.paymentRepo.save(payment);
+        log.info("Service booking payment record created", { paymentId: saved.id, serviceBookingId, method, amount, currency });
+
+        switch (method) {
+            case PaymentMethodType.MOMO:
+            case PaymentMethodType.CARD:
+                return this.processMomoPayment(saved, reference, params, provider, currency);
+
+            case PaymentMethodType.WALLET:
+                return this.processWalletPayment(saved, reference, userId, amount);
+
+            default:
+                throw new Error(`Unsupported payment method: ${method}`);
+        }
+    }
+
+    // ── Subscription Payments ───────────────────────────────────────
+
+    /**
+     * Process a service subscription payment
+     */
+    async processSubscriptionPayment(params: {
+        subscriptionId: string;
+        userId: string;
+        amount: number;
+        method: PaymentMethodType;
+        country?: string;
+        email?: string;
+        phoneNumber?: string;
+    }): Promise<PaymentResult> {
+        const { subscriptionId, userId, amount, method } = params;
+        const country = params.country || "GH";
+        const { provider, currency } = await this.resolveCountryContext(country);
+
+        const reference = `SUB-${uuidv4().slice(0, 12)}`;
+        
+        // No platform fee for subscriptions? we assume the entire 100 GHS is platform earnings
+        const platformFee = amount;
+        const driverAmount = 0;
+
+        const payment = this.paymentRepo.create({
+            subscriptionId,
+            userId,
+            amount,
+            currency,
+            method,
+            provider: method === PaymentMethodType.WALLET ? "wallet" : provider.name,
+            providerRef: null,
+            providerStatus: null,
+            platformFee,
+            driverAmount,
+            status: PaymentRecordStatus.PENDING,
+            metadata: { reference },
+        });
+        const saved = await this.paymentRepo.save(payment);
+        log.info("Subscription payment record created", { paymentId: saved.id, subscriptionId, method, amount, currency });
+
+        switch (method) {
+            case PaymentMethodType.MOMO:
+            case PaymentMethodType.CARD:
+                return this.processMomoPayment(saved, reference, params, provider, currency);
+
+            case PaymentMethodType.WALLET:
+                return this.processWalletPayment(saved, reference, userId, amount);
+
+            default:
+                throw new Error(`Unsupported payment method: ${method}`);
+        }
+    }
+
 
     // ── Method-specific processors ──────────────────────────────────
 
@@ -345,6 +462,12 @@ export class PaymentService {
             payment.providerStatus = verification.providerStatus;
             payment.providerRef = verification.providerRef;
             payment.completedAt = new Date();
+            
+            // Side Effects: Subscriptions
+            if (payment.subscriptionId) {
+                await this.activateSubscription(payment.subscriptionId, payment.userId);
+            }
+
             log.info("Payment confirmed", { paymentId: payment.id, reference });
             paymentEventsTotal.inc({ method: "momo", status: "success" });
         } else {
@@ -422,5 +545,38 @@ export class PaymentService {
         });
 
         return { payments, total };
+    }
+
+    /**
+     * Activate a service subscription after successful payment
+     */
+    private async activateSubscription(subscriptionId: string, userId: string): Promise<void> {
+        try {
+            await AppDataSource.transaction(async (manager) => {
+                // 1. Update subscription status
+                await manager.getRepository(ServiceSubscription).update(
+                    { id: subscriptionId },
+                    { 
+                        status: ServiceSubscriptionStatus.ACTIVE,
+                        currentPeriodStart: new Date(),
+                        currentPeriodEnd: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) // 30 days
+                    }
+                );
+
+                // 2. Grant access on buyer profile
+                await manager.getRepository(BuyerProfile).update(
+                    { userId },
+                    { hasServicesAccess: true }
+                );
+            });
+
+            log.info("Subscription activated and access granted", { subscriptionId, userId });
+        } catch (error) {
+            log.error("Failed to activate subscription side-effects", { 
+                subscriptionId, 
+                userId, 
+                error: (error as Error).message 
+            });
+        }
     }
 }

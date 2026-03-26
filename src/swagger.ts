@@ -66,6 +66,8 @@ This is used for role-based access (buyer, driver, merchant). Use a real registe
       { name: "Admin - Reports", description: "Revenue & order distribution reports" },
       { name: "Admin - Support", description: "Driver assignment, wallet credits/debits" },
       { name: "Dev", description: "Development/debug endpoints — **not for production**" },
+      { name: "Services", description: "Service bookings — request, track, and manage service hires" },
+      { name: "Subscriptions", description: "Service access subscriptions — manage paywall and access status" },
     ],
     components: {
       securitySchemes: {
@@ -442,6 +444,68 @@ This is used for role-based access (buyer, driver, merchant). Use a real registe
                 redis: { type: "string", enum: ["connected", "disconnected"] },
               },
             },
+          },
+        },
+
+        // ─── Services ───────────────────────────────────
+        CreateBookingBody: {
+          type: "object",
+          required: ["merchantId", "productId", "serviceTitle", "price", "preferredDate", "serviceAddress", "paymentMethod"],
+          properties: {
+            merchantId: { type: "string", format: "uuid", example: "550e8400-e29b-41d4-a716-446655440000" },
+            productId: { type: "string", format: "uuid", example: "550e8400-e29b-41d4-a716-446655440001" },
+            serviceTitle: { type: "string", example: "AC Repair & Maintenance" },
+            price: { type: "number", example: 150.0 },
+            preferredDate: { type: "string", format: "date", example: "2024-12-25" },
+            preferredTimeSlot: { type: "string", example: "09:00 - 12:00" },
+            serviceAddress: { type: "string", example: "15 Independence Ave, Accra" },
+            customerNotes: { type: "string", example: "Entrance is at the back" },
+            paymentMethod: { type: "string", enum: ["momo", "card", "wallet"], example: "momo" },
+            phoneNumber: { type: "string", example: "+233501234567" },
+          },
+        },
+        UpdateBookingStatusBody: {
+          type: "object",
+          required: ["status"],
+          properties: {
+            status: { 
+              type: "string", 
+              enum: ["requested", "accepted", "declined", "scheduled", "in_progress", "completed", "cancelled"],
+              example: "accepted" 
+            },
+            note: { type: "string", example: "Technician is on the way" },
+          },
+        },
+        BookingResponse: {
+          type: "object",
+          properties: {
+            id: { type: "string", format: "uuid" },
+            bookingNumber: { type: "string", example: "SRV-20241026-ABC123" },
+            status: { type: "string" },
+            price: { type: "number" },
+            currency: { type: "string" },
+            serviceTitle: { type: "string" },
+            serviceAddress: { type: "string" },
+            createdAt: { type: "string", format: "date-time" },
+          },
+        },
+
+        // ─── Subscriptions ─────────────────────────────
+        InitiateSubscriptionBody: {
+          type: "object",
+          required: ["paymentMethod"],
+          properties: {
+            paymentMethod: { type: "string", enum: ["momo", "card", "wallet"], example: "momo" },
+            phoneNumber: { type: "string", example: "+233501234567" },
+          },
+        },
+        SubscriptionStatusResponse: {
+          type: "object",
+          properties: {
+            status: { type: "string", enum: ["none", "pending", "active", "cancelled", "expired"], example: "active" },
+            currentPeriodStart: { type: "string", format: "date-time" },
+            currentPeriodEnd: { type: "string", format: "date-time" },
+            hasAccess: { type: "boolean", example: true },
           },
         },
       },
