@@ -446,17 +446,23 @@ export class AdminController {
             if (!adminId) return res.status(401).json({ message: "User ID required" });
 
             const { id } = req.params;
-            const { action } = req.body; // "suspend" | "reactivate"
+            const { action, ...updateData } = req.body;
 
-            if (!action || !["suspend", "reactivate"].includes(action)) {
-                return res.status(400).json({ message: 'action is required: "suspend" or "reactivate"' });
+            let product;
+            if (action) {
+                if (!["suspend", "reactivate"].includes(action)) {
+                    return res.status(400).json({ message: 'action must be "suspend" or "reactivate"' });
+                }
+                product = action === "suspend"
+                    ? await this.adminService.suspendProduct(id, adminId)
+                    : await this.adminService.reactivateProduct(id, adminId);
+            } else if (Object.keys(updateData).length > 0) {
+                product = await this.adminService.updateProduct(id, updateData, adminId);
+            } else {
+                return res.status(400).json({ message: "No update data provided" });
             }
 
-            const product = action === "suspend"
-                ? await this.adminService.suspendProduct(id, adminId)
-                : await this.adminService.reactivateProduct(id, adminId);
-
-            return res.json({ message: `Product ${action}d`, product: { id: product.id, name: product.name, isActive: product.isActive } });
+            return res.json({ message: "Product updated", product });
         } catch (error) {
             const msg = (error as Error).message;
             if (msg.includes("not found")) return res.status(404).json({ message: msg });
@@ -556,6 +562,32 @@ export class AdminController {
             const msg = (error as Error).message;
             if (msg.includes("not found")) return res.status(404).json({ message: msg });
             log.error("Error approving merchant", { error: msg });
+            return res.status(500).json({ message: "Internal server error" });
+        }
+    };
+
+    updateMerchantProfile = async (req: AuthRequest, res: Response) => {
+        try {
+            const adminId = req.user?.id;
+            if (!adminId) return res.status(401).json({ message: "User ID required" });
+
+            const { id } = req.params;
+            const profile = await this.adminService.updateMerchantProfile(id, req.body, adminId);
+
+            await AuditLogController.record({
+                action: "Update Merchant Profile",
+                entity_type: "merchant",
+                entity_id: id,
+                performed_by: req.user?.email || "Admin",
+                details: `Updated merchant profile fields: ${Object.keys(req.body).join(", ")}`,
+                risk_level: AuditRiskLevel.MEDIUM
+            });
+
+            return res.json({ message: "Merchant profile updated", profile });
+        } catch (error) {
+            const msg = (error as Error).message;
+            if (msg.includes("not found")) return res.status(404).json({ message: msg });
+            log.error("Error updating merchant profile", { error: msg });
             return res.status(500).json({ message: "Internal server error" });
         }
     };

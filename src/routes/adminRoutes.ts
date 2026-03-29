@@ -511,7 +511,7 @@ router.get("/products", adminRole, adminController.getProducts);
  * /admin/products/{id}:
  *   patch:
  *     tags: [Admin - Products]
- *     summary: Suspend or reactivate a product
+ *     summary: Update a product (general update or suspend/reactivate)
  *     security:
  *       - ApiKeyAuth: []
  *     parameters:
@@ -526,11 +526,22 @@ router.get("/products", adminRole, adminController.getProducts);
  *         application/json:
  *           schema:
  *             type: object
- *             required: [action]
  *             properties:
  *               action:
  *                 type: string
  *                 enum: [suspend, reactivate]
+ *               name:
+ *                 type: string
+ *               description:
+ *                 type: string
+ *               category:
+ *                 type: string
+ *               price:
+ *                 type: number
+ *               images:
+ *                 type: array
+ *                 items:
+ *                   type: string
  *     responses:
  *       200:
  *         description: Product updated
@@ -681,6 +692,42 @@ router.post("/merchants/:id/suspend", adminRole, adminController.suspendMerchant
  *         description: Merchant not found
  */
 router.post("/merchants/:id/approve", adminRole, adminController.approveMerchant);
+
+/**
+ * @openapi
+ * /admin/merchants/{id}/profile:
+ *   patch:
+ *     tags: [Admin - Merchants]
+ *     summary: Update merchant profile details
+ *     security:
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               businessName: { type: string }
+ *               description: { type: string }
+ *               coverImageUrl: { type: string }
+ *               category: { type: string }
+ *               address: { type: string }
+ *               businessEmail: { type: string }
+ *               businessPhone: { type: string }
+ *     responses:
+ *       200:
+ *         description: Profile updated
+ *       404:
+ *         description: Merchant not found
+ */
+router.patch("/merchants/:id/profile", adminRole, adminController.updateMerchantProfile);
 
 /**
  * @openapi

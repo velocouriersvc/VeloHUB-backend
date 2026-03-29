@@ -512,6 +512,41 @@ export class AdminService {
         return { message: "Product deleted" };
     }
 
+    async updateProduct(
+        productId: string,
+        data: Partial<Product>,
+        adminId: string
+    ) {
+        const product = await this.productRepo.findOne({
+            where: { id: productId },
+            withDeleted: true,
+        });
+        if (!product) throw new Error("Product not found");
+
+        // List of fields admin is allowed to update
+        const allowedFields: (keyof Product)[] = [
+            "name",
+            "description",
+            "category",
+            "price",
+            "compareAtPrice",
+            "stockQuantity",
+            "isActive",
+            "images",
+            "tags",
+        ];
+
+        for (const field of allowedFields) {
+            if (data[field] !== undefined) {
+                (product as any)[field] = data[field];
+            }
+        }
+
+        await this.productRepo.save(product);
+        log.info("Admin updated product", { productId, adminId, updatedFields: Object.keys(data) });
+        return product;
+    }
+
     // ════════════════════════════════════════════════════════════════
     //  MERCHANTS
     // ════════════════════════════════════════════════════════════════
@@ -661,6 +696,38 @@ export class AdminService {
         );
 
         log.info("Admin approved merchant", { merchantId, adminId });
+        return profile;
+    }
+
+    async updateMerchantProfile(
+        merchantId: string,
+        data: Partial<MerchantProfile>,
+        adminId: string
+    ) {
+        const profile = await this.merchantProfileRepo.findOne({
+            where: { userId: merchantId },
+        });
+        if (!profile) throw new Error("Merchant not found");
+
+        // Fields admin can update to clean up unauthorized marketing
+        const allowedFields: (keyof MerchantProfile)[] = [
+            "businessName",
+            "description",
+            "coverImageUrl",
+            "category",
+            "address",
+            "businessEmail",
+            "businessPhone",
+        ];
+
+        for (const field of allowedFields) {
+            if (data[field] !== undefined) {
+                (profile as any)[field] = data[field];
+            }
+        }
+
+        await this.merchantProfileRepo.save(profile);
+        log.info("Admin updated merchant profile", { merchantId, adminId, updatedFields: Object.keys(data) });
         return profile;
     }
 
