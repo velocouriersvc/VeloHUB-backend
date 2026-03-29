@@ -15,7 +15,10 @@ router.use(apiKeyMiddleware);
  *   post:
  *     tags: [Auth]
  *     summary: Request an OTP
- *     description: Sends a one-time password to the given phone number via SMS/WhatsApp. This is the first step to log in.
+ *     description: |
+ *       Sends a one-time password to the given phone number. 
+ *       Powered by **Prelude**, this uses multi-channel routing (WhatsApp/SMS) to ensure delivery. 
+ *       This is the first step of the authentication flow.
  *     security:
  *       - ApiKeyAuth: []
  *     requestBody:
@@ -28,7 +31,7 @@ router.use(apiKeyMiddleware);
  *             phoneNumber: "+233501234567"
  *     responses:
  *       200:
- *         description: OTP sent successfully
+ *         description: OTP request successful (Prelude has triggered verification)
  *         content:
  *           application/json:
  *             schema:
@@ -36,7 +39,7 @@ router.use(apiKeyMiddleware);
  *               properties:
  *                 message:
  *                   type: string
- *                   example: OTP sent successfully
+ *                   example: OTP request successful
  *       400:
  *         description: Missing or invalid phone number
  *         content:
@@ -57,8 +60,8 @@ router.post("/request-otp", authController.requestOTP);
  *     tags: [Auth]
  *     summary: Verify an OTP
  *     description: |
- *       Verifies the OTP code and returns user data with roles.
- *       Use the phone number and 6-digit code from the SMS you received.
+ *       Verifies the OTP code via **Prelude** and returns user data with roles.
+ *       Use the phone number and the code received on your device.
  *     security:
  *       - ApiKeyAuth: []
  *     requestBody:
@@ -72,7 +75,7 @@ router.post("/request-otp", authController.requestOTP);
  *             code: "123456"
  *     responses:
  *       200:
- *         description: OTP verified — returns user data with roles
+ *         description: OTP verified successfully by Prelude
  *         content:
  *           application/json:
  *             schema:
@@ -95,7 +98,7 @@ router.post("/request-otp", authController.requestOTP);
  *                         type: string
  *                       example: ["buyer"]
  *       401:
- *         description: Invalid or expired OTP
+ *         description: Invalid or expired OTP (Prelude verification failed)
  *       403:
  *         description: Invalid API key
  *       500:

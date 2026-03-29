@@ -11,13 +11,12 @@ export class PreludeService {
     private client: Prelude;
 
     constructor() {
-        const apiToken = process.env.PRELUDE_API_KEY;
-        if (!apiToken) {
-            log.warn('Prelude API Key is missing from environment variables');
+        // The SDK looks for process.env.API_TOKEN by default
+        this.client = new Prelude();
+        
+        if (!process.env.API_TOKEN) {
+            log.warn('API_TOKEN is missing from environment variables');
         }
-        this.client = new Prelude({ 
-            apiToken: apiToken || '' 
-        });
     }
 
     /**
@@ -26,13 +25,17 @@ export class PreludeService {
      */
     async sendVerification(to: string): Promise<string> {
         try {
+            const senderId = process.env.PRELUDE_SENDER_ID;
             const verification = await this.client.verification.create({
                 target: {
                     type: "phone_number",
                     value: to,
                 },
+                options: {
+                    sender_id: senderId
+                }
             });
-            log.info('Verification sent successfully via Prelude', { id: verification.id });
+            log.info('Verification sent successfully via Prelude', { id: verification.id, senderId });
             notificationEventsTotal.inc({ channel: 'prelude', status: 'success' });
             return verification.id;
         } catch (error) {
