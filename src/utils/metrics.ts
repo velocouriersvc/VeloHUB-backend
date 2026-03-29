@@ -54,7 +54,7 @@ export const paymentEventsTotal = new client.Counter({
 export const authEventsTotal = new client.Counter({
   name: "velo_auth_events_total",
   help: "Total auth events",
-  labelNames: ["event"], // otp_requested, otp_verified, otp_failed
+  labelNames: ["event", "channel"], // otp_requested, otp_verified, otp_failed
   registers: [register],
 });
 

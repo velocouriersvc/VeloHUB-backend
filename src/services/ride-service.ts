@@ -9,7 +9,7 @@ import { DriverMatchService, MatchedDriver } from "./driver-match-service";
 import { PaymentService } from "./payment/payment-service";
 import { NotificationService } from "./notification-service";
 import { RedisLocationService } from "./redis-location-service";
-import { TwilioService } from "./twilio-service";
+import { PreludeService } from "./prelude-service";
 import { createServiceLogger } from "../utils/logger";
 import { rideEventsTotal } from "../utils/metrics";
 import { PlatformSettings } from "../models/platform-settings";
@@ -51,7 +51,7 @@ export class RideService {
     private paymentService: PaymentService;
     private notificationService: NotificationService;
     private redisLocation: RedisLocationService;
-    private twilioService: TwilioService;
+    private preludeService: PreludeService;
     private settlementService: SettlementService;
 
     constructor() {
@@ -60,7 +60,7 @@ export class RideService {
         this.paymentService = new PaymentService();
         this.notificationService = new NotificationService();
         this.redisLocation = new RedisLocationService();
-        this.twilioService = new TwilioService();
+        this.preludeService = new PreludeService();
         this.settlementService = new SettlementService();
     }
 
@@ -596,7 +596,7 @@ export class RideService {
                 `Track their ride in the VeloHub app.`;
 
             try {
-                await this.twilioService.sendSMS(contact.phone, message);
+                await this.preludeService.sendSMS(contact.phone, message);
                 contact.notified = true;
                 await this.contactRepo.save(contact);
             } catch (err) {

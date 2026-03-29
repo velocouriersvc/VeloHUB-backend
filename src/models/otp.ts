@@ -15,6 +15,9 @@ export class Otp {
     @Column({ type: "timestamp" })
     expiresAt: Date;
 
+    @Column({ type: "varchar", length: 15, default: "sms" })
+    channel: string; // 'sms' | 'whatsapp'
+
     @Column({ type: "boolean", default: false })
     isVerified: boolean;
 
