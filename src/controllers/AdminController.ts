@@ -1020,4 +1020,168 @@ export class AdminController {
             return res.status(500).json({ message: "Error updating withdrawal" });
         }
     };
+
+    // ════════════════════════════════════════════════════════════════
+    //  CAMPAIGNS (PROMOS & BANNERS)
+    // ════════════════════════════════════════════════════════════════
+
+    getPromoCodes = async (req: AuthRequest, res: Response) => {
+        try {
+            const promos = await this.adminService.getPromoCodes();
+            return res.json(promos);
+        } catch (error) {
+            log.error("Error getting promo codes", { error: (error as Error).message });
+            return res.status(500).json({ message: "Internal server error" });
+        }
+    }
+
+    createPromoCode = async (req: AuthRequest, res: Response) => {
+        try {
+            const adminId = (req as any).user.id;
+            const promo = await this.adminService.createPromoCode(req.body, adminId);
+            return res.status(201).json(promo);
+        } catch (error) {
+            log.error("Error creating promo code", { error: (error as Error).message });
+            return res.status(500).json({ message: "Internal server error" });
+        }
+    }
+
+    updatePromoCode = async (req: AuthRequest, res: Response) => {
+        try {
+            const adminId = (req as any).user.id;
+            const updated = await this.adminService.updatePromoCode(req.params.id, req.body, adminId);
+            return res.json(updated);
+        } catch (error) {
+            log.error("Error updating promo code", { error: (error as Error).message });
+            return res.status(500).json({ message: "Internal server error" });
+        }
+    }
+
+    deletePromoCode = async (req: AuthRequest, res: Response) => {
+        try {
+            const adminId = (req as any).user.id;
+            await this.adminService.deletePromoCode(req.params.id, adminId);
+            return res.status(204).send();
+        } catch (error) {
+            log.error("Error deleting promo code", { error: (error as Error).message });
+            return res.status(500).json({ message: "Internal server error" });
+        }
+    }
+
+    getBanners = async (req: AuthRequest, res: Response) => {
+        try {
+            const banners = await this.adminService.getBanners();
+            return res.json(banners);
+        } catch (error) {
+            log.error("Error getting banners", { error: (error as Error).message });
+            return res.status(500).json({ message: "Internal server error" });
+        }
+    }
+
+    createBanner = async (req: AuthRequest, res: Response) => {
+        try {
+            const adminId = (req as any).user.id;
+            const banner = await this.adminService.createBanner(req.body, adminId);
+            return res.status(201).json(banner);
+        } catch (error) {
+            log.error("Error creating banner", { error: (error as Error).message });
+            return res.status(500).json({ message: "Internal server error" });
+        }
+    }
+
+    updateBanner = async (req: AuthRequest, res: Response) => {
+        try {
+            const adminId = (req as any).user.id;
+            const updated = await this.adminService.updateBanner(req.params.id, req.body, adminId);
+            return res.json(updated);
+        } catch (error) {
+            log.error("Error updating banner", { error: (error as Error).message });
+            return res.status(500).json({ message: "Internal server error" });
+        }
+    }
+
+    deleteBanner = async (req: AuthRequest, res: Response) => {
+        try {
+            const adminId = (req as any).user.id;
+            await this.adminService.deleteBanner(req.params.id, adminId);
+            return res.status(204).send();
+        } catch (error) {
+            log.error("Error deleting banner", { error: (error as Error).message });
+            return res.status(500).json({ message: "Internal server error" });
+        }
+    }
+
+    broadcastNotification = async (req: AuthRequest, res: Response) => {
+        try {
+            const adminId = (req as any).user.id;
+            const result = await this.adminService.broadcastNotification(req.body, adminId);
+            return res.json(result);
+        } catch (error) {
+            log.error("Error broadcasting notification", { error: (error as Error).message });
+            return res.status(500).json({ message: "Internal server error" });
+        }
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    //  SUPPORT TICKETS
+    // ════════════════════════════════════════════════════════════════
+
+    getSupportTickets = async (req: AuthRequest, res: Response) => {
+        try {
+            const limit = req.query.limit ? parseInt(req.query.limit as string) : 200;
+            const tickets = await this.adminService.getSupportTickets(limit);
+            return res.json(tickets);
+        } catch (error) {
+            log.error("Error getting support tickets", { error: (error as Error).message });
+            return res.status(500).json({ message: "Internal server error" });
+        }
+    }
+
+    updateSupportTicket = async (req: AuthRequest, res: Response) => {
+        try {
+            const adminId = (req as any).user.id;
+            const updated = await this.adminService.updateSupportTicket(req.params.id, req.body, adminId);
+            return res.json(updated);
+        } catch (error) {
+            log.error("Error updating support ticket", { error: (error as Error).message });
+            return res.status(500).json({ message: "Internal server error" });
+        }
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    //  FINANCE & SETTINGS
+    // ════════════════════════════════════════════════════════════════
+
+    exportOrdersCSV = async (req: AuthRequest, res: Response) => {
+        try {
+            const csv = await this.adminService.exportOrdersToCSV(req.query);
+            res.setHeader("Content-Type", "text/csv");
+            res.setHeader("Content-Disposition", `attachment; filename=orders_report_${new Date().toISOString().slice(0, 10)}.csv`);
+            return res.status(200).send(csv);
+        } catch (error) {
+            log.error("Error exporting orders", { error: (error as Error).message });
+            return res.status(500).json({ message: "Internal server error" });
+        }
+    }
+
+    getPlatformSettings = async (req: AuthRequest, res: Response) => {
+        try {
+            const settings = await this.adminService.getPlatformSettings();
+            return res.json(settings);
+        } catch (error) {
+            log.error("Error getting settings", { error: (error as Error).message });
+            return res.status(500).json({ message: "Internal server error" });
+        }
+    }
+
+    updatePlatformSetting = async (req: AuthRequest, res: Response) => {
+        try {
+            const adminId = (req as any).user.id;
+            const updated = await this.adminService.updatePlatformSetting(req.params.id, req.body, adminId);
+            return res.json(updated);
+        } catch (error) {
+            log.error("Error updating setting", { error: (error as Error).message });
+            return res.status(500).json({ message: "Internal server error" });
+        }
+    }
 }

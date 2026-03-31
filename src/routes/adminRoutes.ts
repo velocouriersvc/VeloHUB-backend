@@ -1313,4 +1313,41 @@ router.put("/withdrawals/:id", adminRole, adminController.updateWithdrawal);
 router.post("/simulate/ride", adminRole, adminController.simulateController.createSimulationRide);
 router.patch("/simulate/ride/:id/advance", adminRole, adminController.simulateController.advanceRideStatus);
 
+// ────────────────────────────────────────────────────────────────
+//  SERVICES
+// ────────────────────────────────────────────────────────────────
+
+router.get("/services/providers", adminRole, adminController.getServiceProviders);
+router.get("/services/bookings", adminRole, adminController.getServiceBookings);
+router.patch("/services/providers/:id/approve", adminRole, adminController.approveServiceProvider);
+
+// ────────────────────────────────────────────────────────────────
+//  CAMPAIGNS (PROMOS & BANNERS)
+// ────────────────────────────────────────────────────────────────
+
+router.get("/promos", adminRole, adminController.getPromoCodes);
+router.post("/promos", adminRole, adminController.createPromoCode);
+router.patch("/promos/:id", adminRole, adminController.updatePromoCode);
+router.delete("/promos/:id", adminRole, adminController.deletePromoCode);
+
+router.get("/banners", adminRole, adminController.getBanners);
+router.post("/banners", adminRole, adminController.createBanner);
+router.patch("/banners/:id", adminRole, adminController.updateBanner);
+router.delete("/banners/:id", adminRole, adminController.deleteBanner);
+
+// ────────────────────────────────────────────────────────────────
+//  COMMUNICATIONS
+// ────────────────────────────────────────────────────────────────
+
+// ────────────────────────────────────────────────────────────────
+//  SUPPORT TICKETS
+// ────────────────────────────────────────────────────────────────
+
+router.get("/support-tickets", adminRole, adminController.getSupportTickets);
+router.patch("/support-tickets/:id", adminRole, adminController.updateSupportTicket);
+
+router.get("/export-orders", adminRole, adminController.exportOrdersCSV);
+router.get("/platform-settings", adminRole, adminController.getPlatformSettings);
+router.patch("/platform-settings/:id", adminRole, adminController.updatePlatformSetting);
+
 export default router;
