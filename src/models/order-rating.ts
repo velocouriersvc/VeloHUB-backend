@@ -50,6 +50,7 @@ export class OrderRating {
     @JoinColumn({ name: "customerId" })
     customer: User;
 
+    
     @ManyToOne(() => User)
     @JoinColumn({ name: "merchantId" })
     merchantUser: User;
