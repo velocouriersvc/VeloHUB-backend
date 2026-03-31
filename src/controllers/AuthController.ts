@@ -12,13 +12,13 @@ export class AuthController {
 
     requestOTP = async (req: Request, res: Response) => {
         try {
-            const { phoneNumber } = req.body as RequestOtpPayload;
-
-            if (!phoneNumber) {
-                return res.status(400).json({ message: "Phone number is required" });
-            }
-
-            await this.authService.requestOtp(phoneNumber);
+            const { phoneNumber, channel = 'sms' } = req.body as RequestOtpPayload;
+ 
+             if (!phoneNumber) {
+                 return res.status(400).json({ message: "Phone number is required" });
+             }
+ 
+            await this.authService.requestOtp(phoneNumber, channel);
 
             return res.status(200).json({
                 message: "OTP sent successfully"

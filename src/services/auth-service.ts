@@ -5,9 +5,8 @@ import { OtpService } from "./otp-service";
 import { supabase } from "../utils/supabase-client";
 import { Profile } from "../types/profile";
 import { AuthResponse, AuthUserResponse, SupabaseUser, SyncUserResponse } from "../types/auth";
-import { TwilioService } from "./twilio-service";
-import { Role, RoleType } from "../models/role";
-import { UserRole, RoleStatus } from "../models/user-role";
+import { Role } from "../models/role";
+import { UserRole } from "../models/user-role";
 import { createServiceLogger } from "../utils/logger";
 
 const log = createServiceLogger("AuthService");
@@ -17,7 +16,6 @@ export class AuthService {
     private roleRepository = AppDataSource.getRepository(Role);
     private userRoleRepository = AppDataSource.getRepository(UserRole);
     private otpService = new OtpService();
-    private twilioService = new TwilioService();
 
     private async getProfileByPhone(phoneNumber: string): Promise<Profile | null> {
         const { data: profile, error } = await supabase
@@ -33,14 +31,14 @@ export class AuthService {
         return profile as Profile;
     }
 
-    async requestOtp(phoneNumber: string): Promise<void> {
+    async requestOtp(phoneNumber: string, channel: 'sms' | 'whatsapp' = 'sms'): Promise<void> {
         // 1. Generate and Send OTP via OtpService (Local DB + Twilio SMS)
         try {
-            await this.otpService.createOtp(phoneNumber);
-            log.info("OTP request initiated");
+            await this.otpService.createOtp(phoneNumber, channel);
+            log.info("OTP request initiated", { channel });
         } catch (error) {
             log.error("Failed to request OTP", { error: (error as Error).message });
-            throw new Error("Failed to send verification code. Please try again later.");
+            throw new Error(`Failed to send verification code via ${channel}. Please try again later.`);
         }
     }
 

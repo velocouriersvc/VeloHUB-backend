@@ -1,7 +1,7 @@
 import { AppDataSource } from "../db/data-source";
 import { Notification, NotificationType } from "../models/notification";
 import { PushToken, DevicePlatform } from "../models/push-token";
-import { TwilioService } from "./twilio-service";
+import { PreludeService } from "./prelude-service";
 import { createServiceLogger } from "../utils/logger";
 import { notificationEventsTotal } from "../utils/metrics";
 import { formatCurrency } from "../utils/currency";
@@ -11,10 +11,10 @@ const log = createServiceLogger("NotificationService");
 export class NotificationService {
     private notifRepo = AppDataSource.getRepository(Notification);
     private pushTokenRepo = AppDataSource.getRepository(PushToken);
-    private twilioService: TwilioService;
+    private preludeService: PreludeService;
 
     constructor() {
-        this.twilioService = new TwilioService();
+        this.preludeService = new PreludeService();
     }
 
     /**
@@ -62,28 +62,28 @@ export class NotificationService {
     }
 
     /**
-     * Send SMS notification via Twilio
+     * Send SMS notification via Prelude
      */
     async notifyBySms(
         phoneNumber: string,
         message: string
     ): Promise<void> {
         try {
-            await this.twilioService.sendSMS(phoneNumber, message);
+            await this.preludeService.sendSMS(phoneNumber, message);
         } catch (err) {
             log.error("SMS notification failed", { error: (err as Error).message });
         }
     }
 
     /**
-     * Send WhatsApp notification via Twilio
+     * Send WhatsApp notification via Prelude
      */
     async notifyByWhatsApp(
         phoneNumber: string,
         message: string
     ): Promise<void> {
         try {
-            await this.twilioService.sendWhatsApp(phoneNumber, message);
+            await this.preludeService.sendWhatsApp(phoneNumber, message);
         } catch (err) {
             log.error("WhatsApp notification failed", { error: (err as Error).message });
         }

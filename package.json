@@ -28,7 +28,7 @@
     "reflect-metadata": "^0.1.13",
     "swagger-jsdoc": "^6.2.8",
     "swagger-ui-express": "^5.0.1",
-    "twilio": "^5.12.2",
+    "@prelude.so/sdk": "^0.10.0",
     "typeorm": "^0.3.17",
     "uuid": "^13.0.0",
     "winston": "^3.19.0"

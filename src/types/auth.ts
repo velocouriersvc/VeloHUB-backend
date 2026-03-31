@@ -3,6 +3,7 @@ import { RoleType } from "../models/role";
 
 export interface RequestOtpPayload {
     phoneNumber: string;
+    channel?: 'sms' | 'whatsapp';
 }
 
 export interface VerifyOtpPayload {
