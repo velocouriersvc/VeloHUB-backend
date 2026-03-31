@@ -19,6 +19,8 @@ import { SupportTicket, SupportTicketStatus, SupportTicketPriority } from "../mo
 import { Notification, NotificationType } from "../models/notification";
 import { PromoCode } from "../models/promo-code";
 import { Banner } from "../models/banner";
+import { ReferralCode } from "../models/referral-code";
+import { ReferralLink, ReferralStatus } from "../models/referral-link";
 import { createServiceLogger } from "../utils/logger";
 import { formatCurrency } from "../utils/currency";
 import { orderEventsTotal } from "../utils/metrics";
@@ -117,9 +119,11 @@ export class AdminService {
     //  DASHBOARD
     // ════════════════════════════════════════════════════════════════
 
+    private supportTicketRepo = AppDataSource.getRepository(SupportTicket);
     private promoRepo = AppDataSource.getRepository(PromoCode);
     private bannerRepo = AppDataSource.getRepository(Banner);
-    private ticketRepo = AppDataSource.getRepository(SupportTicket);
+    private referralCodeRepo = AppDataSource.getRepository(ReferralCode);
+    private referralLinkRepo = AppDataSource.getRepository(ReferralLink);
     private notificationRepo = AppDataSource.getRepository(Notification);
 
     async getDashboard(): Promise<AdminDashboard> {
@@ -1441,7 +1445,7 @@ export class AdminService {
     // ════════════════════════════════════════════════════════════════
 
     async getSupportTickets(limit = 200) {
-        return this.ticketRepo.find({
+        return this.supportTicketRepo.find({
             relations: ["user"],
             order: { created_date: "DESC" },
             take: limit
@@ -1449,7 +1453,7 @@ export class AdminService {
     }
 
     async updateSupportTicket(id: string, data: any, adminId: string) {
-        const ticket = await this.ticketRepo.findOne({ where: { id }, relations: ["user"] });
+        const ticket = await this.supportTicketRepo.findOne({ where: { id }, relations: ["user"] });
         if (!ticket) throw new Error("Ticket not found");
 
         // Handle refund if applicable
@@ -1463,7 +1467,7 @@ export class AdminService {
         }
 
         Object.assign(ticket, data);
-        await this.ticketRepo.save(ticket);
+        await this.supportTicketRepo.save(ticket);
         log.info("Admin updated support ticket", { id, status: ticket.status, adminId });
         return ticket;
     }
@@ -1514,5 +1518,95 @@ export class AdminService {
         await this.settingsRepo.save(setting);
         log.info("Admin updated platform setting", { id, adminId });
         return setting;
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    //  REFERRALS
+    // ════════════════════════════════════════════════════════════════
+
+    async getReferralStats() {
+        const totalReferrals = await this.referralLinkRepo.count();
+        const completedReferrals = await this.referralLinkRepo.count({ where: { status: ReferralStatus.COMPLETED } });
+        const totalRewardsIssued = await this.referralLinkRepo.createQueryBuilder("rl")
+            .where("rl.status = :status", { status: ReferralStatus.COMPLETED })
+            .select("SUM(rl.rewardAmount)", "total")
+            .getRawOne();
+
+        return {
+            totalReferrals,
+            completedReferrals,
+            totalRewardsIssued: parseFloat(totalRewardsIssued?.total || "0"),
+        };
+    }
+
+    async getReferrals(limit = 100) {
+        return this.referralLinkRepo.find({
+            relations: ["referralCode", "referralCode.user"],
+            order: { createdAt: "DESC" },
+            take: limit
+        });
+    }
+
+    async getReferralCodeForUser(userId: string) {
+        let referralCode = await this.referralCodeRepo.findOne({ where: { userId } });
+        
+        if (!referralCode) {
+            // Generate a simple referral code if missing
+            const user = await this.userRepo.findOneBy({ id: userId });
+            const prefix = user?.phoneNumber ? user.phoneNumber.slice(-4) : Math.random().toString(36).substring(2, 6).toUpperCase();
+            const code = `VELO-${prefix}-${Math.random().toString(36).substring(2, 5).toUpperCase()}`;
+            
+            referralCode = this.referralCodeRepo.create({
+                userId,
+                code
+            });
+            await this.referralCodeRepo.save(referralCode);
+        }
+        
+        return referralCode;
+    }
+
+    async updateReferralStatus(id: string, status: ReferralStatus, adminId: string) {
+        const link = await this.referralLinkRepo.findOne({ 
+            where: { id },
+            relations: ["referralCode"] 
+        });
+        
+        if (!link) throw new Error("Referral link not found");
+
+        const previousStatus = link.status;
+        link.status = status;
+        
+        if (status === ReferralStatus.COMPLETED && previousStatus !== ReferralStatus.COMPLETED) {
+            link.completedAt = new Date();
+            
+            // Credit the referrer
+            const settings = await this.settingsRepo.findOne({ 
+                where: { country: link.referralCode.user?.country || "GH" } 
+            });
+            const reward = settings?.referralRewardAmount || 5.00;
+            
+            link.rewardAmount = reward;
+            
+            await this.walletService.credit(
+                link.referrerId,
+                reward,
+                "Referral Reward 🎁",
+                { referralLinkId: link.id, referredId: link.referredId }
+            );
+            
+            // Notify referrer
+            await this.notificationService.notify(
+                link.referrerId,
+                NotificationType.WALLET_CREDITED,
+                "Referral Success! 🎁",
+                `Your friend joined Velo! We've credited your wallet with ₵${reward.toFixed(2)}.`,
+                { referralLinkId: link.id }
+            );
+        }
+
+        await this.referralLinkRepo.save(link);
+        log.info("Admin updated referral status", { id, previousStatus, newStatus: status, adminId });
+        return link;
     }
 }

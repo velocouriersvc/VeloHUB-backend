@@ -49,6 +49,9 @@ export class PlatformSettings {
     @Column({ type: "decimal", precision: 5, scale: 2, default: 15.00 })
     serviceCommissionRate: number;
 
+    @Column({ type: "decimal", precision: 10, scale: 2, default: 5.00 })
+    referralRewardAmount: number;
+
     @Column({ type: "boolean", default: true })
     isActive: boolean;
 

@@ -17,6 +17,7 @@ import { SimulateController } from "./SimulateController";
 import { Wallet } from "../models/wallet";
 import { UserRole, RoleStatus } from "../models/user-role";
 import { Role, RoleType } from "../models/role";
+import { ServiceBookingStatus } from "../models/service-booking";
 import crypto from "crypto";
 
 const log = createServiceLogger("AdminController");
@@ -621,6 +622,55 @@ export class AdminController {
     };
 
     // ════════════════════════════════════════════════════════════════
+    //  SERVICES
+    // ════════════════════════════════════════════════════════════════
+
+    getServiceProviders = async (req: AuthRequest, res: Response) => {
+        try {
+            const { search, status, page, limit } = req.query;
+            const result = await this.adminService.getServiceProviders({
+                search: search as string,
+                status: status as MerchantVerificationStatus,
+                page: page ? Number(page) : undefined,
+                limit: limit ? Number(limit) : undefined,
+            });
+            return res.json(result);
+        } catch (error) {
+            log.error("Error getting service providers", { error: (error as Error).message });
+            return res.status(500).json({ message: "Internal server error" });
+        }
+    };
+
+    getServiceBookings = async (req: AuthRequest, res: Response) => {
+        try {
+            const { status, merchantId, page, limit } = req.query;
+            const result = await this.adminService.getServiceBookings({
+                status: status as ServiceBookingStatus,
+                merchantId: merchantId as string,
+                page: page ? Number(page) : undefined,
+                limit: limit ? Number(limit) : undefined,
+            });
+            return res.json(result);
+        } catch (error) {
+            log.error("Error getting service bookings", { error: (error as Error).message });
+            return res.status(500).json({ message: "Internal server error" });
+        }
+    };
+
+    approveServiceProvider = async (req: AuthRequest, res: Response) => {
+        try {
+            const adminId = (req as any).user.id;
+            const profile = await this.adminService.approveServiceProvider(req.params.id, adminId);
+            return res.json({ message: "Service provider approved", status: profile.status });
+        } catch (error) {
+            const msg = (error as Error).message;
+            if (msg.includes("not found")) return res.status(404).json({ message: msg });
+            log.error("Error approving service provider", { error: msg });
+            return res.status(500).json({ message: "Internal server error" });
+        }
+    };
+
+    // ════════════════════════════════════════════════════════════════
     //  PAYOUTS
     // ════════════════════════════════════════════════════════════════
 
@@ -1181,6 +1231,53 @@ export class AdminController {
             return res.json(updated);
         } catch (error) {
             log.error("Error updating setting", { error: (error as Error).message });
+            return res.status(500).json({ message: "Internal server error" });
+        }
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    //  REFERRALS
+    // ════════════════════════════════════════════════════════════════
+
+    getReferralStats = async (req: AuthRequest, res: Response) => {
+        try {
+            const stats = await this.adminService.getReferralStats();
+            return res.json(stats);
+        } catch (error) {
+            log.error("Error getting referral stats", { error: (error as Error).message });
+            return res.status(500).json({ message: "Internal server error" });
+        }
+    }
+
+    getReferrals = async (req: AuthRequest, res: Response) => {
+        try {
+            const limit = req.query.limit ? parseInt(req.query.limit as string) : 100;
+            const referrals = await this.adminService.getReferrals(limit);
+            return res.json(referrals);
+        } catch (error) {
+            log.error("Error getting referrals", { error: (error as Error).message });
+            return res.status(500).json({ message: "Internal server error" });
+        }
+    }
+
+    getReferralCode = async (req: AuthRequest, res: Response) => {
+        try {
+            const code = await this.adminService.getReferralCodeForUser(req.params.userId);
+            return res.json(code);
+        } catch (error) {
+            log.error("Error getting referral code", { error: (error as Error).message });
+            return res.status(500).json({ message: "Internal server error" });
+        }
+    }
+
+    updateReferralStatus = async (req: AuthRequest, res: Response) => {
+        try {
+            const adminId = (req as any).user.id;
+            const { status } = req.body;
+            const updated = await this.adminService.updateReferralStatus(req.params.id, status, adminId);
+            return res.json(updated);
+        } catch (error) {
+            log.error("Error updating referral status", { error: (error as Error).message });
             return res.status(500).json({ message: "Internal server error" });
         }
     }

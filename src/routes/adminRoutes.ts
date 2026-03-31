@@ -1339,6 +1339,17 @@ router.delete("/banners/:id", adminRole, adminController.deleteBanner);
 //  COMMUNICATIONS
 // ────────────────────────────────────────────────────────────────
 
+router.post("/broadcast-notification", adminRole, adminController.broadcastNotification);
+
+// ────────────────────────────────────────────────────────────────
+//  REFERRALS
+// ────────────────────────────────────────────────────────────────
+
+router.get("/referrals/stats", adminRole, adminController.getReferralStats);
+router.get("/referrals", adminRole, adminController.getReferrals);
+router.get("/referrals/code/:userId", adminRole, adminController.getReferralCode);
+router.patch("/referrals/:id", adminRole, adminController.updateReferralStatus);
+
 // ────────────────────────────────────────────────────────────────
 //  SUPPORT TICKETS
 // ────────────────────────────────────────────────────────────────
