@@ -21,6 +21,7 @@ import { PromoCode } from "../models/promo-code";
 import { Banner } from "../models/banner";
 import { ReferralCode } from "../models/referral-code";
 import { ReferralLink, ReferralStatus } from "../models/referral-link";
+import { Broadcast } from "../models/broadcast";
 import { createServiceLogger } from "../utils/logger";
 import { formatCurrency } from "../utils/currency";
 import { orderEventsTotal } from "../utils/metrics";
@@ -124,6 +125,7 @@ export class AdminService {
     private bannerRepo = AppDataSource.getRepository(Banner);
     private referralCodeRepo = AppDataSource.getRepository(ReferralCode);
     private referralLinkRepo = AppDataSource.getRepository(ReferralLink);
+    private broadcastRepo = AppDataSource.getRepository(Broadcast);
     private notificationRepo = AppDataSource.getRepository(Notification);
 
     async getDashboard(): Promise<AdminDashboard> {
@@ -1364,12 +1366,29 @@ export class AdminService {
     async createPromoCode(data: Partial<PromoCode>, adminId: string) {
         const promo = this.promoRepo.create(data);
         if (data.code) promo.code = data.code.toUpperCase();
+        
+        // Sync new fields to old fields for backward compatibility
+        if (data.discountType === "percentage") {
+            promo.discountPercent = Number(data.discountValue);
+        }
+        if (data.expiresAt) {
+            promo.expiryDate = data.expiresAt;
+        }
+
         await this.promoRepo.save(promo);
         log.info("Admin created promo code", { code: promo.code, adminId });
         return promo;
     }
 
     async updatePromoCode(id: string, data: Partial<PromoCode>, adminId: string) {
+        // Sync new fields to old fields for backward compatibility
+        if (data.discountType === "percentage" && data.discountValue !== undefined) {
+            data.discountPercent = Number(data.discountValue);
+        }
+        if (data.expiresAt !== undefined) {
+            data.expiryDate = data.expiresAt;
+        }
+
         await this.promoRepo.update(id, data);
         const updated = await this.promoRepo.findOneBy({ id });
         log.info("Admin updated promo code", { id, adminId });
@@ -1408,36 +1427,57 @@ export class AdminService {
     //  COMMUNICATIONS
     // ════════════════════════════════════════════════════════════════
 
+    async getBroadcasts(limit = 50) {
+        return this.broadcastRepo.find({
+            relations: ["admin"],
+            order: { createdAt: "DESC" },
+            take: limit
+        });
+    }
+
     async broadcastNotification(payload: any, adminId: string) {
-        const { title, body, target = "all", data = {} } = payload;
+        const { title, body, targetGroup = "all", data = {} } = payload;
         
-        log.info("Admin broadcasting notification", { target, title, adminId });
+        log.info("Admin broadcasting notification", { targetGroup, title, adminId });
         
         let userQuery = this.userRepo.createQueryBuilder("u");
         
-        if (target !== "all") {
+        if (targetGroup !== "all") {
             userQuery.innerJoin("user_roles", "ur", "ur.userId = u.id")
                      .innerJoin("roles", "r", "r.id = ur.roleId");
             
-            if (target === "riders") userQuery.andWhere("r.name = :role", { role: "rider" });
-            if (target === "drivers") userQuery.andWhere("r.name = :role", { role: "driver" });
-            if (target === "merchants") userQuery.andWhere("r.name = :role", { role: "merchant" });
+            if (targetGroup === "rider") userQuery.andWhere("r.name = :role", { role: "buyer" });
+            if (targetGroup === "driver") userQuery.andWhere("r.name = :role", { role: "driver" });
+            if (targetGroup === "merchant") userQuery.andWhere("r.name = :role", { role: "merchant" });
         }
 
         const users = await userQuery.getMany();
         
+        // Save broadcast record
+        const broadcast = this.broadcastRepo.create({
+            title,
+            body,
+            targetGroup,
+            userCount: users.length,
+            adminId
+        });
+        await this.broadcastRepo.save(broadcast);
+
         for (const user of users) {
             await this.notificationService.notify(
                 user.id,
                 NotificationType.GENERAL_ANNOUNCEMENT,
                 title,
                 body,
-                { ...data, broadcastedBy: adminId }
+                { ...data, broadcastId: broadcast.id, broadcastedBy: adminId }
             );
         }
 
-        log.info("Admin broadcasted notification", { target, title, userCount: users.length, adminId });
-        return { userCount: users.length };
+        log.info("Admin broadcasted notification", { targetGroup, title, userCount: users.length, adminId });
+        return { 
+            id: broadcast.id,
+            userCount: users.length 
+        };
     }
 
     // ════════════════════════════════════════════════════════════════
@@ -1551,9 +1591,12 @@ export class AdminService {
         let referralCode = await this.referralCodeRepo.findOne({ where: { userId } });
         
         if (!referralCode) {
-            // Generate a simple referral code if missing
+            // Check if user exists first
             const user = await this.userRepo.findOneBy({ id: userId });
-            const prefix = user?.phoneNumber ? user.phoneNumber.slice(-4) : Math.random().toString(36).substring(2, 6).toUpperCase();
+            if (!user) throw new Error("User not found");
+
+            // Generate a simple referral code
+            const prefix = user.phoneNumber ? user.phoneNumber.slice(-4) : Math.random().toString(36).substring(2, 6).toUpperCase();
             const code = `VELO-${prefix}-${Math.random().toString(36).substring(2, 5).toUpperCase()}`;
             
             referralCode = this.referralCodeRepo.create({

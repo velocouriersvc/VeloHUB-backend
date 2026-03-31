@@ -620,12 +620,21 @@ export class OrderService {
         }
 
         // Calculate discount
-        let discount = Math.round(subtotal * (Number(promo.discountPercent) / 100) * 100) / 100;
+        let discount = 0;
+        if (promo.discountType === "fixed") {
+            discount = Number(promo.discountValue);
+        } else {
+            // Default to percentage
+            discount = Math.round(subtotal * (Number(promo.discountValue || promo.discountPercent) / 100) * 100) / 100;
+        }
 
         // Apply max discount cap
         if (promo.maxDiscountAmt) {
             discount = Math.min(discount, Number(promo.maxDiscountAmt));
         }
+
+        // Ensure discount doesn't exceed subtotal
+        discount = Math.min(discount, subtotal);
 
         return { discount, promoCodeId: promo.id };
     }

@@ -1339,6 +1339,7 @@ router.delete("/banners/:id", adminRole, adminController.deleteBanner);
 //  COMMUNICATIONS
 // ────────────────────────────────────────────────────────────────
 
+router.get("/broadcasts", adminRole, adminController.getBroadcasts);
 router.post("/broadcast-notification", adminRole, adminController.broadcastNotification);
 
 // ────────────────────────────────────────────────────────────────

@@ -1262,10 +1262,17 @@ export class AdminController {
 
     getReferralCode = async (req: AuthRequest, res: Response) => {
         try {
-            const code = await this.adminService.getReferralCodeForUser(req.params.userId);
+            const { userId } = req.params;
+            const code = await this.adminService.getReferralCodeForUser(userId);
             return res.json(code);
         } catch (error) {
-            log.error("Error getting referral code", { error: (error as Error).message });
+            const message = (error as Error).message;
+            log.error("Error getting referral code", { error: message });
+            
+            if (message === "User not found") {
+                return res.status(404).json({ message });
+            }
+            
             return res.status(500).json({ message: "Internal server error" });
         }
     }
@@ -1278,6 +1285,16 @@ export class AdminController {
             return res.json(updated);
         } catch (error) {
             log.error("Error updating referral status", { error: (error as Error).message });
+            return res.status(500).json({ message: "Internal server error" });
+        }
+    }
+
+    getBroadcasts = async (req: AuthRequest, res: Response) => {
+        try {
+            const history = await this.adminService.getBroadcasts();
+            return res.json(history);
+        } catch (error) {
+            log.error("Error getting broadcasts", { error: (error as Error).message });
             return res.status(500).json({ message: "Internal server error" });
         }
     }
