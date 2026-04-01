@@ -33,12 +33,17 @@ import setupRoutes from "./routes/setupRoutes";
 import auditLogRoutes from "./routes/auditLogRoutes";
 import serviceBookingRoutes from "./routes/service-booking-routes";
 import subscriptionRoutes from "./routes/subscription-routes";
+import identityRoutes from "./routes/identityRoutes";
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
 // Middleware
 app.use(cors());
+// Webhook routes must come before express.json()
+app.use('/api/v1/identity/webhook', express.raw({ type: 'application/json' }));
+app.post('/api/v1/payments/webhook', express.raw({ type: 'application/json' }));
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static('public'));
@@ -72,7 +77,8 @@ app.get("/docs.json", (_req: Request, res: Response) => {
 // Health
 app.use(healthRoutes);
 
-// Routes
+// Handled by express.raw at the top
+
 app.use("/api/v1/auth", authRoutes);
 app.use("/api/v1/profile", profileRoutes);
 app.use("/api/v1/dev", devRoutes);
@@ -96,6 +102,7 @@ app.use("/api/v1/setup", setupRoutes);
 app.use("/api/v1/admin/audit-logs", auditLogRoutes);
 app.use("/api/v1/services/bookings", serviceBookingRoutes);
 app.use("/api/v1/services/subscriptions", subscriptionRoutes);
+app.use("/api/v1/identity", identityRoutes);
 app.use("/api/orders", orderRoutes);
 
 // Root — Dashboard
