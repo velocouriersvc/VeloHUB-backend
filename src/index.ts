@@ -224,7 +224,7 @@ AppDataSource.initialize()
 
     // Start server
     app.listen(PORT,  async () => {
-      logger.info(`Server is running on port ${PORT}`);
+      logger.info(`Server is running on port ${PORT}.`);
 
       logger.info(`API Docs: http://localhost:${PORT}/docs`);
       logger.info(`Health: http://localhost:${PORT}/health`);
