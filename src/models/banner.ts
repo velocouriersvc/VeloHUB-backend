@@ -11,10 +11,10 @@ export class Banner {
     @Column({ type: "text", nullable: true })
     description: string | null;
 
-    @Column({ type: "varchar", length: 500 })
-    imageUrl: string;
+    @Column({ type: "text", nullable: true })
+    imageUrl: string | null;
 
-    @Column({ type: "varchar", length: 500, nullable: true })
+    @Column({ type: "text", nullable: true })
     deepLink: string | null;
 
     @Column({ type: "boolean", default: true })

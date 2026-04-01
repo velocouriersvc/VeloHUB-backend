@@ -8,7 +8,8 @@ import { MerchantStats } from "../models/merchant-stats";
 import { PlatformSettings } from "../models/platform-settings";
 import { User, UserStatus } from "../models/user";
 import { UserRole, RoleStatus } from "../models/user-role";
-import { RoleType } from "../models/role";
+import { Role, RoleType } from "../models/role";
+import { v4 as uuidv4 } from "uuid";
 import { Wallet } from "../models/wallet";
 import { WalletTransaction } from "../models/wallet-transaction";
 import { Ride } from "../models/ride";
@@ -73,25 +74,37 @@ export interface RevenueReportResult {
 export interface AdminDashboard {
     overview: {
         totalUsers: number;
+        totalUsersByCountry: Record<string, number>;
         totalMerchants: number;
+        totalMerchantsByCountry: Record<string, number>;
         totalDrivers: number;
+        totalDriversByCountry: Record<string, number>;
+        totalRiders: number;
+        totalRidersByCountry: Record<string, number>;
         activeMerchants: number;
         activeDrivers: number;
+        activeDriversByCountry: Record<string, number>;
         monthlyActiveUsers: number;
+        monthlyActiveUsersByCountry: Record<string, number>;
         totalListings: number;
+        totalListingsByCountry: Record<string, number>;
     };
     today: {
         totalOrders: number;
+        totalOrdersByCountry: Record<string, number>;
         totalRides: number;
         orderRevenue: number;
+        orderRevenueByCountry: Record<string, number>;
         rideRevenue: number;
         platformFees: number;
         lastOrderTime: Date | null;
         avgCompletionTimeMinutes: number;
+        avgCompletionTimeByCountry: Record<string, number>;
     };
     pendingActions: {
         pendingMerchantApprovals: number;
         pendingDriverApprovals: number;
+        pendingVerificationsByCountry: Record<string, number>;
         pendingPayouts: number;
         pendingOrders: number;
     };
@@ -126,6 +139,7 @@ export class AdminService {
     private referralCodeRepo = AppDataSource.getRepository(ReferralCode);
     private referralLinkRepo = AppDataSource.getRepository(ReferralLink);
     private broadcastRepo = AppDataSource.getRepository(Broadcast);
+    private roleRepo = AppDataSource.getRepository(Role);
     private notificationRepo = AppDataSource.getRepository(Notification);
 
     async getDashboard(): Promise<AdminDashboard> {
@@ -134,41 +148,138 @@ export class AdminService {
         const tomorrow = new Date(today);
         tomorrow.setDate(tomorrow.getDate() + 1);
 
-        // Overview counts
-        const [totalUsers, totalMerchants, totalDrivers, totalListings] = await Promise.all([
+        const thirtyDaysAgo = new Date();
+        thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+        // Overview counts & breakdowns
+        const [
+            totalUsers,
+            totalUsersByCountryRaw,
+            totalMerchants,
+            totalMerchantsByCountryRaw,
+            totalDrivers,
+            totalDriversByCountryRaw,
+            totalBuyers,
+            totalBuyersByCountryRaw,
+            activeMerchants,
+            activeDrivers,
+            activeDriversByCountryRaw,
+            monthlyActiveUsers,
+            monthlyActiveUsersByCountryRaw,
+            totalListings,
+            totalListingsByCountryRaw
+        ] = await Promise.all([
             this.userRepo.count(),
+            this.userRepo.createQueryBuilder("u").select("u.country", "country").addSelect("COUNT(u.id)", "count").groupBy("u.country").getRawMany(),
             this.merchantProfileRepo.count(),
+            this.userRoleRepo.createQueryBuilder("ur")
+                .innerJoin("ur.role", "r")
+                .innerJoin("ur.user", "u")
+                .where("r.name = :name", { name: RoleType.MERCHANT })
+                .select("u.country", "country")
+                .addSelect("COUNT(ur.id)", "count")
+                .groupBy("u.country")
+                .getRawMany(),
             this.userRoleRepo.count({
                 where: { role: { name: RoleType.DRIVER } },
                 relations: { role: true },
             }),
+            this.userRoleRepo.createQueryBuilder("ur")
+                .innerJoin("ur.role", "r")
+                .innerJoin("ur.user", "u")
+                .where("r.name = :name", { name: RoleType.DRIVER })
+                .select("u.country", "country")
+                .addSelect("COUNT(ur.id)", "count")
+                .groupBy("u.country")
+                .getRawMany(),
+            this.userRoleRepo.count({
+                where: { role: { name: RoleType.BUYER } },
+                relations: { role: true },
+            }),
+            this.userRoleRepo.createQueryBuilder("ur")
+                .innerJoin("ur.role", "r")
+                .innerJoin("ur.user", "u")
+                .where("r.name = :name", { name: RoleType.BUYER })
+                .select("u.country", "country")
+                .addSelect("COUNT(ur.id)", "count")
+                .groupBy("u.country")
+                .getRawMany(),
+            this.merchantProfileRepo.count({
+                where: { status: MerchantVerificationStatus.APPROVED, isOpen: true },
+            }),
+            this.userRoleRepo.count({
+                where: { role: { name: RoleType.DRIVER }, status: RoleStatus.APPROVED },
+                relations: { role: true },
+            }),
+            this.userRoleRepo.createQueryBuilder("ur")
+                .innerJoin("ur.role", "r")
+                .innerJoin("ur.user", "u")
+                .where("r.name = :name", { name: RoleType.DRIVER })
+                .andWhere("ur.status = :status", { status: RoleStatus.APPROVED })
+                .select("u.country", "country")
+                .addSelect("COUNT(ur.id)", "count")
+                .groupBy("u.country")
+                .getRawMany(),
+            this.userRepo.count({
+                where: { updatedAt: Between(thirtyDaysAgo, new Date()) },
+            }),
+            this.userRepo.createQueryBuilder("u")
+                .where("u.updatedAt >= :thirtyDaysAgo", { thirtyDaysAgo })
+                .select("u.country", "country")
+                .addSelect("COUNT(u.id)", "count")
+                .groupBy("u.country")
+                .getRawMany(),
             this.productRepo.count(),
+            this.productRepo.createQueryBuilder("p")
+                .innerJoin("p.merchant", "u")
+                .select("u.country", "country")
+                .addSelect("COUNT(p.id)", "count")
+                .groupBy("u.country")
+                .getRawMany(),
         ]);
 
-        const thirtyDaysAgo = new Date();
-        thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-
-        // MAU - users with activity in last 30 days (assuming updatedAt tracks activity)
-        const monthlyActiveUsers = await this.userRepo.count({
-            where: { updatedAt: Between(thirtyDaysAgo, new Date()) },
-        });
-
-        const activeMerchants = await this.merchantProfileRepo.count({
-            where: { status: MerchantVerificationStatus.APPROVED, isOpen: true },
-        });
-
-        const activeDrivers = await this.userRoleRepo.count({
-            where: { role: { name: RoleType.DRIVER }, status: RoleStatus.APPROVED },
-            relations: { role: true },
-        });
-
-        // Today's numbers
-        const todaysOrders = await this.orderRepo
-            .createQueryBuilder("o")
-            .where("o.createdAt >= :today", { today })
-            .andWhere("o.createdAt < :tomorrow", { tomorrow })
-            .orderBy("o.createdAt", "DESC")
-            .getMany();
+        // Today's numbers & breakdowns
+        const [todaysOrders, todaysOrdersByCountryRaw, rideRevenueByCountryRaw, orderRevenueByCountryRaw, avgCompByCountryRaw] = await Promise.all([
+            this.orderRepo.createQueryBuilder("o")
+                .where("o.createdAt >= :today", { today })
+                .andWhere("o.createdAt < :tomorrow", { tomorrow })
+                .orderBy("o.createdAt", "DESC")
+                .getMany(),
+            this.orderRepo.createQueryBuilder("o")
+                .innerJoin("o.merchant", "u")
+                .where("o.createdAt >= :today", { today })
+                .andWhere("o.createdAt < :tomorrow", { tomorrow })
+                .select("u.country", "country")
+                .addSelect("COUNT(o.id)", "count")
+                .groupBy("u.country")
+                .getRawMany(),
+            this.rideRepo.createQueryBuilder("r")
+                .innerJoin("r.customer", "u")
+                .where("r.createdAt >= :today", { today })
+                .andWhere("r.createdAt < :tomorrow", { tomorrow })
+                .select("u.country", "country")
+                .addSelect('SUM(CAST(r."finalFare" AS DECIMAL))', "revenue")
+                .groupBy("u.country")
+                .getRawMany(),
+            this.orderRepo.createQueryBuilder("o")
+                .innerJoin("o.merchant", "u")
+                .where("o.createdAt >= :today", { today })
+                .andWhere("o.createdAt < :tomorrow", { tomorrow })
+                .select("u.country", "country")
+                .addSelect('SUM(CAST(o."totalAmount" AS DECIMAL))', "revenue")
+                .groupBy("u.country")
+                .getRawMany(),
+            this.orderRepo.createQueryBuilder("o")
+                .innerJoin("o.merchant", "u")
+                .where("o.createdAt >= :today", { today })
+                .andWhere("o.createdAt < :tomorrow", { tomorrow })
+                .andWhere("o.status = :status", { status: OrderStatus.COMPLETED })
+                .andWhere('o."deliveredAt" IS NOT NULL')
+                .select("u.country", "country")
+                .addSelect('AVG(EXTRACT(EPOCH FROM (o."deliveredAt" - o."createdAt")) / 60)', "avg")
+                .groupBy("u.country")
+                .getRawMany(),
+        ]);
 
         const lastOrderTime = todaysOrders[0]?.createdAt || null;
 
@@ -183,7 +294,7 @@ export class AdminService {
             0
         );
         const rideRevenue = todaysRides.reduce(
-            (sum, r) => sum + Number((r as any).fare || 0),
+            (sum, r) => sum + Number((r as any).finalFare || 0),
             0
         );
         const platformFees = todaysOrders.reduce(
@@ -200,8 +311,8 @@ export class AdminService {
               }, 0) / completedOrders.length
             : 0;
 
-        // Pending actions
-        const [pendingMerchantApprovals, pendingDriverApprovals, pendingOrders] =
+        // Pending actions & breakdowns
+        const [pendingMerchantApprovals, pendingDriverApprovals, pendingOrders, pendingMerchantsByCountryRaw, pendingDriversByCountryRaw] =
             await Promise.all([
                 this.merchantProfileRepo.count({
                     where: { status: MerchantVerificationStatus.PENDING },
@@ -213,6 +324,22 @@ export class AdminService {
                 this.orderRepo.count({
                     where: { status: OrderStatus.PENDING },
                 }),
+                this.merchantProfileRepo.createQueryBuilder("mp")
+                    .innerJoin("mp.user", "u")
+                    .where("mp.status = :status", { status: MerchantVerificationStatus.PENDING })
+                    .select("u.country", "country")
+                    .addSelect("COUNT(mp.id)", "count")
+                    .groupBy("u.country")
+                    .getRawMany(),
+                this.userRoleRepo.createQueryBuilder("ur")
+                    .innerJoin("ur.role", "r")
+                    .innerJoin("ur.user", "u")
+                    .where("r.name = :name", { name: RoleType.DRIVER })
+                    .andWhere("ur.status = :status", { status: RoleStatus.PENDING })
+                    .select("u.country", "country")
+                    .addSelect("COUNT(ur.id)", "count")
+                    .groupBy("u.country")
+                    .getRawMany(),
             ]);
 
         // Pending payouts — wallet transactions with payout metadata still pending
@@ -222,32 +349,122 @@ export class AdminService {
             .andWhere("tx.metadata->>'status' = :status", { status: "pending" })
             .getCount();
 
+        // Helper to format country stats
+        const formatStats = (raw: any[], key: string = "count") => {
+            const result: Record<string, number> = {};
+            raw.forEach(r => {
+                const c = r.country || "Other";
+                result[c] = (result[c] || 0) + Number(r[key]);
+            });
+            return result;
+        };
+
+        const pendingVerificationsByCountry = formatStats(pendingMerchantsByCountryRaw);
+        const driverPending = formatStats(pendingDriversByCountryRaw);
+        Object.keys(driverPending).forEach(c => {
+            pendingVerificationsByCountry[c] = (pendingVerificationsByCountry[c] || 0) + driverPending[c];
+        });
+
+        // Revenue breakdown: merge ride and order revenue by country
+        const orderRevByCountry = formatStats(orderRevenueByCountryRaw, "revenue");
+        const rideRevByCountry = formatStats(rideRevenueByCountryRaw, "revenue");
+        const totalRevByCountry: Record<string, number> = { ...orderRevByCountry };
+        Object.keys(rideRevByCountry).forEach(c => {
+            totalRevByCountry[c] = (totalRevByCountry[c] || 0) + rideRevByCountry[c];
+        });
+
         return {
             overview: {
                 totalUsers,
+                totalUsersByCountry: formatStats(totalUsersByCountryRaw),
                 totalMerchants,
+                totalMerchantsByCountry: formatStats(totalMerchantsByCountryRaw),
                 totalDrivers,
+                totalDriversByCountry: formatStats(totalDriversByCountryRaw),
+                totalRiders: totalBuyers,
+                totalRidersByCountry: formatStats(totalBuyersByCountryRaw),
                 activeMerchants,
                 activeDrivers,
+                activeDriversByCountry: formatStats(activeDriversByCountryRaw),
                 monthlyActiveUsers,
+                monthlyActiveUsersByCountry: formatStats(monthlyActiveUsersByCountryRaw),
                 totalListings,
+                totalListingsByCountry: formatStats(totalListingsByCountryRaw),
             },
             today: {
                 totalOrders: todaysOrders.length,
+                totalOrdersByCountry: formatStats(todaysOrdersByCountryRaw),
                 totalRides: todaysRides.length,
                 orderRevenue: Math.round(orderRevenue * 100) / 100,
+                orderRevenueByCountry: totalRevByCountry,
                 rideRevenue: Math.round(rideRevenue * 100) / 100,
                 platformFees: Math.round(platformFees * 100) / 100,
                 lastOrderTime,
                 avgCompletionTimeMinutes: Math.round(avgCompletionTimeMinutes),
+                avgCompletionTimeByCountry: formatStats(avgCompByCountryRaw, "avg"),
             },
             pendingActions: {
                 pendingMerchantApprovals,
                 pendingDriverApprovals,
+                pendingVerificationsByCountry,
                 pendingPayouts,
                 pendingOrders,
             },
         };
+    }
+
+    async getRiderStats() {
+        const users = await this.userRepo.find({
+            relations: ["buyerProfile"],
+            order: { createdAt: "DESC" }
+        });
+
+        const orderStats = await this.orderRepo.createQueryBuilder("o")
+            .select('o."customerId"', "userId")
+            .addSelect("COUNT(o.id)", "orderCount")
+            .addSelect('SUM(o."totalAmount")', "totalSpent")
+            .groupBy('o."customerId"')
+            .getRawMany();
+
+        const rideStats = await this.rideRepo.createQueryBuilder("r")
+            .select('r."customerId"', "userId")
+            .addSelect("COUNT(r.id)", "rideCount")
+            .addSelect('SUM(CAST(r."finalFare" AS DECIMAL))', "totalSpent")
+            .groupBy('r."customerId"')
+            .getRawMany();
+
+        const wallets = await this.walletRepo.find();
+        const walletMap = new Map(wallets.map(w => [w.userId, Number(w.balance)]));
+
+        const statsMap: Record<string, { orders: number, rides: number, spent: number }> = {};
+
+        orderStats.forEach(s => {
+            if (!statsMap[s.userId]) statsMap[s.userId] = { orders: 0, rides: 0, spent: 0 };
+            statsMap[s.userId].orders = Number(s.orderCount);
+            statsMap[s.userId].spent += Number(s.totalSpent || 0);
+        });
+
+        rideStats.forEach(s => {
+            if (!statsMap[s.userId]) statsMap[s.userId] = { orders: 0, rides: 0, spent: 0 };
+            statsMap[s.userId].rides = Number(s.rideCount);
+            statsMap[s.userId].spent += Number(s.totalSpent || 0);
+        });
+
+        return users.map(u => ({
+            id: u.id,
+            first_name: u.buyerProfile?.fullName?.split(" ")[0] || "",
+            last_name: u.buyerProfile?.fullName?.split(" ").slice(1).join(" ") || "",
+            full_name: u.buyerProfile?.fullName || u.email || "Unknown",
+            email: u.email,
+            phone: u.phoneNumber,
+            status: u.status,
+            country: u.country,
+            created_date: u.createdAt,
+            total_spent: statsMap[u.id]?.spent || 0,
+            total_orders: statsMap[u.id]?.orders || 0,
+            total_rides: statsMap[u.id]?.rides || 0,
+            wallet_balance: walletMap.get(u.id) || 0
+        }));
     }
 
     // ════════════════════════════════════════════════════════════════
@@ -896,6 +1113,76 @@ export class AdminService {
         return { bookings, total, page, limit };
     }
 
+    async getServiceStats() {
+        const totalProviders = await this.merchantProfileRepo.count({ where: { category: "services" } });
+        const activeProviders = await this.merchantProfileRepo.count({ 
+            where: { category: "services", status: MerchantVerificationStatus.APPROVED } 
+        });
+        
+        const totalBookings = await this.serviceBookingRepo.count();
+        const pendingBookings = await this.serviceBookingRepo.count({ 
+            where: { status: ServiceBookingStatus.REQUESTED } 
+        });
+
+        const providersByCountryRaw = await this.merchantProfileRepo.createQueryBuilder("m")
+            .innerJoin("m.user", "u")
+            .select("u.country", "country")
+            .addSelect("COUNT(m.id)", "count")
+            .where("m.category = :cat", { cat: "services" })
+            .groupBy("u.country")
+            .getRawMany();
+
+        const totalProvidersByCountry: Record<string, number> = {};
+        providersByCountryRaw.forEach(r => {
+            totalProvidersByCountry[r.country] = Number(r.count);
+        });
+
+        return {
+            totalProviders,
+            activeProviders,
+            totalBookings,
+            pendingBookings,
+            totalProvidersByCountry
+        };
+    }
+
+    async createQuickMerchant(data: { businessName: string; businessEmail: string; category: string; phone: string }) {
+        const userId = uuidv4();
+        
+        // Create User
+        const user = this.userRepo.create({
+            id: userId,
+            email: data.businessEmail,
+            phoneNumber: data.phone,
+            status: UserStatus.ACTIVE,
+        });
+        await this.userRepo.save(user);
+
+        // Create Merchant Profile
+        const profile = this.merchantProfileRepo.create({
+            userId: user.id,
+            businessName: data.businessName,
+            businessEmail: data.businessEmail,
+            category: data.category,
+            status: MerchantVerificationStatus.APPROVED,
+            address: "Quick Created",
+        });
+        await this.merchantProfileRepo.save(profile);
+
+        // Assign Merchant Role
+        const role = await this.roleRepo.findOne({ where: { name: RoleType.MERCHANT } });
+        if (role) {
+            const userRole = this.userRoleRepo.create({
+                userId: user.id,
+                roleId: role.id,
+                status: RoleStatus.APPROVED
+            });
+            await this.userRoleRepo.save(userRole);
+        }
+
+        return { user, profile };
+    }
+
     async approveServiceProvider(merchantId: string, adminId: string) {
         const profile = await this.merchantProfileRepo.findOne({
             where: { userId: merchantId, category: "services" as any },
@@ -1478,6 +1765,28 @@ export class AdminService {
             id: broadcast.id,
             userCount: users.length 
         };
+    }
+
+    async sendPrivateNotification(userId: string, payload: any, adminId: string) {
+        const { title, body, data = {} } = payload;
+        
+        log.info("Admin sending private notification", { userId, title, adminId });
+        
+        const user = await this.userRepo.findOneBy({ id: userId });
+        if (!user) {
+            throw new Error(`User with ID ${userId} not found`);
+        }
+
+        const notification = await this.notificationService.notify(
+            userId,
+            NotificationType.GENERAL_ANNOUNCEMENT,
+            title,
+            body,
+            { ...data, sentBy: adminId, isPrivate: true }
+        );
+
+        log.info("Admin sent private notification", { userId, title, adminId });
+        return notification;
     }
 
     // ════════════════════════════════════════════════════════════════

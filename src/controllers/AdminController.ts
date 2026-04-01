@@ -37,8 +37,18 @@ export class AdminController {
     public simulateController = new SimulateController();
 
     /**
-     * GET /admin/drivers
+     * POST /admin/merchants
      */
+    createMerchant = async (req: AuthRequest, res: Response) => {
+        try {
+            const result = await this.adminService.createQuickMerchant(req.body);
+            return res.json(result);
+        } catch (error) {
+            log.error("Error creating merchant:", error);
+            return res.status(500).json({ message: "Internal server error" });
+        }
+    };
+
     getDrivers = async (req: Request, res: Response) => {
         try {
             const drivers = await this.driverRepo.find({
@@ -84,6 +94,29 @@ export class AdminController {
         }
     };
 
+    getMerchantById = async (req: Request, res: Response) => {
+        try {
+            const { id } = req.params;
+            const merchant = await this.merchantRepo.findOne({
+                where: { userId: id },
+                relations: ["user"]
+            });
+            if (!merchant) return res.status(404).json({ message: "Merchant not found" });
+            return res.json({
+                id: merchant.userId,
+                business_name: merchant.businessName,
+                email: merchant.businessEmail || merchant.user.email,
+                phone: merchant.businessPhone || merchant.user.phoneNumber,
+                category: merchant.category,
+                status: merchant.status,
+                created_date: merchant.user.createdAt,
+            });
+        } catch (error) {
+            console.error("Error fetching merchant:", error);
+            return res.status(500).json({ message: "Internal server error" });
+        }
+    };
+
     /**
      * GET /admin/rides
      */
@@ -112,17 +145,10 @@ export class AdminController {
      */
     getUsers = async (req: Request, res: Response) => {
         try {
-            const users = await this.userRepo.find();
-            return res.json(users.map(u => ({
-                id: u.id,
-                full_name: u.email, // Simplification
-                email: u.email,
-                phone: u.phoneNumber,
-                status: u.status,
-                created_date: u.createdAt,
-            })));
+            const users = await this.adminService.getRiderStats();
+            return res.json(users);
         } catch (error) {
-            console.error("Error fetching users:", error);
+            log.error("Error fetching users:", error);
             return res.status(500).json({ message: "Internal server error" });
         }
     };
@@ -657,6 +683,16 @@ export class AdminController {
         }
     };
 
+    getServiceStats = async (req: AuthRequest, res: Response) => {
+        try {
+            const stats = await this.adminService.getServiceStats();
+            return res.json(stats);
+        } catch (error) {
+            log.error("Error getting service stats", { error: (error as Error).message });
+            return res.status(500).json({ message: "Internal server error" });
+        }
+    };
+
     approveServiceProvider = async (req: AuthRequest, res: Response) => {
         try {
             const adminId = (req as any).user.id;
@@ -1169,6 +1205,23 @@ export class AdminController {
         } catch (error) {
             log.error("Error broadcasting notification", { error: (error as Error).message });
             return res.status(500).json({ message: "Internal server error" });
+        }
+    }
+
+    sendPrivateNotification = async (req: AuthRequest, res: Response) => {
+        try {
+            const adminId = (req as any).user.id;
+            const { userId, title, body, data } = req.body;
+            
+            if (!userId || !title || !body) {
+                return res.status(400).json({ message: "userId, title, and body are required" });
+            }
+
+            const result = await this.adminService.sendPrivateNotification(userId, { title, body, data }, adminId);
+            return res.json(result);
+        } catch (error) {
+            log.error("Error sending private notification", { error: (error as Error).message });
+            return res.status(500).json({ message: (error as Error).message || "Internal server error" });
         }
     }
 

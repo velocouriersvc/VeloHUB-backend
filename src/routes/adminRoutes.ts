@@ -52,6 +52,10 @@ const adminRole = requireRole(["admin"]);
 router.get("/drivers", adminRole, adminController.getDrivers);
 router.post("/drivers", adminRole, adminController.createDriver);
 
+router.get("/merchants", adminRole, adminController.getMerchants);
+router.post("/merchants", adminRole, adminController.createMerchant);
+router.get("/merchants/:id", adminRole, adminController.getMerchantById);
+
 /**
  * @openapi
  * /admin/merchants:
@@ -1319,6 +1323,7 @@ router.patch("/simulate/ride/:id/advance", adminRole, adminController.simulateCo
 
 router.get("/services/providers", adminRole, adminController.getServiceProviders);
 router.get("/services/bookings", adminRole, adminController.getServiceBookings);
+router.get("/services/stats", adminRole, adminController.getServiceStats);
 router.patch("/services/providers/:id/approve", adminRole, adminController.approveServiceProvider);
 
 // ────────────────────────────────────────────────────────────────
@@ -1341,6 +1346,7 @@ router.delete("/banners/:id", adminRole, adminController.deleteBanner);
 
 router.get("/broadcasts", adminRole, adminController.getBroadcasts);
 router.post("/broadcast-notification", adminRole, adminController.broadcastNotification);
+router.post("/notifications/private", adminRole, adminController.sendPrivateNotification);
 
 // ────────────────────────────────────────────────────────────────
 //  REFERRALS
