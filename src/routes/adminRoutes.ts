@@ -1225,6 +1225,31 @@ router.post("/zones", adminRole, adminController.createZone);
  *         description: Zone updated
  */
 router.put("/zones/:id", adminRole, adminController.updateZone);
+router.patch("/zones/:id", adminRole, adminController.updateZone);
+
+/**
+ * @openapi
+ * /admin/surge/global:
+ *   post:
+ *     tags: [Admin - Surge]
+ *     summary: Update global surge settings
+ *     security:
+ *       - ApiKeyAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [isActive, multiplier]
+ *             properties:
+ *               isActive: { type: boolean }
+ *               multiplier: { type: number }
+ *     responses:
+ *       200:
+ *         description: Global surge updated
+ */
+router.post("/surge/global", adminRole, adminController.updateGlobalSurge);
 
 /**
  * @openapi
@@ -1370,5 +1395,13 @@ router.patch("/platform-settings/:id", adminRole, adminController.updatePlatform
 
 router.get("/broadcasts", adminRole, adminController.getBroadcasts);
 router.get("/leaderboard", adminRole, adminController.getLeaderboard);
+router.get("/staff", adminRole, adminController.getStaff);
+router.post("/staff", adminRole, adminController.createStaff);
+router.patch("/staff/:id", adminRole, adminController.updateStaff);
+
+router.get("/categories", adminRole, adminController.getCategories);
+router.post("/categories", adminRole, adminController.createCategory);
+router.patch("/categories/:id", adminRole, adminController.updateCategory);
+router.delete("/categories/:id", adminRole, adminController.deleteCategory);
 
 export default router;

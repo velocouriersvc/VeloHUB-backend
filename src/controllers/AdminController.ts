@@ -1360,7 +1360,7 @@ export class AdminController {
 
     getLeaderboard = async (req: AuthRequest, res: Response) => {
         try {
-            const { type, country } = req.query as { type: 'riders' | 'customers', country: string };
+            const { type, country } = req.query as { type: 'riders' | 'customers' | 'drivers' | 'merchants' | 'services', country: string };
             if (!type || !country) {
                 return res.status(400).json({ message: "Type and country are required" });
             }
@@ -1368,6 +1368,108 @@ export class AdminController {
             return res.json(leaderboard);
         } catch (error) {
             log.error("Error getting leaderboard", { error: (error as Error).message });
+            return res.status(500).json({ message: "Internal server error" });
+        }
+    }
+
+    getStaff = async (req: AuthRequest, res: Response) => {
+        try {
+            const staff = await this.adminService.getStaff();
+            return res.json(staff);
+        } catch (error) {
+            log.error("Error getting staff", { error: (error as Error).message });
+            return res.status(500).json({ message: "Internal server error" });
+        }
+    }
+
+    createStaff = async (req: AuthRequest, res: Response) => {
+        try {
+            const staff = await this.adminService.createStaffMember(req.body);
+            return res.status(201).json(staff);
+        } catch (error) {
+            log.error("Error creating staff member", { error: (error as Error).message });
+            return res.status(error instanceof Error && error.message.includes("found") ? 404 : 400)
+                .json({ message: (error as Error).message });
+        }
+    }
+
+    updateStaff = async (req: AuthRequest, res: Response) => {
+        try {
+            const { id } = req.params;
+            const staff = await this.adminService.updateStaffMember(id, req.body);
+            return res.json(staff);
+        } catch (error) {
+            log.error("Error updating staff member", { error: (error as Error).message });
+            return res.status(error instanceof Error && error.message.includes("found") ? 404 : 400)
+                .json({ message: (error as Error).message });
+        }
+    }
+
+    getCategories = async (req: AuthRequest, res: Response) => {
+        try {
+            const categories = await this.adminService.getMerchantCategories();
+            return res.json(categories);
+        } catch (error) {
+            log.error("Error getting categories", { error: (error as Error).message });
+            return res.status(500).json({ message: "Internal server error" });
+        }
+    }
+
+    createCategory = async (req: AuthRequest, res: Response) => {
+        try {
+            const category = await this.adminService.createMerchantCategory(req.body);
+            return res.status(201).json(category);
+        } catch (error) {
+            log.error("Error creating category", { error: (error as Error).message });
+            return res.status(400).json({ message: (error as Error).message });
+        }
+    }
+
+    updateCategory = async (req: AuthRequest, res: Response) => {
+        try {
+            const { id } = req.params;
+            const category = await this.adminService.updateMerchantCategory(id, req.body);
+            return res.json(category);
+        } catch (error) {
+            log.error("Error updating category", { error: (error as Error).message });
+            return res.status(400).json({ message: (error as Error).message });
+        }
+    }
+
+    deleteCategory = async (req: AuthRequest, res: Response) => {
+        try {
+            const { id } = req.params;
+            await this.adminService.deleteMerchantCategory(id);
+            return res.status(204).send();
+        } catch (error) {
+            log.error("Error deleting category", { error: (error as Error).message });
+            return res.status(400).json({ message: (error as Error).message });
+        }
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    //  ZONES & SURGE
+    // ════════════════════════════════════════════════════════════════
+
+    updateGlobalSurge = async (req: AuthRequest, res: Response) => {
+        try {
+            const adminId = req.user?.id;
+            if (!adminId) return res.status(401).json({ message: "User ID required" });
+
+            const result = await this.adminService.updateGlobalSurge(req.body, adminId);
+            
+            await AuditLogController.record({
+                action: "Update Global Surge",
+                entity_type: "platform_settings",
+                entity_id: "global",
+                performed_by: req.user?.email || "Admin",
+                details: `Global surge ${req.body.isActive ? 'activated' : 'deactivated'} at ${req.body.multiplier}x`,
+                risk_level: AuditRiskLevel.MEDIUM
+            });
+
+            return res.json(result);
+        } catch (error) {
+            log.error("Error updating global surge", { error: (error as Error).message });
             return res.status(500).json({ message: "Internal server error" });
         }
     }

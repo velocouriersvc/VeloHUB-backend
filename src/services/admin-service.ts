@@ -9,6 +9,8 @@ import { PlatformSettings } from "../models/platform-settings";
 import { User, UserStatus } from "../models/user";
 import { UserRole, RoleStatus } from "../models/user-role";
 import { Role, RoleType } from "../models/role";
+import { MerchantCategory } from "../models/merchant-category";
+import { Zone } from "../models/zone";
 import { v4 as uuidv4 } from "uuid";
 import { Wallet } from "../models/wallet";
 import { WalletTransaction } from "../models/wallet-transaction";
@@ -16,6 +18,7 @@ import { Ride, RideStatus } from "../models/ride";
 import { ServiceBooking, ServiceBookingStatus } from "../models/service-booking";
 import { WalletService } from "./wallet-service";
 import { NotificationService } from "./notification-service";
+import { supabaseAdmin } from "../utils/supabase-client";
 import { SupportTicket, SupportTicketStatus, SupportTicketPriority } from "../models/support-ticket";
 import { Notification, NotificationType } from "../models/notification";
 import { PromoCode } from "../models/promo-code";
@@ -127,6 +130,7 @@ export class AdminService {
     private walletTxRepo = AppDataSource.getRepository(WalletTransaction);
     private rideRepo = AppDataSource.getRepository(Ride);
     private serviceBookingRepo = AppDataSource.getRepository(ServiceBooking);
+    private zoneRepo = AppDataSource.getRepository(Zone);
 
     private walletService = new WalletService();
     private notificationService = new NotificationService();
@@ -144,6 +148,7 @@ export class AdminService {
     private roleRepo = AppDataSource.getRepository(Role);
     private notificationRepo = AppDataSource.getRepository(Notification);
     private buyerProfileRepo = AppDataSource.getRepository(BuyerProfile);
+    private categoryRepo = AppDataSource.getRepository(MerchantCategory);
 
     async getDashboard(): Promise<AdminDashboard> {
         const today = new Date();
@@ -1991,13 +1996,14 @@ export class AdminService {
         return link;
     }
 
-    async getLeaderboard(type: 'riders' | 'customers', country: string) {
-        const settings = await this.settingsRepo.findOne({ where: { country } });
-        const limit = settings?.leaderboardLimit || 10;
+    async getLeaderboard(type: 'riders' | 'customers' | 'drivers' | 'merchants' | 'services', country: string, limit: number = 20) {
+        if (country !== 'ALL') {
+            const settings = await this.settingsRepo.findOne({ where: { country } });
+            limit = settings?.leaderboardLimit || 10;
+        }
 
         if (type === 'riders') {
-            // Power users taking rides
-            const results = await this.rideRepo
+            const query = this.rideRepo
                 .createQueryBuilder("ride")
                 .select("ride.customerId", "userId")
                 .addSelect("COUNT(ride.id)", "count")
@@ -2006,47 +2012,335 @@ export class AdminService {
                 .addSelect("profile.fullName", "name")
                 .addSelect("user.email", "email")
                 .where("ride.status = :status", { status: RideStatus.COMPLETED })
-                .andWhere("user.country = :country", { country })
                 .groupBy("ride.customerId")
                 .addGroupBy("profile.fullName")
                 .addGroupBy("user.email")
                 .orderBy("count", "DESC")
-                .limit(limit)
-                .getRawMany();
+                .limit(limit);
 
+            if (country !== 'ALL') {
+                query.andWhere("user.country = :country", { country });
+            }
+
+            const results = await query.getRawMany();
             return results.map((r, i) => ({
                 rank: i + 1,
                 userId: r.userId,
                 name: r.name || r.email || "Unknown Rider",
                 count: parseInt(r.count),
-                country
+                country: country === 'ALL' ? 'Global' : country
             }));
-        } else {
-            // Power users making purchases
-            const results = await this.orderRepo
+        } else if (type === 'customers') {
+            const query = this.orderRepo
                 .createQueryBuilder("order")
-                .select("order.userId", "userId")
+                .select("order.customerId", "userId")
                 .addSelect("COUNT(order.id)", "count")
-                .innerJoin("order.user", "user")
+                .innerJoin("order.customer", "user")
                 .leftJoin("user.buyerProfile", "profile")
                 .addSelect("profile.fullName", "name")
                 .addSelect("user.email", "email")
                 .where("order.status = :status", { status: OrderStatus.COMPLETED })
-                .andWhere("user.country = :country", { country })
-                .groupBy("order.userId")
+                .groupBy("order.customerId")
                 .addGroupBy("profile.fullName")
                 .addGroupBy("user.email")
                 .orderBy("count", "DESC")
-                .limit(limit)
-                .getRawMany();
+                .limit(limit);
 
+            if (country !== 'ALL') {
+                query.andWhere("user.country = :country", { country });
+            }
+
+            const results = await query.getRawMany();
             return results.map((r, i) => ({
                 rank: i + 1,
                 userId: r.userId,
                 name: r.name || r.email || "Unknown Customer",
                 count: parseInt(r.count),
-                country
+                country: country === 'ALL' ? 'Global' : country
+            }));
+        } else if (type === 'drivers') {
+            const query = this.rideRepo
+                .createQueryBuilder("ride")
+                .select("ride.driverId", "userId")
+                .addSelect("COUNT(ride.id)", "count")
+                .innerJoin("ride.driver", "user")
+                .leftJoin("user.merchantProfile", "profile")
+                .addSelect("user.phoneNumber", "name")
+                .addSelect("user.email", "email")
+                .where("ride.status = :status", { status: RideStatus.COMPLETED })
+                .andWhere("ride.driverId IS NOT NULL")
+                .groupBy("ride.driverId")
+                .addGroupBy("user.phoneNumber")
+                .addGroupBy("user.email")
+                .orderBy("count", "DESC")
+                .limit(limit);
+
+            if (country !== 'ALL') {
+                query.andWhere("user.country = :country", { country });
+            }
+
+            const results = await query.getRawMany();
+            return results.map((r, i) => ({
+                rank: i + 1,
+                userId: r.userId,
+                name: r.name || r.email || "Unknown Driver",
+                count: parseInt(r.count),
+                country: country === 'ALL' ? 'Global' : country
+            }));
+        } else if (type === 'merchants') { // merchants
+            const query = this.orderRepo
+                .createQueryBuilder("order")
+                .select("order.merchantId", "userId")
+                .addSelect("COUNT(order.id)", "count")
+                .addSelect("SUM(order.totalAmount)", "revenue")
+                .innerJoin("order.merchant", "user")
+                .leftJoin("user.merchantProfile", "profile")
+                .addSelect("profile.businessName", "name")
+                .where("order.status = :status", { status: OrderStatus.COMPLETED })
+                .groupBy("order.merchantId")
+                .addGroupBy("profile.businessName")
+                .orderBy("count", "DESC")
+                .limit(limit);
+
+            if (country !== 'ALL') {
+                query.andWhere("user.country = :country", { country });
+            }
+
+            const results = await query.getRawMany();
+            return results.map((r, i) => ({
+                rank: i + 1,
+                userId: r.userId,
+                name: r.name || "Unknown Merchant",
+                count: parseInt(r.count),
+                revenue: parseFloat(r.revenue || 0),
+                country: country === 'ALL' ? 'Global' : country
+            }));
+        } else if (type === 'services') {
+            const query = this.serviceBookingRepo
+                .createQueryBuilder("booking")
+                .select("booking.merchantId", "userId")
+                .addSelect("COUNT(booking.id)", "count")
+                .addSelect("SUM(booking.price)", "revenue")
+                .innerJoin("booking.merchant", "user")
+                .leftJoin("user.merchantProfile", "profile")
+                .addSelect("profile.businessName", "name")
+                .where("booking.status = :status", { status: ServiceBookingStatus.COMPLETED })
+                .groupBy("booking.merchantId")
+                .addGroupBy("profile.businessName")
+                .orderBy("count", "DESC")
+                .limit(limit);
+
+            if (country !== 'ALL') {
+                query.andWhere("user.country = :country", { country });
+            }
+
+            const results = await query.getRawMany();
+            return results.map((r, i) => ({
+                rank: i + 1,
+                userId: r.userId,
+                name: r.name || "Unknown Service Provider",
+                count: parseInt(r.count),
+                revenue: parseFloat(r.revenue || 0),
+                country: country === 'ALL' ? 'Global' : country
             }));
         }
+        return [];
+    }
+
+    async getStaff() {
+        const adminRoles = [
+            RoleType.ADMIN,
+            RoleType.SUPER_ADMIN,
+            RoleType.COUNTRY_MANAGER,
+            RoleType.CITY_OPERATOR,
+            RoleType.SUPPORT_AGENT,
+            RoleType.FINANCE_VIEWER
+        ];
+
+        const users = await this.userRepo.createQueryBuilder("u")
+            .innerJoinAndSelect("u.userRoles", "ur")
+            .innerJoinAndSelect("ur.role", "r")
+            .where("r.name IN (:...adminRoles)", { adminRoles })
+            .orderBy("u.createdAt", "DESC")
+            .getMany();
+
+        return users.map(u => ({
+            id: u.id,
+            email: u.email,
+            phone: u.phoneNumber,
+            status: u.status,
+            roles: u.userRoles.map(ur => ({
+                name: ur.role.name,
+                allowedCountries: ur.allowedCountries,
+                allowedCities: ur.allowedCities
+            })),
+            full_name: (u.email && u.email.includes('@')) ? u.email.split('@')[0] : 'Velo Admin',
+            created_date: u.createdAt,
+            last_active: u.lastLoginAt
+        }));
+    }
+
+    async createStaffMember(data: {
+        email?: string;
+        phoneNumber?: string;
+        password?: string;
+        role: RoleType;
+        allowedCountries?: string[];
+        allowedCities?: string[];
+    }) {
+        let userId: string;
+
+        // 1. Create User in Supabase Auth if password provided
+        if (data.email && data.password) {
+            const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
+                email: data.email,
+                password: data.password,
+                phone: data.phoneNumber,
+                email_confirm: true,
+                phone_confirm: true
+            });
+
+            if (authError) {
+                log.error("Failed to create staff user in Supabase", { error: authError.message });
+                throw new Error(authError.message);
+            }
+            userId = authData.user.id;
+        } else {
+            // Fallback to random UUID if no Supabase creation (e.g. for testing or phone-only)
+            userId = uuidv4();
+        }
+
+        // 2. Create/Sync User in local DB
+        let user = await this.userRepo.findOneBy({ id: userId });
+        if (!user) {
+            user = this.userRepo.create({
+                id: userId,
+                email: data.email || null,
+                phoneNumber: data.phoneNumber || null,
+                status: UserStatus.ACTIVE,
+            });
+            await this.userRepo.save(user);
+        }
+
+        // 3. Assign Role
+        const role = await this.roleRepo.findOneBy({ name: data.role });
+        if (!role) {
+            throw new Error(`Role ${data.role} not found`);
+        }
+
+        const userRole = this.userRoleRepo.create({
+            userId: user.id,
+            roleId: role.id,
+            status: RoleStatus.APPROVED,
+            allowedCountries: data.allowedCountries || [],
+            allowedCities: data.allowedCities || []
+        });
+        await this.userRoleRepo.save(userRole);
+
+        log.info("Staff member created directly", { userId: user.id, role: data.role });
+        return this.getStaff(); // Return updated list
+    }
+
+    async updateStaffMember(id: string, data: {
+        role?: RoleType;
+        allowedCountries?: string[];
+        allowedCities?: string[];
+        phoneNumber?: string;
+    }) {
+        const user = await this.userRepo.findOneBy({ id });
+        if (!user) throw new Error("Staff member not found");
+
+        if (data.phoneNumber) {
+            user.phoneNumber = data.phoneNumber;
+            await this.userRepo.save(user);
+        }
+
+        if (data.role) {
+            const role = await this.roleRepo.findOneBy({ name: data.role });
+            if (!role) throw new Error(`Role ${data.role} not found`);
+
+            // Find existing role of same type or just update all?
+            // Usually staff have one main role here.
+            let userRole = await this.userRoleRepo.findOne({
+                where: { userId: id }
+            });
+
+            if (userRole) {
+                userRole.roleId = role.id;
+                userRole.allowedCountries = data.allowedCountries || userRole.allowedCountries;
+                userRole.allowedCities = data.allowedCities || userRole.allowedCities;
+                await this.userRoleRepo.save(userRole);
+            } else {
+                userRole = this.userRoleRepo.create({
+                    userId: id,
+                    roleId: role.id,
+                    status: RoleStatus.APPROVED,
+                    allowedCountries: data.allowedCountries || [],
+                    allowedCities: data.allowedCities || []
+                });
+                await this.userRoleRepo.save(userRole);
+            }
+        }
+
+        log.info("Staff member updated", { userId: id });
+        return this.getStaff();
+    }
+
+    async getMerchantCategories() {
+        return this.categoryRepo.find({
+            order: { name: "ASC" }
+        });
+    }
+
+    async createMerchantCategory(data: { name: string; slug?: string; icon?: string }) {
+        const slug = data.slug || data.name.toLowerCase().replace(/ /g, "-");
+        const category = this.categoryRepo.create({
+            ...data,
+            slug
+        });
+        await this.categoryRepo.save(category);
+        return category;
+    }
+
+    async updateMerchantCategory(id: string, data: Partial<MerchantCategory>) {
+        await this.categoryRepo.update(id, data);
+        return this.categoryRepo.findOneBy({ id });
+    }
+
+    async deleteMerchantCategory(id: string) {
+        await this.categoryRepo.delete(id);
+        return true;
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    //  ZONES & SURGE
+    // ════════════════════════════════════════════════════════════════
+
+    async getZones() {
+        return this.zoneRepo.find({
+            order: { name: "ASC" }
+        });
+    }
+
+    async updateZone(id: string, data: Partial<Zone>) {
+        const zone = await this.zoneRepo.findOneBy({ id });
+        if (!zone) throw new Error("Zone not found");
+        
+        Object.assign(zone, data);
+        await this.zoneRepo.save(zone);
+        return zone;
+    }
+
+    async updateGlobalSurge(data: { isActive: boolean; multiplier: number }, adminId: string) {
+        const settings = await this.settingsRepo.find();
+        
+        for (const setting of settings) {
+            setting.isGlobalSurgeActive = data.isActive;
+            setting.globalSurgeMultiplier = data.multiplier;
+            await this.settingsRepo.save(setting);
+        }
+
+        log.info("Global surge updated", { ...data, adminId });
+        return { success: true, ...data };
     }
 }

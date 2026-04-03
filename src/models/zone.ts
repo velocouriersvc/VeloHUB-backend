@@ -38,6 +38,15 @@ export class Zone {
     @Column("float", { default: 10 })
     radius_km: number;
 
+    @Column("decimal", { precision: 10, scale: 7, nullable: true })
+    latitude: number;
+
+    @Column("decimal", { precision: 10, scale: 7, nullable: true })
+    longitude: number;
+
+    @Column("integer", { default: 50 })
+    demandLevel: number;
+
     @Column({ nullable: true })
     country: string;
 

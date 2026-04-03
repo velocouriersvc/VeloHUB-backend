@@ -189,4 +189,46 @@ router.delete("/entries/:id", apiKeyMiddleware, requireRole(["admin"]), waitlist
  */
 router.post("/countries", apiKeyMiddleware, requireRole(["admin"]), waitlistController.addCountry);
 
+/**
+ * @openapi
+ * /waitlist/countries/{id}:
+ *   patch:
+ *     tags: [Waitlist]
+ *     summary: Update a country (admin)
+ *     description: Update country details or toggle active status. Requires **admin** role.
+ *     security:
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Country updated
+ */
+router.patch("/countries/:id", apiKeyMiddleware, requireRole(["admin"]), waitlistController.updateCountry);
+
+/**
+ * @openapi
+ * /waitlist/countries/{id}:
+ *   delete:
+ *     tags: [Waitlist]
+ *     summary: Delete a country (admin)
+ *     description: Remove a country from the platform. Requires **admin** role.
+ *     security:
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       204:
+ *         description: Country deleted
+ */
+router.delete("/countries/:id", apiKeyMiddleware, requireRole(["admin"]), waitlistController.deleteCountry);
+
 export default router;
