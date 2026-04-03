@@ -22,7 +22,7 @@ export interface AuthRequest extends Request {
 
 export const requireRole = (requiredRoles: string[]) => {
   return async (req: AuthRequest, res: Response, next: NextFunction) => {
-    const phoneNumber = (req.body.phoneNumber || req.headers['x-user-phone']) as string;
+    const phoneNumber = (req.body.phoneNumber || req.body.phone || req.headers['x-user-phone']) as string;
 
     // Guest bypass for test phone numbers
     const guestNumbers = ["+233000000000", "+233000000001"];

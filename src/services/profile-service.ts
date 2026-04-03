@@ -40,22 +40,47 @@ export class ProfileService {
         await queryRunner.startTransaction();
 
         try {
-            let profile = await queryRunner.manager.findOne(BuyerProfile, { where: { userId } });
-            if (profile) {
-                queryRunner.manager.merge(BuyerProfile, profile, data);
-            } else {
-                profile = queryRunner.manager.create(BuyerProfile, { userId, ...data });
+            // 1. Update User level info (email, country)
+            const user = await queryRunner.manager.findOne(User, { where: { id: userId } });
+            if (user) {
+                user.email = data.email || user.email;
+                user.country = data.country_code || user.country;
+                await queryRunner.manager.save(User, user);
             }
-            const savedProfile = await queryRunner.manager.save(profile);
+
+            // 2. Handle Identification if Ghana Card is provided
+            let idRecord: Identification | null = null;
+            if (data.ghana_card_number) {
+                idRecord = await queryRunner.manager.findOne(Identification, { where: { idNumber: data.ghana_card_number } });
+                if (!idRecord) {
+                    idRecord = queryRunner.manager.create(Identification, {
+                        type: 'Ghana Card',
+                        idNumber: data.ghana_card_number,
+                        issuingCountry: data.country_code || 'GH',
+                        frontUrl: 'onboarding-manual', // Manual entry
+                        status: IdentificationStatus.PENDING
+                    });
+                }
+                idRecord = await queryRunner.manager.save(Identification, idRecord);
+            }
+
+            // 3. Create or Update Profile
+            let profile = await queryRunner.manager.findOne(BuyerProfile, { where: { userId } });
+            const profileData = {
+                userId,
+                fullName: data.full_name,
+                region: data.location,
+                identificationId: idRecord?.id || null
+            };
+
+            if (profile) {
+                queryRunner.manager.merge(BuyerProfile, profile, profileData);
+            } else {
+                profile = queryRunner.manager.create(BuyerProfile, profileData);
+            }
+            const savedProfile = await queryRunner.manager.save(BuyerProfile, profile);
 
             await this.ensureRole(queryRunner, userId, RoleType.BUYER);
-
-            const user = await queryRunner.manager.findOne(User, { where: { id: userId } });
-            // await this.syncToSupabase(userId, {
-            //     full_name: data.fullName,
-            //     email: data.email,
-            //     phone_number: user?.phoneNumber
-            // });
 
             await queryRunner.commitTransaction();
             log.info("Buyer profile setup completed", { userId });
@@ -75,24 +100,45 @@ export class ProfileService {
         await queryRunner.startTransaction();
 
         try {
-            const identification = queryRunner.manager.create(Identification, {
-                type: 'Ghana Card',
-                idNumber: data.idNumber,
-                issuingCountry: 'GHA',
-                frontUrl: data.idImageUrl,
-                status: IdentificationStatus.PENDING
-            });
-            const savedId = await queryRunner.manager.save(identification);
+            // 1. Update User level info (email, country)
+            const user = await queryRunner.manager.findOne(User, { where: { id: userId } });
+            if (user) {
+                user.email = data.email || user.email;
+                user.country = data.country_code || user.country;
+                await queryRunner.manager.save(User, user);
+            }
 
+            // 2. Handle Identification (Ghana Card)
+            let idRecord: Identification | null = null;
+            if (data.ghana_card_number) {
+                 idRecord = await queryRunner.manager.findOne(Identification, { where: { idNumber: data.ghana_card_number } });
+                 if (!idRecord) {
+                    idRecord = queryRunner.manager.create(Identification, {
+                        type: 'Ghana Card',
+                        idNumber: data.ghana_card_number,
+                        issuingCountry: data.country_code || 'GH',
+                        frontUrl: data.ghana_card_front_url || 'pending',
+                        backUrl: data.ghana_card_back_url || null,
+                        status: IdentificationStatus.PENDING
+                    });
+                }
+                idRecord = await queryRunner.manager.save(Identification, idRecord);
+            }
+
+            // 3. Create or Update Driver Profile
             let profile = await queryRunner.manager.findOne(DriverProfile, { where: { userId } });
             const profileData = {
                 userId,
-                fullName: data.fullName,
-                licenseNumber: data.licenseNumber,
-                licensePhotoUrl: data.licensePhotoUrl,
-                vehicleType: data.vehicleType,
-                plateNumber: data.plateNumber,
-                identificationId: savedId.id,
+                fullName: data.full_name,
+                licenseNumber: data.license_number,
+                // If licensePhotoUrl was passed before... the frontend snippet doesn't have it explicitly as 'license_photo', 
+                // but for now, let's keep what we have.
+                vehicleType: data.vehicle_type,
+                plateNumber: data.vehicle_number,
+                vehicleModel: data.vehicle_model || null,
+                vehicleColor: data.vehicle_color || null,
+                region: data.location,
+                identificationId: idRecord?.id || null,
                 status: DriverVerificationStatus.PENDING
             };
 
@@ -101,15 +147,9 @@ export class ProfileService {
             } else {
                 profile = queryRunner.manager.create(DriverProfile, profileData);
             }
-            const savedProfile = await queryRunner.manager.save(profile);
+            const savedProfile = await queryRunner.manager.save(DriverProfile, profile);
 
             await this.ensureRole(queryRunner, userId, RoleType.DRIVER);
-
-            const user = await queryRunner.manager.findOne(User, { where: { id: userId } });
-            // await this.syncToSupabase(userId, {
-            //     full_name: data.fullName,
-            //     phone_number: user?.phoneNumber
-            // });
 
             await queryRunner.commitTransaction();
             log.info("Driver profile setup completed", { userId });
@@ -129,27 +169,44 @@ export class ProfileService {
         await queryRunner.startTransaction();
 
         try {
-            const identification = queryRunner.manager.create(Identification, {
-                type: 'Ghana Card',
-                idNumber: data.idNumber,
-                issuingCountry: 'GHA',
-                frontUrl: data.idImageUrl,
-                status: IdentificationStatus.PENDING
-            });
-            const savedId = await queryRunner.manager.save(identification);
+            // 1. Update User level info (country)
+            const user = await queryRunner.manager.findOne(User, { where: { id: userId } });
+            if (user) {
+                user.country = data.country_code || user.country;
+                await queryRunner.manager.save(User, user);
+            }
 
+            // 2. Handle Identification (Ghana Card)
+            let idRecord: Identification | null = null;
+            if (data.ghana_card_number) {
+                 idRecord = await queryRunner.manager.findOne(Identification, { where: { idNumber: data.ghana_card_number } });
+                 if (!idRecord) {
+                    idRecord = queryRunner.manager.create(Identification, {
+                        type: 'Ghana Card',
+                        idNumber: data.ghana_card_number,
+                        issuingCountry: data.country_code || 'GH',
+                        frontUrl: data.ghana_card_front_url || 'pending',
+                        backUrl: data.ghana_card_back_url || null,
+                        status: IdentificationStatus.PENDING
+                    });
+                }
+                idRecord = await queryRunner.manager.save(Identification, idRecord);
+            }
+
+            // 3. Create or Update Merchant Profile
             let profile = await queryRunner.manager.findOne(MerchantProfile, { where: { userId } });
             const profileData = {
                 userId,
-                businessName: data.businessName,
-                category: data.category,
-                businessEmail: data.businessEmail,
-                businessPhone: data.businessPhone,
-                address: data.address,
-                latitude: data.latitude,
-                longitude: data.longitude,
-                registrationDocUrl: data.registrationDocUrl,
-                identificationId: savedId.id,
+                businessName: data.business_name,
+                category: data.business_type,
+                // Assuming business email/phone might be same as default if not explicitly separate in form
+                businessEmail: null,
+                businessPhone: data.phone,
+                address: data.business_address,
+                region: data.location,
+                latitude: data.latitude || null,
+                longitude: data.longitude || null,
+                identificationId: idRecord?.id || null,
                 status: MerchantVerificationStatus.PENDING
             };
 
@@ -158,15 +215,9 @@ export class ProfileService {
             } else {
                 profile = queryRunner.manager.create(MerchantProfile, profileData);
             }
-            const savedProfile = await queryRunner.manager.save(profile);
+            const savedProfile = await queryRunner.manager.save(MerchantProfile, profile);
 
             await this.ensureRole(queryRunner, userId, RoleType.MERCHANT);
-
-            const user = await queryRunner.manager.findOne(User, { where: { id: userId } });
-            // await this.syncToSupabase(userId, {
-            //     full_name: data.businessName,
-            //     phone_number: user?.phoneNumber
-            // });
 
             await queryRunner.commitTransaction();
             log.info("Merchant profile setup completed", { userId });

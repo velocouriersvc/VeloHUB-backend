@@ -37,6 +37,9 @@ export class MerchantProfile {
     @Column({ type: "double precision", nullable: true })
     longitude: number | null;
 
+    @Column({ type: "varchar", length: 100, nullable: true })
+    region: string | null;
+
     @Column({ type: "text", nullable: true })
     registrationDocUrl: string | null;
 

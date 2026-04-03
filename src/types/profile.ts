@@ -24,31 +24,46 @@ export interface Profile {
 }
 
 export interface BuyerSetupPayload {
-    fullName: string;
-    email?: string;
-    region?: string;
-    primaryLocation?: string;
+    full_name: string;
+    email: string;
+    location: string;           // Maps to region/state/province
+    ghana_card_number?: string; // Optional — required only when country_code === 'GH'
+    privacy_consent: boolean;
+    role: string;               // Frontend sends 'customer'
+    phone: string;
+    country_code: string;       // ISO alpha-2 (e.g. 'GH')
 }
 
 export interface DriverSetupPayload {
-    fullName: string;
-    idNumber: string; // Ghana Card Number
-    vehicleType: string;
-    plateNumber: string;
-    licenseNumber: string;
-    licensePhotoUrl: string; // URL from upload service
-    idImageUrl: string; // URL for Ghana Card Front/Back
+    phone: string;
+    full_name: string;
+    email: string;
+    location: string;
+    country_code: string;
+    vehicle_type: string;
+    vehicle_number: string;
+    vehicle_model?: string;
+    vehicle_color?: string;
+    license_number: string;
+    ghana_card_number?: string;
+    ghana_card_front_url?: string;
+    ghana_card_back_url?: string;
+    role: string;
+    privacy_consent: boolean;
 }
 
 export interface MerchantSetupPayload {
-    businessName: string;
-    category: string;
-    businessEmail?: string;
-    businessPhone?: string;
-    address: string;
-    latitude?: number;
+    phone: string;
+    business_name: string;
+    business_type: string;
+    business_address: string;
+    location: string;
+    country_code: string;
+    ghana_card_number?: string;
+    ghana_card_front_url?: string;
+    ghana_card_back_url?: string;
     longitude?: number;
-    registrationDocUrl?: string; // URL from upload service
-    idNumber: string; // Ghana Card Number
-    idImageUrl: string;
+    latitude?: number;
+    role: string;
+    privacy_consent: boolean;
 }
