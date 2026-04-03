@@ -176,7 +176,34 @@ export class UploadService {
     // SHA-256 checksum for integrity
     const checksum = crypto.createHash("sha256").update(buffer).digest("hex");
 
-    // Upload to MinIO
+    const USE_LOCAL_STORAGE = process.env.USE_LOCAL_STORAGE === "true";
+
+    if (USE_LOCAL_STORAGE) {
+      // ─── Local Storage Fallback ────────────────────────────────────
+      const fs = require("fs").promises;
+      const localPath = path.join(process.cwd(), "public", "uploads", key);
+      const dir = path.dirname(localPath);
+
+      await fs.mkdir(dir, { recursive: true });
+      await fs.writeFile(localPath, buffer);
+
+      const port = process.env.PORT || "3000";
+      const url = `http://localhost:${port}/uploads/${key}`;
+
+      log.info("File uploaded locally", { key, category, url });
+      uploadEventsTotal.inc({ category, status: "success" });
+
+      return {
+        url,
+        key,
+        bucket: "local",
+        size: buffer.length,
+        mimeType,
+        checksum,
+      };
+    }
+
+    // ─── MinIO Storage ──────────────────────────────────────────────
     await minioClient.putObject(BUCKET_NAME, key, buffer, buffer.length, {
       "Content-Type": mimeType,
       "x-amz-checksum-sha256": checksum,
@@ -215,6 +242,18 @@ export class UploadService {
    * Delete a file from MinIO by its key.
    */
   async deleteFile(key: string): Promise<void> {
+    const USE_LOCAL_STORAGE = process.env.USE_LOCAL_STORAGE === "true";
+    if (USE_LOCAL_STORAGE) {
+      const fs = require("fs").promises;
+      const localPath = path.join(process.cwd(), "public", "uploads", key);
+      try {
+        await fs.unlink(localPath);
+        log.info("File deleted locally", { key });
+      } catch (err) {
+        log.warn("Local file deletion failed", { key, error: (err as Error).message });
+      }
+      return;
+    }
     await minioClient.removeObject(BUCKET_NAME, key);
   }
 
@@ -222,6 +261,11 @@ export class UploadService {
    * Generate a presigned URL for temporary access (7 days).
    */
   async getPresignedUrl(key: string, expirySeconds = 7 * 24 * 60 * 60): Promise<string> {
+    const USE_LOCAL_STORAGE = process.env.USE_LOCAL_STORAGE === "true";
+    if (USE_LOCAL_STORAGE) {
+      const port = process.env.PORT || "3000";
+      return `http://localhost:${port}/uploads/${key}`;
+    }
     return minioClient.presignedGetObject(BUCKET_NAME, key, expirySeconds);
   }
 }

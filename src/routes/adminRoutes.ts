@@ -1368,4 +1368,7 @@ router.get("/export-orders", adminRole, adminController.exportOrdersCSV);
 router.get("/platform-settings", adminRole, adminController.getPlatformSettings);
 router.patch("/platform-settings/:id", adminRole, adminController.updatePlatformSetting);
 
+router.get("/broadcasts", adminRole, adminController.getBroadcasts);
+router.get("/leaderboard", adminRole, adminController.getLeaderboard);
+
 export default router;

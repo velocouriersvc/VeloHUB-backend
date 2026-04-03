@@ -12,7 +12,7 @@ import { Role, RoleType } from "../models/role";
 import { v4 as uuidv4 } from "uuid";
 import { Wallet } from "../models/wallet";
 import { WalletTransaction } from "../models/wallet-transaction";
-import { Ride } from "../models/ride";
+import { Ride, RideStatus } from "../models/ride";
 import { ServiceBooking, ServiceBookingStatus } from "../models/service-booking";
 import { WalletService } from "./wallet-service";
 import { NotificationService } from "./notification-service";
@@ -23,9 +23,11 @@ import { Banner } from "../models/banner";
 import { ReferralCode } from "../models/referral-code";
 import { ReferralLink, ReferralStatus } from "../models/referral-link";
 import { Broadcast } from "../models/broadcast";
+import { BuyerProfile } from "../models/buyer-profile";
 import { createServiceLogger } from "../utils/logger";
 import { formatCurrency } from "../utils/currency";
 import { orderEventsTotal } from "../utils/metrics";
+import { getCountryName } from "../utils/country";
 
 const log = createServiceLogger("AdminService");
 
@@ -141,6 +143,7 @@ export class AdminService {
     private broadcastRepo = AppDataSource.getRepository(Broadcast);
     private roleRepo = AppDataSource.getRepository(Role);
     private notificationRepo = AppDataSource.getRepository(Notification);
+    private buyerProfileRepo = AppDataSource.getRepository(BuyerProfile);
 
     async getDashboard(): Promise<AdminDashboard> {
         const today = new Date();
@@ -353,7 +356,7 @@ export class AdminService {
         const formatStats = (raw: any[], key: string = "count") => {
             const result: Record<string, number> = {};
             raw.forEach(r => {
-                const c = r.country || "Other";
+                const c = getCountryName(r.country);
                 result[c] = (result[c] || 0) + Number(r[key]);
             });
             return result;
@@ -458,7 +461,7 @@ export class AdminService {
             email: u.email,
             phone: u.phoneNumber,
             status: u.status,
-            country: u.country,
+            country: getCountryName(u.country),
             created_date: u.createdAt,
             total_spent: statsMap[u.id]?.spent || 0,
             total_orders: statsMap[u.id]?.orders || 0,
@@ -1134,7 +1137,8 @@ export class AdminService {
 
         const totalProvidersByCountry: Record<string, number> = {};
         providersByCountryRaw.forEach(r => {
-            totalProvidersByCountry[r.country] = Number(r.count);
+            const country = getCountryName(r.country);
+            totalProvidersByCountry[country] = (totalProvidersByCountry[country] || 0) + Number(r.count);
         });
 
         return {
@@ -1146,7 +1150,18 @@ export class AdminService {
         };
     }
 
-    async createQuickMerchant(data: { businessName: string; businessEmail: string; category: string; phone: string }) {
+    async createQuickMerchant(data: { 
+        businessName: string; 
+        businessEmail: string; 
+        category: string; 
+        phone: string;
+        ownerName?: string;
+        address?: string;
+        city?: string;
+        description?: string;
+        coverImageUrl?: string;
+        commissionRate?: number;
+    }) {
         const userId = uuidv4();
         
         // Create User
@@ -1158,14 +1173,28 @@ export class AdminService {
         });
         await this.userRepo.save(user);
 
+        // Create Buyer Profile (for the owner name)
+        if (data.ownerName) {
+            const buyerProfile = this.buyerProfileRepo.create({
+                userId: user.id,
+                fullName: data.ownerName,
+            });
+            await this.buyerProfileRepo.save(buyerProfile);
+        }
+
         // Create Merchant Profile
         const profile = this.merchantProfileRepo.create({
             userId: user.id,
             businessName: data.businessName,
             businessEmail: data.businessEmail,
+            businessPhone: data.phone,
             category: data.category,
             status: MerchantVerificationStatus.APPROVED,
-            address: "Quick Created",
+            address: data.address || "Quick Created",
+            description: data.description,
+            coverImageUrl: data.coverImageUrl,
+            commissionRate: data.commissionRate,
+            isOpen: true,
         });
         await this.merchantProfileRepo.save(profile);
 
@@ -1960,5 +1989,64 @@ export class AdminService {
         await this.referralLinkRepo.save(link);
         log.info("Admin updated referral status", { id, previousStatus, newStatus: status, adminId });
         return link;
+    }
+
+    async getLeaderboard(type: 'riders' | 'customers', country: string) {
+        const settings = await this.settingsRepo.findOne({ where: { country } });
+        const limit = settings?.leaderboardLimit || 10;
+
+        if (type === 'riders') {
+            // Power users taking rides
+            const results = await this.rideRepo
+                .createQueryBuilder("ride")
+                .select("ride.customerId", "userId")
+                .addSelect("COUNT(ride.id)", "count")
+                .innerJoin("ride.customer", "user")
+                .leftJoin("user.buyerProfile", "profile")
+                .addSelect("profile.fullName", "name")
+                .addSelect("user.email", "email")
+                .where("ride.status = :status", { status: RideStatus.COMPLETED })
+                .andWhere("user.country = :country", { country })
+                .groupBy("ride.customerId")
+                .addGroupBy("profile.fullName")
+                .addGroupBy("user.email")
+                .orderBy("count", "DESC")
+                .limit(limit)
+                .getRawMany();
+
+            return results.map((r, i) => ({
+                rank: i + 1,
+                userId: r.userId,
+                name: r.name || r.email || "Unknown Rider",
+                count: parseInt(r.count),
+                country
+            }));
+        } else {
+            // Power users making purchases
+            const results = await this.orderRepo
+                .createQueryBuilder("order")
+                .select("order.userId", "userId")
+                .addSelect("COUNT(order.id)", "count")
+                .innerJoin("order.user", "user")
+                .leftJoin("user.buyerProfile", "profile")
+                .addSelect("profile.fullName", "name")
+                .addSelect("user.email", "email")
+                .where("order.status = :status", { status: OrderStatus.COMPLETED })
+                .andWhere("user.country = :country", { country })
+                .groupBy("order.userId")
+                .addGroupBy("profile.fullName")
+                .addGroupBy("user.email")
+                .orderBy("count", "DESC")
+                .limit(limit)
+                .getRawMany();
+
+            return results.map((r, i) => ({
+                rank: i + 1,
+                userId: r.userId,
+                name: r.name || r.email || "Unknown Customer",
+                count: parseInt(r.count),
+                country
+            }));
+        }
     }
 }

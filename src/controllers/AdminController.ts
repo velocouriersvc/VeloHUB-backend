@@ -76,20 +76,21 @@ export class AdminController {
     getMerchants = async (req: Request, res: Response) => {
         try {
             const merchants = await this.merchantRepo.find({
-                relations: ["user"]
+                relations: ["user", "user.buyerProfile"]
             });
             return res.json(merchants.map(m => ({
                 id: m.userId,
                 business_name: m.businessName,
-                owner_name: m.user.email, // Or some other name field if available
-                email: m.businessEmail || m.user.email,
-                phone: m.businessPhone || m.user.phoneNumber,
+                owner_name: m.user?.buyerProfile?.fullName || m.user?.email || "N/A",
+                email: m.businessEmail || m.user?.email,
+                phone: m.businessPhone || m.user?.phoneNumber,
                 category: m.category,
                 status: m.status,
-                created_date: m.user.createdAt,
+                logo_url: m.coverImageUrl,
+                created_date: m.user?.createdAt || m.createdAt,
             })));
         } catch (error) {
-            console.error("Error fetching merchants:", error);
+            log.error("Error fetching merchants:", error);
             return res.status(500).json({ message: "Internal server error" });
         }
     };
@@ -99,20 +100,25 @@ export class AdminController {
             const { id } = req.params;
             const merchant = await this.merchantRepo.findOne({
                 where: { userId: id },
-                relations: ["user"]
+                relations: ["user", "user.buyerProfile"]
             });
             if (!merchant) return res.status(404).json({ message: "Merchant not found" });
             return res.json({
                 id: merchant.userId,
                 business_name: merchant.businessName,
-                email: merchant.businessEmail || merchant.user.email,
-                phone: merchant.businessPhone || merchant.user.phoneNumber,
+                owner_name: merchant.user?.buyerProfile?.fullName || merchant.user?.email || "N/A",
+                email: merchant.businessEmail || merchant.user?.email,
+                phone: merchant.businessPhone || merchant.user?.phoneNumber,
                 category: merchant.category,
                 status: merchant.status,
-                created_date: merchant.user.createdAt,
+                logo_url: merchant.coverImageUrl,
+                description: merchant.description,
+                commission_rate: merchant.commissionRate,
+                address: merchant.address,
+                created_date: merchant.user?.createdAt || merchant.createdAt,
             });
         } catch (error) {
-            console.error("Error fetching merchant:", error);
+            log.error("Error fetching merchant by ID:", error);
             return res.status(500).json({ message: "Internal server error" });
         }
     };
@@ -1348,6 +1354,20 @@ export class AdminController {
             return res.json(history);
         } catch (error) {
             log.error("Error getting broadcasts", { error: (error as Error).message });
+            return res.status(500).json({ message: "Internal server error" });
+        }
+    }
+
+    getLeaderboard = async (req: AuthRequest, res: Response) => {
+        try {
+            const { type, country } = req.query as { type: 'riders' | 'customers', country: string };
+            if (!type || !country) {
+                return res.status(400).json({ message: "Type and country are required" });
+            }
+            const leaderboard = await this.adminService.getLeaderboard(type, country);
+            return res.json(leaderboard);
+        } catch (error) {
+            log.error("Error getting leaderboard", { error: (error as Error).message });
             return res.status(500).json({ message: "Internal server error" });
         }
     }

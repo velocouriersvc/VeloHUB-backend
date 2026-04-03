@@ -52,6 +52,9 @@ export class PlatformSettings {
     @Column({ type: "decimal", precision: 10, scale: 2, default: 5.00 })
     referralRewardAmount: number;
 
+    @Column({ type: "integer", default: 10 })
+    leaderboardLimit: number;
+
     @Column({ type: "boolean", default: true })
     isActive: boolean;
 
