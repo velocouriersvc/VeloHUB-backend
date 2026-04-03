@@ -32,6 +32,29 @@ const merchantRole = requireRole(["merchant"]);
  *     responses:
  *       200:
  *         description: Dashboard data
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 profile:
+ *                   type: object
+ *                 stats:
+ *                   type: object
+ *                 todayOrders:
+ *                   type: integer
+ *                 pendingOrders:
+ *                   type: integer
+ *                 activeOrders:
+ *                   type: integer
+ *                 completedOrders:
+ *                   type: integer
+ *                 totalSales:
+ *                   type: number
+ *                 walletBalance:
+ *                   type: number
+ *                 isOpen:
+ *                   type: boolean
  *       404:
  *         description: Merchant profile not found
  *       403:

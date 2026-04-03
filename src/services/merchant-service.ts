@@ -28,7 +28,11 @@ export interface MerchantDashboard {
     profile: MerchantProfile;
     stats: MerchantStats | null;
     todayOrders: number;
-    pendingOrders: number;
+    pendingOrders: number; // Includes pending, accepted, preparing
+    activeOrders: number;   // In progress/delivering
+    completedOrders: number; // Lifetime completed
+    totalSales: number;     // Lifetime revenue in currency
+    walletBalance: number;  // Current available balance for payout
     isOpen: boolean;
 }
 
@@ -134,11 +138,33 @@ export class MerchantService {
             },
         });
 
+        const activeOrders = await this.orderRepo.count({
+            where: {
+                merchantId,
+                status: In([OrderStatus.READY_FOR_PICKUP, OrderStatus.DRIVER_ASSIGNED, OrderStatus.PICKED_UP, OrderStatus.IN_TRANSIT]), // "In transit" equivalents
+            },
+        });
+
+        const completedOrders = await this.orderRepo.count({
+            where: {
+                merchantId,
+                status: OrderStatus.COMPLETED,
+            },
+        });
+
+        const wallet = await this.walletService.getWallet(merchantId);
+        const walletBalance = wallet ? Number(wallet.balance) : 0;
+        const totalSales = stats ? Number(stats.totalRevenue) : 0;
+
         return {
             profile,
             stats,
             todayOrders,
             pendingOrders,
+            activeOrders,
+            completedOrders,
+            totalSales,
+            walletBalance,
             isOpen: profile.isOpen,
         };
     }
