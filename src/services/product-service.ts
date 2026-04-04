@@ -18,15 +18,22 @@ export interface CreateProductInput {
     price: number;
     compareAtPrice?: number;
     stockQuantity?: number;
+    stock_level?: number;
+    min_stock_alert?: number;
+    images?: string[];
     tags?: string[];
     preparationTimeMin?: number;
     expirationDate?: string;
     dosageInfo?: string;
     prescriptionRequired?: boolean;
-    rentalDuration?: string;
-    deposit?: number;
     serviceDurationMin?: number;
     customizations?: CreateCustomizationInput[];
+    options?: CreateFoodOptionGroupInput[];
+}
+
+export interface CreateFoodOptionGroupInput {
+    name: string;
+    items: CreateOptionInput[];
 }
 
 export interface UpdateProductInput {
@@ -35,14 +42,15 @@ export interface UpdateProductInput {
     price?: number;
     compareAtPrice?: number | null;
     stockQuantity?: number;
+    stock_level?: number;
+    min_stock_alert?: number;
+    images?: string[];
     tags?: string[];
     isActive?: boolean;
     preparationTimeMin?: number | null;
     expirationDate?: string | null;
     dosageInfo?: string | null;
     prescriptionRequired?: boolean;
-    rentalDuration?: string | null;
-    deposit?: number | null;
     serviceDurationMin?: number | null;
 }
 
@@ -89,22 +97,31 @@ export class ProductService {
                 category: input.category,
                 price: input.price,
                 compareAtPrice: input.compareAtPrice || null,
-                stockQuantity: input.stockQuantity ?? 0,
+                stockQuantity: input.stock_level ?? input.stockQuantity ?? 0,
+                minStockAlert: input.min_stock_alert ?? 0,
                 tags: input.tags || [],
-                images: [],
+                images: input.images || [],
                 preparationTimeMin: input.preparationTimeMin || null,
                 expirationDate: input.expirationDate ? new Date(input.expirationDate) : null,
                 dosageInfo: input.dosageInfo || null,
                 prescriptionRequired: input.prescriptionRequired ?? false,
-                rentalDuration: input.rentalDuration as any || null,
-                deposit: input.deposit || null,
                 serviceDurationMin: input.serviceDurationMin || null,
             });
             const savedProduct = await productRepo.save(product);
 
+            // Map 'options' alias to 'customizations' if provided (standard for food category)
+            const customizations = input.customizations || (input.options?.length ? input.options.map(g => ({
+                title: g.name,
+                options: g.items,
+                isRequired: false,
+                minSelections: 0,
+                maxSelections: 1,
+                sortOrder: 0
+            })) : []);
+
             // Create customizations + options
-            if (input.customizations?.length) {
-                for (const custInput of input.customizations) {
+            if (customizations.length) {
+                for (const custInput of customizations) {
                     const customization = custRepo.create({
                         productId: savedProduct.id,
                         title: custInput.title,
@@ -250,7 +267,10 @@ export class ProductService {
         if (input.description !== undefined) product.description = input.description || null;
         if (input.price !== undefined) product.price = input.price;
         if (input.compareAtPrice !== undefined) product.compareAtPrice = input.compareAtPrice;
+        if (input.stock_level !== undefined) product.stockQuantity = input.stock_level;
         if (input.stockQuantity !== undefined) product.stockQuantity = input.stockQuantity;
+        if (input.min_stock_alert !== undefined) product.minStockAlert = input.min_stock_alert;
+        if (input.images !== undefined) product.images = input.images;
         if (input.tags !== undefined) product.tags = input.tags;
         if (input.isActive !== undefined) product.isActive = input.isActive;
         if (input.preparationTimeMin !== undefined) product.preparationTimeMin = input.preparationTimeMin;
@@ -259,8 +279,6 @@ export class ProductService {
         if (input.dosageInfo !== undefined) product.dosageInfo = input.dosageInfo;
         if (input.prescriptionRequired !== undefined)
             product.prescriptionRequired = input.prescriptionRequired;
-        if (input.rentalDuration !== undefined) product.rentalDuration = input.rentalDuration as any;
-        if (input.deposit !== undefined) product.deposit = input.deposit;
         if (input.serviceDurationMin !== undefined) product.serviceDurationMin = input.serviceDurationMin;
 
         await this.productRepo.save(product);

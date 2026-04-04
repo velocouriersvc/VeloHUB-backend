@@ -55,6 +55,17 @@ const merchantRole = requireRole(["merchant"]);
  *                   type: number
  *                 isOpen:
  *                   type: boolean
+ *                 viewCount:
+ *                   type: integer
+ *                   example: 125
+ *                 conversionRate:
+ *                   type: number
+ *                   format: float
+ *                   example: 8.5
+ *                 storeLink:
+ *                   type: string
+ *                   format: uri
+ *                   example: "https://velocouriersvc.com/store/abc-bakery"
  *       404:
  *         description: Merchant profile not found
  *       403:
@@ -685,9 +696,78 @@ router.get("/finances", merchantRole, merchantController.getFinances);
  *     responses:
  *       200:
  *         description: Merchant stats object
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 totalOrders:
+ *                   type: integer
+ *                 totalRevenue:
+ *                   type: number
+ *                 averageRating:
+ *                   type: number
+ *                 ratingCount:
+ *                   type: integer
+ *                 totalProducts:
+ *                   type: integer
+ *                 viewCount:
+ *                   type: integer
+ *                 conversionRate:
+ *                   type: number
  *       403:
  *         description: Invalid API key or merchant role not approved
  */
 router.get("/stats", merchantRole, merchantController.getStats);
+
+// ════════════════════════════════════════════════════════════════════
+//  PUBLIC ENDPOINTS
+// ════════════════════════════════════════════════════════════════════
+
+/**
+ * @openapi
+ * /merchant/{slugOrId}:
+ *   get:
+ *     tags: [Merchant]
+ *     summary: Get public merchant profile
+ *     description: Returns the public business profile by slug or ID. No merchant auth required.
+ *     security:
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - name: slugOrId
+ *         in: path
+ *         required: true
+ *         description: Merchant slug or UUID
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Merchant profile object with stats
+ *       404:
+ *         description: Merchant not found
+ */
+router.get("/:slugOrId", merchantController.getPublicProfile);
+
+/**
+ * @openapi
+ * /merchant/{slugOrId}/view:
+ *   post:
+ *     tags: [Merchant]
+ *     summary: Track store view
+ *     description: Increments the view count for a merchant's store. Call this when the public store page is loaded.
+ *     security:
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - name: slugOrId
+ *         in: path
+ *         required: true
+ *         description: Merchant slug or UUID
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: View tracked successfully
+ */
+router.post("/:slugOrId/view", merchantController.viewProfile);
 
 export default router;

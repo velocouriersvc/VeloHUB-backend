@@ -1,5 +1,6 @@
 import { Entity, PrimaryGeneratedColumn, Column, OneToOne, JoinColumn, CreateDateColumn, UpdateDateColumn } from "typeorm";
 import { User } from "./user";
+import { Identification } from "./identification";
 
 @Entity("buyer_profiles")
 export class BuyerProfile {
@@ -18,8 +19,15 @@ export class BuyerProfile {
     @Column({ type: "text", nullable: true })
     primaryLocation: string | null;
 
+    @Column({ type: "uuid", nullable: true })
+    identificationId: string | null;
+
     @Column({ type: "boolean", default: false })
     hasServicesAccess: boolean;
+
+    @OneToOne(() => Identification, { nullable: true })
+    @JoinColumn({ name: "identificationId" })
+    identification: Identification | null;
 
     @CreateDateColumn()
     createdAt: Date;

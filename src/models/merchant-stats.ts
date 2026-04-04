@@ -31,6 +31,9 @@ export class MerchantStats {
     @Column({ type: "int", default: 0 })
     totalProducts: number;
 
+    @Column({ type: "int", default: 0 })
+    viewCount: number;
+
     @UpdateDateColumn()
     updatedAt: Date;
 

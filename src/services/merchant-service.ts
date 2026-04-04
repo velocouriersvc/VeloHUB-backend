@@ -25,14 +25,14 @@ export interface OperatingHoursInput {
 }
 
 export interface MerchantDashboard {
-    profile: MerchantProfile;
+    profile: MerchantProfile & { storeLink: string };
     stats: MerchantStats | null;
     todayOrders: number;
-    pendingOrders: number; // Includes pending, accepted, preparing
-    activeOrders: number;   // In progress/delivering
-    completedOrders: number; // Lifetime completed
-    totalSales: number;     // Lifetime revenue in currency
-    walletBalance: number;  // Current available balance for payout
+    pendingOrders: number;
+    activeOrders: number;
+    completedOrders: number;
+    totalSales: number;
+    walletBalance: number;
     isOpen: boolean;
 }
 
@@ -61,11 +61,16 @@ export class MerchantService {
     /**
      * Get the merchant profile for the given user.
      */
-    async getProfile(merchantId: string): Promise<MerchantProfile | null> {
-        return this.profileRepo.findOne({
+    async getProfile(merchantId: string): Promise<(MerchantProfile & { storeLink: string }) | null> {
+        const profile = await this.profileRepo.findOne({
             where: { userId: merchantId },
             relations: { user: true },
         });
+        if (!profile) return null;
+        return {
+            ...profile,
+            storeLink: `https://velocouriersvc.com/store/${profile.slug || profile.id}`,
+        };
     }
 
     /**
@@ -82,26 +87,34 @@ export class MerchantService {
             latitude: number;
             longitude: number;
             coverImageUrl: string;
+            slug: string;
         }>
-    ): Promise<MerchantProfile> {
+    ): Promise<MerchantProfile & { storeLink: string }> {
         const profile = await this.profileRepo.findOne({ where: { userId: merchantId } });
         if (!profile) throw new Error("Merchant profile not found");
 
         Object.assign(profile, input);
-        return this.profileRepo.save(profile);
+        const saved = await this.profileRepo.save(profile);
+        return {
+            ...saved,
+            storeLink: `https://velocouriersvc.com/store/${saved.slug || saved.id}`,
+        };
     }
 
     /**
      * Toggle merchant online status (isOpen).
      */
-    async toggleOpen(merchantId: string, isOpen: boolean): Promise<MerchantProfile> {
+    async toggleOpen(merchantId: string, isOpen: boolean): Promise<MerchantProfile & { storeLink: string }> {
         const profile = await this.profileRepo.findOne({ where: { userId: merchantId } });
         if (!profile) throw new Error("Merchant profile not found");
 
         profile.isOpen = isOpen;
-        await this.profileRepo.save(profile);
+        const saved = await this.profileRepo.save(profile);
         log.info("Merchant toggled open status", { merchantId, isOpen });
-        return profile;
+        return {
+            ...saved,
+            storeLink: `https://velocouriersvc.com/store/${saved.slug || saved.id}`,
+        };
     }
 
     // ── Dashboard ───────────────────────────────────────────────────
@@ -156,9 +169,19 @@ export class MerchantService {
         const walletBalance = wallet ? Number(wallet.balance) : 0;
         const totalSales = stats ? Number(stats.totalRevenue) : 0;
 
+        // Calculate conversion rate
+        const viewCount = stats ? stats.viewCount : 0;
+        const conversionRate = viewCount > 0 ? (completedOrders / viewCount) * 100 : 0;
+
         return {
-            profile,
-            stats,
+            profile: {
+                ...profile,
+                storeLink: `https://velocouriersvc.com/store/${profile.slug || profile.id}`,
+            },
+            stats: stats ? {
+                ...stats,
+                conversionRate: Number(conversionRate.toFixed(2)),
+            } as any : null,
             todayOrders,
             pendingOrders,
             activeOrders,
@@ -608,10 +631,48 @@ export class MerchantService {
     // ── Stats ───────────────────────────────────────────────────────
 
     /**
-     * Get merchant stats.
+     * Get merchant stats with calculated conversion rate.
      */
-    async getStats(merchantId: string): Promise<MerchantStats | null> {
-        return this.statsRepo.findOne({ where: { merchantId } });
+    async getStats(merchantId: string): Promise<any | null> {
+        const stats = await this.statsRepo.findOne({ where: { merchantId } });
+        if (!stats) return null;
+
+        const completedOrders = await this.orderRepo.count({
+            where: { merchantId, status: OrderStatus.COMPLETED },
+        });
+
+        const conversionRate = stats.viewCount > 0 ? (completedOrders / stats.viewCount) * 100 : 0;
+
+        return {
+            ...stats,
+            conversionRate: Number(conversionRate.toFixed(2)),
+        };
+    }
+
+    /**
+     * Increment store view count.
+     */
+    async incrementViewCount(slugOrId: string): Promise<void> {
+        let profile = await this.profileRepo.findOne({ where: { slug: slugOrId } });
+        if (!profile) {
+            profile = await this.profileRepo.findOne({ where: { id: slugOrId } });
+        }
+        if (!profile) return;
+
+        const merchantId = profile.userId;
+        let stats = await this.statsRepo.findOne({ where: { merchantId } });
+
+        if (!stats) {
+            stats = this.statsRepo.create({
+                merchantId,
+                viewCount: 1,
+            });
+        } else {
+            stats.viewCount += 1;
+        }
+
+        await this.statsRepo.save(stats);
+        log.info("Store view incremented", { merchantId, slugOrId });
     }
 
     /**

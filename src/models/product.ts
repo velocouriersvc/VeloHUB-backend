@@ -18,14 +18,7 @@ export enum ProductCategory {
     GROCERY = "grocery",
     PHARMACY = "pharmacy",
     MARKETPLACE = "marketplace",
-    RENTALS = "rentals",
     SERVICES = "services",
-}
-
-export enum RentalDuration {
-    HOURLY = "hourly",
-    DAILY = "daily",
-    WEEKLY = "weekly",
 }
 
 @Entity("products")
@@ -56,6 +49,9 @@ export class Product {
     @Column({ type: "int", default: 0 })
     stockQuantity: number;
 
+    @Column({ type: "int", default: 0 })
+    minStockAlert: number;
+
     @Column({ type: "boolean", default: true })
     isActive: boolean;
 
@@ -78,13 +74,6 @@ export class Product {
 
     @Column({ type: "boolean", default: false })
     prescriptionRequired: boolean;
-
-    // ── Rentals Specific ──
-    @Column({ type: "enum", enum: RentalDuration, nullable: true })
-    rentalDuration: RentalDuration | null;
-
-    @Column({ type: "decimal", precision: 10, scale: 2, nullable: true })
-    deposit: number | null;
 
     // ── Services Specific ──
     @Column({ type: "int", nullable: true })

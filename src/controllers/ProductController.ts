@@ -16,6 +16,19 @@ export class ProductController {
     // ── Public Endpoints ────────────────────────────────────────────
 
     /**
+     * GET /products/categories — Get available product categories.
+     */
+    getCategories = async (req: AuthRequest, res: Response) => {
+        try {
+            const categories = Object.values(ProductCategory);
+            return res.status(200).json({ categories });
+        } catch (error) {
+            log.error("Error fetching categories", { error: (error as Error).message });
+            return res.status(500).json({ message: "Internal server error" });
+        }
+    };
+
+    /**
      * GET /products — List/filter products (public).
      */
     getProducts = async (req: AuthRequest, res: Response) => {

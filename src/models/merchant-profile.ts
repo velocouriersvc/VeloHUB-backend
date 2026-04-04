@@ -57,6 +57,10 @@ export class MerchantProfile {
     @Column({ type: "text", nullable: true })
     coverImageUrl: string | null;
 
+    @Column({ type: "varchar", length: 255, nullable: true, unique: true })
+    @Index()
+    slug: string | null;
+
     @Column({ type: "boolean", default: false })
     isOpen: boolean;
 

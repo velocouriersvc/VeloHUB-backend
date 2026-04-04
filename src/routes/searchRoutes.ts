@@ -36,7 +36,7 @@ const anyRole = requireRole(["buyer", "driver", "merchant", "admin"]);
  *         description: Filter by product/merchant category
  *         schema:
  *           type: string
- *           enum: [food, grocery, pharmacy, marketplace, rentals, services]
+ *           enum: [food, grocery, pharmacy, marketplace, services]
  *       - name: latitude
  *         in: query
  *         description: User's latitude for geo search. Must be paired with longitude.

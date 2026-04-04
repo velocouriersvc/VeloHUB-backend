@@ -91,6 +91,8 @@ export interface MerchantProfileResponse {
     longitude: number | null;
     description: string | null;
     coverImageUrl: string | null;
+    slug: string | null;
+    storeLink: string;
     isOpen: boolean;
     status: MerchantVerificationStatus;
     commissionRate: number | null;
@@ -105,6 +107,10 @@ export interface MerchantDashboardResponse {
     stats: MerchantStatsResponse | null;
     todayOrders: number;
     pendingOrders: number;
+    activeOrders: number;
+    completedOrders: number;
+    totalSales: number;
+    walletBalance: number;
     isOpen: boolean;
 }
 
@@ -114,6 +120,8 @@ export interface MerchantStatsResponse {
     averageRating: number;
     ratingCount: number;
     totalProducts: number;
+    viewCount: number;
+    conversionRate: number; // Percent %
 }
 
 export interface MerchantFinancesResponse {
