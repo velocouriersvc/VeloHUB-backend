@@ -4,7 +4,6 @@ import { apiKeyMiddleware } from "../middleware/api-key-middleware";
 import { requireRole } from "../middleware/role-middleware";
 import { upload } from "../middleware/upload-middleware";
 import { validate, body } from "../middleware/validate";
-import { ProductCategory } from "../models/product";
 
 const router = Router();
 const productController = new ProductController();
@@ -396,7 +395,7 @@ router.get("/:id", anyRole, productController.getProduct);
  */
 router.post("/", merchantRole, validate([
     body("name").required().isString().minLength(2),
-    body("category").required().isIn(Object.values(ProductCategory)),
+    body("category").required().isString(),
     body("price").required().isNumber().isPositive(),
 ]), productController.createProduct);
 

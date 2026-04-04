@@ -473,6 +473,30 @@ export class AdminController {
         }
     };
 
+    createProduct = async (req: AuthRequest, res: Response) => {
+        try {
+            const { merchantId, ...productData } = req.body;
+            if (!merchantId) return res.status(400).json({ message: "merchantId is required" });
+
+            const product = await this.adminService.createProduct(merchantId, productData);
+
+            await AuditLogController.record({
+                action: "Create Product",
+                entity_type: "product",
+                entity_id: product.id,
+                performed_by: req.user?.email || "Admin",
+                details: `Created product "${product.name}" for merchant ${merchantId}`,
+                risk_level: AuditRiskLevel.LOW
+            });
+
+            return res.status(201).json(product);
+        } catch (error) {
+            log.error("Error creating product:", error);
+            const msg = (error as Error).message;
+            return res.status(500).json({ message: msg || "Internal server error" });
+        }
+    };
+
     updateProduct = async (req: AuthRequest, res: Response) => {
         try {
             const adminId = req.user?.id;
@@ -1443,6 +1467,49 @@ export class AdminController {
             return res.status(204).send();
         } catch (error) {
             log.error("Error deleting category", { error: (error as Error).message });
+            return res.status(400).json({ message: (error as Error).message });
+        }
+    }
+
+    getProductCategories = async (req: Request, res: Response) => {
+        try {
+            const { type } = req.query;
+            const categories = await this.adminService.getProductCategories(type as string);
+            return res.json(categories);
+        } catch (error) {
+            log.error("Error fetching product categories", { error: (error as Error).message });
+            return res.status(500).json({ message: "Internal server error" });
+        }
+    }
+
+    createProductCategory = async (req: AuthRequest, res: Response) => {
+        try {
+            const category = await this.adminService.createProductCategory(req.body);
+            return res.json(category);
+        } catch (error) {
+            log.error("Error creating product category", { error: (error as Error).message });
+            return res.status(400).json({ message: (error as Error).message });
+        }
+    }
+
+    updateProductCategory = async (req: AuthRequest, res: Response) => {
+        try {
+            const { id } = req.params;
+            const category = await this.adminService.updateProductCategory(id, req.body);
+            return res.json(category);
+        } catch (error) {
+            log.error("Error updating product category", { error: (error as Error).message });
+            return res.status(400).json({ message: (error as Error).message });
+        }
+    }
+
+    deleteProductCategory = async (req: AuthRequest, res: Response) => {
+        try {
+            const { id } = req.params;
+            await this.adminService.deleteProductCategory(id);
+            return res.status(204).send();
+        } catch (error) {
+            log.error("Error deleting product category", { error: (error as Error).message });
             return res.status(400).json({ message: (error as Error).message });
         }
     }

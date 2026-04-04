@@ -13,14 +13,6 @@ import {
 import { User } from "./user";
 import { ProductCustomization } from "./product-customization";
 
-export enum ProductCategory {
-    FOOD = "food",
-    GROCERY = "grocery",
-    PHARMACY = "pharmacy",
-    MARKETPLACE = "marketplace",
-    RENTALS = "rentals",
-    SERVICES = "services",
-}
 
 export enum RentalDuration {
     HOURLY = "hourly",
@@ -43,9 +35,9 @@ export class Product {
     @Column({ type: "text", nullable: true })
     description: string | null;
 
-    @Column({ type: "enum", enum: ProductCategory })
+    @Column({ type: "varchar", length: 100, default: "general" })
     @Index()
-    category: ProductCategory;
+    category: string;
 
     @Column({ type: "decimal", precision: 10, scale: 2 })
     price: number;
@@ -85,10 +77,6 @@ export class Product {
 
     @Column({ type: "decimal", precision: 10, scale: 2, nullable: true })
     deposit: number | null;
-
-    // ── Services Specific ──
-    @Column({ type: "int", nullable: true })
-    serviceDurationMin: number | null;
 
     // ── Timestamps ──
     @CreateDateColumn()

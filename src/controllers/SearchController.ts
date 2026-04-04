@@ -1,7 +1,6 @@
 import { Response } from "express";
 import { AuthRequest } from "../middleware/role-middleware";
 import { SearchService, SearchParams } from "../services/search-service";
-import { ProductCategory } from "../models/product";
 import { createServiceLogger } from "../utils/logger";
 
 const log = createServiceLogger("SearchController");
@@ -28,7 +27,7 @@ export class SearchController {
 
             const params: SearchParams = {
                 query: query as string,
-                category: category as ProductCategory,
+                category: category as string,
                 latitude: latitude ? Number(latitude) : undefined,
                 longitude: longitude ? Number(longitude) : undefined,
                 radiusKm: radiusKm ? Number(radiusKm) : undefined,

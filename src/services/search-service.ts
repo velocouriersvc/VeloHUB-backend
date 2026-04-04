@@ -1,5 +1,5 @@
 import { AppDataSource } from "../db/data-source";
-import { Product, ProductCategory } from "../models/product";
+import { Product } from "../models/product";
 import { MerchantProfile } from "../models/merchant-profile";
 import { MerchantStats } from "../models/merchant-stats";
 import { createServiceLogger } from "../utils/logger";
@@ -15,7 +15,7 @@ const SEARCH_CACHE_TTL = 300;
 
 export interface SearchParams {
     query?: string;
-    category?: ProductCategory;
+    category?: string;
     latitude?: number;
     longitude?: number;
     radiusKm?: number;
@@ -53,7 +53,7 @@ export interface ProductSearchResult {
     id: string;
     name: string;
     description: string | null;
-    category: ProductCategory;
+    category: string;
     price: number;
     compareAtPrice: number | null;
     images: string[];

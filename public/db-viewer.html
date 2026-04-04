@@ -354,6 +354,14 @@
                     <option value="buyerProfiles">Buyer Profiles</option>
                     <option value="merchantProfiles">Merchant Profiles</option>
                     <option value="driverProfiles">Driver Profiles</option>
+                    <option value="zones">Operational Zones</option>
+                    <option value="settings">Platform Settings</option>
+                    <option value="rides">Recent Rides</option>
+                    <option value="orders">Recent Orders</option>
+                    <option value="bookings">Service Bookings</option>
+                    <option value="categories">Merchant Categories</option>
+                    <option value="wallets">Wallets</option>
+                    <option value="transactions">Wallet Transactions</option>
                 </select>
             </div>
 
@@ -508,6 +516,131 @@
                         </tr>
                     `,
                     headers: ['Name', 'Vehicle', 'Plate', 'Status', 'Docs']
+                },
+                {
+                    id: 'zones',
+                    title: 'Operational Zones',
+                    icon: 'ri-map-pin-range-line',
+                    data: currentData.zones,
+                    renderRow: (z) => `
+                        <tr>
+                            <td><strong>${z.name}</strong></td>
+                            <td>${z.city}, ${z.country}</td>
+                            <td>${z.radius_km}km</td>
+                            <td>${z.demandLevel}%</td>
+                            <td><span class="status-badge status-success">${z.surge_multiplier}x</span></td>
+                        </tr>
+                    `,
+                    headers: ['Name', 'Location', 'Radius', 'Demand', 'Surge']
+                },
+                {
+                    id: 'settings',
+                    title: 'Platform Settings',
+                    icon: 'ri-settings-4-line',
+                    data: currentData.settings,
+                    renderRow: (s) => `
+                        <tr>
+                            <td>${s.country}</td>
+                            <td>${s.currency}</td>
+                            <td>${s.isGlobalSurgeActive ? '<span class="status-badge status-danger">ACTIVE</span>' : 'Inactive'}</td>
+                            <td>${s.globalSurgeMultiplier}x</td>
+                            <td>${s.commissionRate}%</td>
+                        </tr>
+                    `,
+                    headers: ['Country', 'Currency', 'Global Surge', 'Multiplier', 'Commission']
+                },
+                {
+                    id: 'rides',
+                    title: 'Recent Rides',
+                    icon: 'ri-taxi-line',
+                    data: currentData.rides,
+                    renderRow: (r) => `
+                        <tr>
+                            <td class="font-mono">${r.id.substring(0, 8)}...</td>
+                            <td>${renderStatus(r.status)}</td>
+                            <td>${r.finalFare} ${r.currency}</td>
+                            <td>${r.distanceKm}km</td>
+                            <td class="timestamp">${formatDate(r.createdAt)}</td>
+                        </tr>
+                    `,
+                    headers: ['ID', 'Status', 'Fare', 'Distance', 'Created']
+                },
+                {
+                    id: 'orders',
+                    title: 'Recent Orders',
+                    icon: 'ri-package-line',
+                    data: currentData.orders,
+                    renderRow: (o) => `
+                        <tr>
+                            <td class="font-mono">${o.orderNumber}</td>
+                            <td>${renderStatus(o.status)}</td>
+                            <td>${o.totalAmount} ${o.currency}</td>
+                            <td>${o.paymentMethod}</td>
+                            <td class="timestamp">${formatDate(o.createdAt)}</td>
+                        </tr>
+                    `,
+                    headers: ['Order #', 'Status', 'Total', 'Payment', 'Created']
+                },
+                {
+                    id: 'bookings',
+                    title: 'Service Bookings',
+                    icon: 'ri-calendar-event-line',
+                    data: currentData.bookings,
+                    renderRow: (b) => `
+                        <tr>
+                            <td class="font-mono">${b.id.substring(0, 8)}...</td>
+                            <td>${renderStatus(b.status)}</td>
+                            <td>${b.totalPrice}</td>
+                            <td>${b.serviceType}</td>
+                            <td class="timestamp">${formatDate(b.createdAt)}</td>
+                        </tr>
+                    `,
+                    headers: ['ID', 'Status', 'Price', 'Service', 'Date']
+                },
+                {
+                    id: 'categories',
+                    title: 'Merchant Categories',
+                    icon: 'ri-price-tag-3-line',
+                    data: currentData.categories,
+                    renderRow: (c) => `
+                        <tr>
+                            <td><strong>${c.name}</strong></td>
+                            <td class="font-mono">${c.slug}</td>
+                            <td>${c.isActive ? 'Active' : 'Inactive'}</td>
+                            <td>${c.commissionRate}%</td>
+                        </tr>
+                    `,
+                    headers: ['Name', 'Slug', 'Status', 'Commission']
+                },
+                {
+                    id: 'wallets',
+                    title: 'Wallets',
+                    icon: 'ri-wallet-line',
+                    data: currentData.wallets,
+                    renderRow: (w) => `
+                        <tr>
+                            <td class="font-mono" title="${w.userId}">${w.userId.substring(0, 8)}...</td>
+                            <td><strong>${w.balance}</strong> ${w.currency}</td>
+                            <td class="timestamp">${formatDate(w.updatedAt)}</td>
+                        </tr>
+                    `,
+                    headers: ['User ID', 'Balance', 'Last Updated']
+                },
+                {
+                    id: 'transactions',
+                    title: 'Wallet Transactions',
+                    icon: 'ri-history-line',
+                    data: currentData.transactions,
+                    renderRow: (t) => `
+                        <tr>
+                            <td class="font-mono">${t.id.substring(0, 8)}...</td>
+                            <td><span class="${t.amount.startsWith('-') ? 'text-danger' : 'text-success'}">${t.amount}</span></td>
+                            <td>${t.type}</td>
+                            <td>${t.status}</td>
+                            <td class="timestamp">${formatDate(t.createdAt)}</td>
+                        </tr>
+                    `,
+                    headers: ['ID', 'Amount', 'Type', 'Status', 'Date']
                 }
             ];
 

@@ -1,5 +1,5 @@
 import { AppDataSource } from "../db/data-source";
-import { Product, ProductCategory } from "../models/product";
+import { Product } from "../models/product";
 import { ProductCustomization } from "../models/product-customization";
 import { CustomizationOption } from "../models/customization-option";
 import { MerchantStats } from "../models/merchant-stats";
@@ -14,7 +14,7 @@ const log = createServiceLogger("ProductService");
 export interface CreateProductInput {
     name: string;
     description?: string;
-    category: ProductCategory;
+    category: string;
     price: number;
     compareAtPrice?: number;
     stockQuantity?: number;
@@ -25,7 +25,6 @@ export interface CreateProductInput {
     prescriptionRequired?: boolean;
     rentalDuration?: string;
     deposit?: number;
-    serviceDurationMin?: number;
     customizations?: CreateCustomizationInput[];
 }
 
@@ -43,7 +42,6 @@ export interface UpdateProductInput {
     prescriptionRequired?: boolean;
     rentalDuration?: string | null;
     deposit?: number | null;
-    serviceDurationMin?: number | null;
 }
 
 export interface CreateCustomizationInput {
@@ -76,13 +74,14 @@ export class ProductService {
      * Create a product with optional customizations & options (one transaction).
      */
     async createProduct(merchantId: string, input: CreateProductInput): Promise<Product> {
-        return AppDataSource.transaction(async (manager) => {
+        const product = await AppDataSource.transaction(async (manager) => {
             const productRepo = manager.getRepository(Product);
             const custRepo = manager.getRepository(ProductCustomization);
             const optRepo = manager.getRepository(CustomizationOption);
+            const statsRepo = manager.getRepository(MerchantStats);
 
             // Create product
-            const product = productRepo.create({
+            const newProduct = productRepo.create({
                 merchantId,
                 name: input.name,
                 description: input.description || null,
@@ -98,9 +97,8 @@ export class ProductService {
                 prescriptionRequired: input.prescriptionRequired ?? false,
                 rentalDuration: input.rentalDuration as any || null,
                 deposit: input.deposit || null,
-                serviceDurationMin: input.serviceDurationMin || null,
             });
-            const savedProduct = await productRepo.save(product);
+            const savedProduct = await productRepo.save(newProduct);
 
             // Create customizations + options
             if (input.customizations?.length) {
@@ -131,11 +129,23 @@ export class ProductService {
             }
 
             // Increment merchant stats product count
-            await this.incrementProductCount(merchantId, 1);
+            const stats = await statsRepo.findOne({ where: { merchantId } });
+            if (stats) {
+                stats.totalProducts = Math.max(0, stats.totalProducts + 1);
+                await statsRepo.save(stats);
+            } else {
+                const newStats = statsRepo.create({
+                    merchantId,
+                    totalProducts: 1,
+                });
+                await statsRepo.save(newStats);
+            }
 
             log.info("Product created", { productId: savedProduct.id, merchantId });
-            return this.getProductById(savedProduct.id) as Promise<Product>;
+            return savedProduct;
         });
+
+        return (await this.getProductById(product.id))!;
     }
 
     // ── Read ────────────────────────────────────────────────────────
@@ -167,7 +177,7 @@ export class ProductService {
      */
     async getProducts(params: {
         merchantId?: string;
-        category?: ProductCategory;
+        category?: string;
         search?: string;
         isActive?: boolean;
         page?: number;
@@ -261,7 +271,6 @@ export class ProductService {
             product.prescriptionRequired = input.prescriptionRequired;
         if (input.rentalDuration !== undefined) product.rentalDuration = input.rentalDuration as any;
         if (input.deposit !== undefined) product.deposit = input.deposit;
-        if (input.serviceDurationMin !== undefined) product.serviceDurationMin = input.serviceDurationMin;
 
         await this.productRepo.save(product);
         log.info("Product updated", { productId, merchantId });

@@ -512,6 +512,47 @@ router.get("/products", adminRole, adminController.getProducts);
 
 /**
  * @openapi
+ * /admin/products:
+ *   post:
+ *     tags: [Admin - Products]
+ *     summary: Create a new product (physical or service) for a merchant
+ *     security:
+ *       - ApiKeyAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [merchantId, name, category, price]
+ *             properties:
+ *               merchantId:
+ *                 type: string
+ *               name:
+ *                 type: string
+ *               description:
+ *                 type: string
+ *               category:
+ *                 type: string
+ *               price:
+ *                 type: number
+ *               images:
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *               type:
+ *                 type: string
+ *                 enum: [physical, service]
+ *     responses:
+ *       201:
+ *         description: Product created
+ *       400:
+ *         description: Invalid input
+ */
+router.post("/products", adminRole, adminController.createProduct);
+
+/**
+ * @openapi
  * /admin/products/{id}:
  *   patch:
  *     tags: [Admin - Products]
@@ -575,6 +616,107 @@ router.patch("/products/:id", adminRole, adminController.updateProduct);
  *         description: Product not found
  */
 router.delete("/products/:id", adminRole, adminController.deleteProduct);
+
+// ────────────────────────────────────────────────────────────────
+//  Product Categories
+// ────────────────────────────────────────────────────────────────
+
+/**
+ * @openapi
+ * /admin/product-categories:
+ *   get:
+ *     tags: [Admin - Products]
+ *     summary: List product/service categories
+ *     security:
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: type
+ *         schema:
+ *           type: string
+ *           enum: [product, service, marketplace]
+ *     responses:
+ *       200:
+ *         description: List of categories
+ */
+router.get("/product-categories", adminRole, adminController.getProductCategories);
+
+/**
+ * @openapi
+ * /admin/product-categories:
+ *   post:
+ *     tags: [Admin - Products]
+ *     summary: Create a new product/service category
+ *     security:
+ *       - ApiKeyAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [name]
+ *             properties:
+ *               name: { type: string }
+ *               slug: { type: string }
+ *               icon: { type: string }
+ *               type: { type: string, enum: [product, service, marketplace] }
+ *     responses:
+ *       201:
+ *         description: Category created
+ */
+router.post("/product-categories", adminRole, adminController.createProductCategory);
+
+/**
+ * @openapi
+ * /admin/product-categories/{id}:
+ *   patch:
+ *     tags: [Admin - Products]
+ *     summary: Update a product/service category
+ *     security:
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               name: { type: string }
+ *               slug: { type: string }
+ *               icon: { type: string }
+ *               isActive: { type: boolean }
+ *     responses:
+ *       200:
+ *         description: Category updated
+ */
+router.patch("/product-categories/:id", adminRole, adminController.updateProductCategory);
+
+/**
+ * @openapi
+ * /admin/product-categories/{id}:
+ *   delete:
+ *     tags: [Admin - Products]
+ *     summary: Delete a product/service category
+ *     security:
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       204:
+ *         description: Category deleted
+ */
+router.delete("/product-categories/:id", adminRole, adminController.deleteProductCategory);
 
 // ────────────────────────────────────────────────────────────────
 //  Merchants (extended)

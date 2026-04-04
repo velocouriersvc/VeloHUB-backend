@@ -53,9 +53,21 @@ export const requireRole = (requiredRoles: string[]) => {
     try {
       const userRepository = AppDataSource.getRepository(User);
 
-      // Find user by phone number
+      // Try multiple formats to find the user (handling inconsistent DB formats)
+      const possibleFormats = [phoneValidation.formatted, phoneNumber];
+      if (phoneNumber.startsWith('+')) {
+        possibleFormats.push(phoneNumber.substring(1)); // Raw without +
+      }
+      if (phoneValidation.formatted?.startsWith('+')) {
+        possibleFormats.push(phoneValidation.formatted.substring(1)); // E.164 without +
+      }
+
+      // Unique non-null formats
+      const uniqueFormats = [...new Set(possibleFormats.filter(f => !!f))];
+
+      // Find user by any of the possible formats
       const user = await userRepository.findOne({
-        where: { phoneNumber: phoneValidation.formatted },
+        where: uniqueFormats.map(fmt => ({ phoneNumber: fmt })),
         relations: ["userRoles", "userRoles.role"]
       });
 

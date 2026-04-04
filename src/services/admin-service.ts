@@ -10,6 +10,7 @@ import { User, UserStatus } from "../models/user";
 import { UserRole, RoleStatus } from "../models/user-role";
 import { Role, RoleType } from "../models/role";
 import { MerchantCategory } from "../models/merchant-category";
+import { ProductCategory } from "../models/product-category";
 import { Zone } from "../models/zone";
 import { v4 as uuidv4 } from "uuid";
 import { Wallet } from "../models/wallet";
@@ -17,6 +18,7 @@ import { WalletTransaction } from "../models/wallet-transaction";
 import { Ride, RideStatus } from "../models/ride";
 import { ServiceBooking, ServiceBookingStatus } from "../models/service-booking";
 import { WalletService } from "./wallet-service";
+import { ProductService, CreateProductInput } from "./product-service";
 import { NotificationService } from "./notification-service";
 import { supabaseAdmin } from "../utils/supabase-client";
 import { SupportTicket, SupportTicketStatus, SupportTicketPriority } from "../models/support-ticket";
@@ -121,6 +123,7 @@ export class AdminService {
     private orderRepo = AppDataSource.getRepository(Order);
     private historyRepo = AppDataSource.getRepository(OrderStatusHistory);
     private productRepo = AppDataSource.getRepository(Product);
+    private productCategoryRepo = AppDataSource.getRepository(ProductCategory);
     private merchantProfileRepo = AppDataSource.getRepository(MerchantProfile);
     private merchantStatsRepo = AppDataSource.getRepository(MerchantStats);
     private settingsRepo = AppDataSource.getRepository(PlatformSettings);
@@ -133,6 +136,7 @@ export class AdminService {
     private zoneRepo = AppDataSource.getRepository(Zone);
 
     private walletService = new WalletService();
+    private productService = new ProductService();
     private notificationService = new NotificationService();
 
     // ════════════════════════════════════════════════════════════════
@@ -740,9 +744,16 @@ export class AdminService {
         }
 
         const [products, total] = await qb.getManyAndCount();
-
         return { products, total, page, limit };
     }
+
+    async createProduct(merchantId: string, input: CreateProductInput) {
+        const product = await this.productService.createProduct(merchantId, input);
+        log.info("Admin created product", { productId: product.id, merchantId });
+        return product;
+    }
+
+
 
     async suspendProduct(productId: string, adminId: string) {
         const product = await this.productRepo.findOne({
@@ -2309,6 +2320,36 @@ export class AdminService {
 
     async deleteMerchantCategory(id: string) {
         await this.categoryRepo.delete(id);
+        return true;
+    }
+
+    async getProductCategories(type?: string) {
+        const where: any = {};
+        if (type) where.type = type;
+        
+        return this.productCategoryRepo.find({
+            where,
+            order: { name: "ASC" }
+        });
+    }
+
+    async createProductCategory(data: { name: string; slug?: string; icon?: string; type?: string }) {
+        const slug = data.slug || data.name.toLowerCase().replace(/ /g, "-");
+        const category = this.productCategoryRepo.create({
+            ...data,
+            slug
+        });
+        await this.productCategoryRepo.save(category);
+        return category;
+    }
+
+    async updateProductCategory(id: string, data: Partial<ProductCategory>) {
+        await this.productCategoryRepo.update(id, data);
+        return this.productCategoryRepo.findOneBy({ id });
+    }
+
+    async deleteProductCategory(id: string) {
+        await this.productCategoryRepo.delete(id);
         return true;
     }
 
