@@ -3,6 +3,8 @@ import { OrderRating } from "../models/order-rating";
 import { Order, OrderStatus } from "../models/order";
 import { MerchantService } from "./merchant-service";
 import { NotificationService } from "./notification-service";
+import { ServiceBooking, ServiceBookingStatus } from "../models/service-booking";
+import { BuyerProfile } from "../models/buyer-profile";
 import { NotificationType } from "../models/notification";
 import { createServiceLogger } from "../utils/logger";
 
@@ -32,6 +34,7 @@ export interface CreateOrderRatingInput {
 export class OrderRatingService {
     private ratingRepo = AppDataSource.getRepository(OrderRating);
     private orderRepo = AppDataSource.getRepository(Order);
+    private buyerRepo = AppDataSource.getRepository(BuyerProfile);
     private merchantService = new MerchantService();
     private notificationService = new NotificationService();
 
@@ -76,17 +79,29 @@ export class OrderRatingService {
             }
         }
 
-        // 6. Create rating
-        const rating = this.ratingRepo.create({
-            orderId,
-            customerId,
-            merchantId: order.merchantId,
-            merchantRating,
-            merchantComment: merchantComment || null,
-            driverId: order.driverId,
-            driverRating: driverRating ?? null,
-            driverComment: driverComment || null,
-        });
+        // 6. Upsert rating (it might have been started by the merchant already)
+        let rating = await this.ratingRepo.findOne({ where: { orderId } });
+
+        if (!rating) {
+            rating = this.ratingRepo.create({
+                orderId,
+                customerId,
+                merchantId: order.merchantId,
+                merchantRating,
+                merchantComment: merchantComment || null,
+                driverId: order.driverId,
+                driverRating: driverRating ?? null,
+                driverComment: driverComment || null,
+            });
+        } else {
+            rating.merchantRating = merchantRating;
+            rating.merchantComment = merchantComment || null;
+            if (order.driverId) {
+                rating.driverId = order.driverId;
+                rating.driverRating = driverRating ?? null;
+                rating.driverComment = driverComment || null;
+            }
+        }
 
         const savedRating = await this.ratingRepo.save(rating);
 
@@ -132,6 +147,85 @@ export class OrderRatingService {
         });
 
         return savedRating;
+    }
+
+    /**
+     * Merchant rates a customer after an order or service hire.
+     */
+    async rateCustomer(merchantId: string, orderIdOrBookingId: string, rating: number, comment?: string): Promise<OrderRating | any> {
+        if (rating < 1 || rating > 5) throw new Error("Rating must be between 1 and 5");
+
+        // Try to find if it's an Order or a ServiceBooking
+        const order = await this.orderRepo.findOne({ where: { id: orderIdOrBookingId, merchantId } });
+        
+        let customerId: string;
+        let orderId: string | null = null;
+        let isOrder = !!order;
+
+        if (order) {
+            customerId = order.customerId;
+            orderId = order.id;
+        } else {
+            // Check service booking
+            const booking = await AppDataSource.getRepository(ServiceBooking).findOne({ 
+                where: { id: orderIdOrBookingId, merchantId } 
+            });
+            if (!booking) throw new Error("Order or Booking not found");
+            customerId = booking.customerId;
+            // Since ServiceBookings don't have a linked OrderRating entity yet, we'll just update the customer stats for now.
+            // In a fuller version, we'd have a BookingRating entity.
+            await this.updateCustomerStats(customerId, rating);
+            return { success: true, message: "Customer rated successfully" };
+        }
+
+        // Handle Order Rating upsert
+        let orderRating = await this.ratingRepo.findOne({ where: { orderId: orderId! } });
+
+        if (!orderRating) {
+            orderRating = this.ratingRepo.create({
+                orderId: orderId!,
+                customerId,
+                merchantId,
+                customerRating: rating,
+                customerComment: comment || null,
+                merchantRating: 0 // Placeholder until customer rates
+            });
+        } else {
+            orderRating.customerRating = rating;
+            orderRating.customerComment = comment || null;
+        }
+
+        const saved = await this.ratingRepo.save(orderRating);
+        await this.updateCustomerStats(customerId, rating);
+
+        // Notify customer
+        await this.notificationService.notify(
+            customerId,
+            NotificationType.NEW_RATING,
+            "New Customer Rating ⭐",
+            `A merchant has rated you ${rating} stars. Keep maintaining a great profile!`,
+            { rating, orderId: orderId! }
+        );
+
+        return saved;
+    }
+
+    /**
+     * Internal helper to update BuyerProfile stats.
+     */
+    private async updateCustomerStats(customerId: string, newRating: number) {
+        let profile = await this.buyerRepo.findOne({ where: { userId: customerId } });
+        if (!profile) return;
+
+        const currentCount = Number(profile.ratingCount || 0);
+        const currentAvg = Number(profile.averageRating || 5.0);
+
+        const totalRating = (currentAvg * currentCount) + newRating;
+        profile.ratingCount = currentCount + 1;
+        profile.averageRating = totalRating / profile.ratingCount;
+
+        await this.buyerRepo.save(profile);
+        log.info("Customer stats updated", { customerId, newRating, newAvg: profile.averageRating });
     }
 
     /**

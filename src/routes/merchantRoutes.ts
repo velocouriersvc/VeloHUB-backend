@@ -96,15 +96,30 @@ router.get("/dashboard", merchantRole, merchantController.getDashboard);
  *       403:
  *         description: Invalid API key or merchant role not approved
  */
+/**
+ * @openapi
+ * /merchant/profile:
+ *   get:
+ *     tags: [Merchant]
+ *     summary: Get comprehensive store profile
+ *     description: Returns the full merchant identity, operational status, location, and operating hours dictionary.
+ *     security:
+ *       - ApiKeyAuth: []
+ *     responses:
+ *       200:
+ *         description: Full profile object for iOS Settings
+ *       404:
+ *         description: Profile not found
+ */
 router.get("/profile", merchantRole, merchantController.getProfile);
 
 /**
  * @openapi
  * /merchant/profile:
- *   put:
+ *   patch:
  *     tags: [Merchant]
- *     summary: Update merchant profile
- *     description: Update business details like name, description, address, etc. Requires **merchant** role.
+ *     summary: Update store settings (PATCH)
+ *     description: Update store visuals, behavioural flags, financial preferences, and operating hours. 
  *     security:
  *       - ApiKeyAuth: []
  *     requestBody:
@@ -112,32 +127,27 @@ router.get("/profile", merchantRole, merchantController.getProfile);
  *       content:
  *         application/json:
  *           schema:
- *             type: object
- *             properties:
- *               businessName:
- *                 type: string
- *               description:
- *                 type: string
- *               businessEmail:
- *                 type: string
- *                 format: email
- *               businessPhone:
- *                 type: string
- *               address:
- *                 type: string
- *               latitude:
- *                 type: number
- *               longitude:
- *                 type: number
+ *             $ref: '#/components/schemas/UpdateMerchantProfileBody'
  *     responses:
  *       200:
- *         description: Updated profile
- *       404:
- *         description: Profile not found
- *       403:
- *         description: Invalid API key or merchant role not approved
+ *         description: Updated profile object
+ *   put:
+ *     tags: [Merchant]
+ *     summary: Update store settings (Legacy)
+ *     security:
+ *       - ApiKeyAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/UpdateMerchantProfileBody'
+ *     responses:
+ *       200:
+ *         description: Updated profile object
  */
 router.put("/profile", merchantRole, merchantController.updateProfile);
+router.patch("/profile", merchantRole, merchantController.updateProfile);
 
 /**
  * @openapi
@@ -459,7 +469,8 @@ router.patch("/orders/:orderId/reject", merchantRole, validate([
  *     description: |
  *       Merchant can transition order status:
  *       - ACCEPTED → PREPARING
- *       - PREPARING → READY_FOR_PICKUP
+ *       - PREPARING → READY_FOR_PICKUP (if pickup order)
+ *       - PREPARING → READY_FOR_DELIVERY (if delivery order)
  *
  *       Notifies customer on each transition. Requires **merchant** role.
  *     security:
@@ -482,7 +493,7 @@ router.patch("/orders/:orderId/reject", merchantRole, validate([
  *             properties:
  *               status:
  *                 type: string
- *                 enum: [preparing, ready_for_pickup]
+ *                 enum: [preparing, ready_for_pickup, ready_for_delivery]
  *     responses:
  *       200:
  *         description: Order status updated
@@ -492,9 +503,9 @@ router.patch("/orders/:orderId/reject", merchantRole, validate([
  *         description: Order not found
  *       403:
  *         description: Invalid API key or merchant role not approved
- */
+ * */
 router.patch("/orders/:orderId/status", merchantRole, validate([
-    body("status").required().isIn([OrderStatus.PREPARING, OrderStatus.READY_FOR_PICKUP]),
+    body("status").required().isIn([OrderStatus.PREPARING, OrderStatus.READY_FOR_PICKUP, OrderStatus.READY_FOR_DELIVERY]),
 ]), merchantController.updateOrderStatus);
 
 /**
@@ -681,6 +692,35 @@ router.post("/request-payout", merchantRole, merchantController.requestPayout);
  *         description: Invalid API key or merchant role not approved
  */
 router.get("/finances", merchantRole, merchantController.getFinances);
+
+/**
+ * @openapi
+ * /merchant/transactions:
+ *   get:
+ *     tags: [Merchant]
+ *     summary: Wallet transaction history
+ *     description: Returns paginated list of all wallet transactions (payments, payouts, refunds).
+ *     security:
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - $ref: '#/components/parameters/PhoneNumber'
+ *       - name: page
+ *         in: query
+ *         schema:
+ *           type: integer
+ *           default: 1
+ *       - name: limit
+ *         in: query
+ *         schema:
+ *           type: integer
+ *           default: 20
+ *     responses:
+ *       200:
+ *         description: Paginated transaction list
+ *       403:
+ *         description: Invalid API key or merchant role not approved
+ */
+router.get("/transactions", merchantRole, merchantController.getTransactions);
 
 /**
  * @openapi

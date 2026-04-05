@@ -60,6 +60,12 @@ export class ServiceBooking {
     @Column({ type: "text" })
     serviceAddress: string;
 
+    @Column({ type: "decimal", precision: 10, scale: 7, nullable: true })
+    latitude: number | null;
+
+    @Column({ type: "decimal", precision: 10, scale: 7, nullable: true })
+    longitude: number | null;
+
     @Column({ type: "text", nullable: true })
     customerNotes: string | null;
 
@@ -94,6 +100,9 @@ export class ServiceBooking {
 
     @Column({ type: "timestamp", nullable: true })
     declinedAt: Date | null;
+
+    @Column({ type: "varchar", length: 10, nullable: true })
+    completionCode: string | null;
 
     @CreateDateColumn()
     createdAt: Date;

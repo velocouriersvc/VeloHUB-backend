@@ -38,10 +38,11 @@ export interface MerchantDashboard {
 
 export interface MerchantFinances {
     walletBalance: number;
-    currency: string;
-    totalEarnings: number;
-    pendingSettlement: number;
-    completedOrders: number;
+    pendingBalance: number;
+    lifetimeEarnings: number;
+    nextPayoutDate: string | null;
+    currencyCode: string;
+    payoutLimit: number;
     recentTransactions: WalletTransactionResponse[];
 }
 
@@ -59,46 +60,79 @@ export class MerchantService {
     // ── Profile ─────────────────────────────────────────────────────
 
     /**
-     * Get the merchant profile for the given user.
+     * Get the merchant profile with comprehensive details for iOS Settings.
      */
-    async getProfile(merchantId: string): Promise<(MerchantProfile & { storeLink: string }) | null> {
+    async getProfile(merchantId: string): Promise<any | null> {
         const profile = await this.profileRepo.findOne({
             where: { userId: merchantId },
             relations: { user: true },
         });
         if (!profile) return null;
+
+        // Fetch hours
+        const hoursList = await this.hoursRepo.find({ where: { merchantId } });
+        const dayNames = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
+        const operatingHours: Record<string, any> = {};
+
+        // Initialize all 7 days with defaults
+        dayNames.forEach((name, idx) => {
+            const h = hoursList.find(item => item.dayOfWeek === idx);
+            operatingHours[name] = {
+                open: h ? h.openTime : "08:00",
+                close: h ? h.closeTime : "20:00",
+                isActive: h ? !h.isClosed : (idx !== 0), // Default closed on Sunday
+            };
+        });
+
+        // Map business type
+        const serviceCategories = ["services", "salon", "laundry", "errands", "wellness"];
+        const businessType = serviceCategories.includes(profile.category?.toLowerCase() || "") ? "services" : "products";
+
         return {
             ...profile,
+            phoneNumber: profile.businessPhone || profile.user?.phoneNumber, // sync phone
             storeLink: `https://velocouriersvc.com/store/${profile.slug || profile.id}`,
+            businessType,
+            operatingHours,
+            isOnline: profile.isOpen,
         };
     }
 
     /**
-     * Update merchant profile fields.
+     * Update merchant profile fields — supports behavioral flags and hours dictionary.
      */
-    async updateProfile(
-        merchantId: string,
-        input: Partial<{
-            businessName: string;
-            description: string;
-            businessEmail: string;
-            businessPhone: string;
-            address: string;
-            latitude: number;
-            longitude: number;
-            coverImageUrl: string;
-            slug: string;
-        }>
-    ): Promise<MerchantProfile & { storeLink: string }> {
+    async updateProfile(merchantId: string, input: any): Promise<any> {
         const profile = await this.profileRepo.findOne({ where: { userId: merchantId } });
         if (!profile) throw new Error("Merchant profile not found");
 
-        Object.assign(profile, input);
+        const { hours, isOnline, ...otherFields } = input;
+
+        // 1. Update basic fields
+        if (isOnline !== undefined) profile.isOpen = isOnline;
+        Object.assign(profile, otherFields);
         const saved = await this.profileRepo.save(profile);
-        return {
-            ...saved,
-            storeLink: `https://velocouriersvc.com/store/${saved.slug || saved.id}`,
-        };
+
+        // 2. Update hours if provided as dictionary { mon: { open, close, isActive } }
+        if (hours) {
+            const dayNames = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
+            for (const [day, h] of Object.entries(hours) as [string, any][]) {
+                const dayIndex = dayNames.indexOf(day.toLowerCase());
+                if (dayIndex === -1) continue;
+
+                let hourRecord = await this.hoursRepo.findOne({ where: { merchantId, dayOfWeek: dayIndex } });
+                if (!hourRecord) {
+                    hourRecord = this.hoursRepo.create({ merchantId, dayOfWeek: dayIndex });
+                }
+
+                hourRecord.openTime = h.open || "08:00";
+                hourRecord.closeTime = h.close || "20:00";
+                hourRecord.isClosed = h.isActive === false;
+
+                await this.hoursRepo.save(hourRecord);
+            }
+        }
+
+        return this.getProfile(merchantId);
     }
 
     /**
@@ -395,7 +429,7 @@ export class MerchantService {
         // Validate allowed transitions for merchant
         const allowedTransitions: Record<string, string[]> = {
             [OrderStatus.ACCEPTED]: [OrderStatus.PREPARING],
-            [OrderStatus.PREPARING]: [OrderStatus.READY_FOR_PICKUP],
+            [OrderStatus.PREPARING]: [OrderStatus.READY_FOR_PICKUP, OrderStatus.READY_FOR_DELIVERY],
         };
 
         const allowed = allowedTransitions[order.status];
@@ -403,12 +437,20 @@ export class MerchantService {
             throw new Error(`Cannot transition from ${order.status} to ${newStatus}`);
         }
 
+        // Integrity check: match status to delivery type
+        if (newStatus === OrderStatus.READY_FOR_PICKUP && order.deliveryType !== DeliveryType.PICKUP) {
+            throw new Error("Cannot set READY_FOR_PICKUP for a delivery order. Use READY_FOR_DELIVERY.");
+        }
+        if (newStatus === OrderStatus.READY_FOR_DELIVERY && order.deliveryType !== DeliveryType.DELIVERY) {
+            throw new Error("Cannot set READY_FOR_DELIVERY for a pickup order. Use READY_FOR_PICKUP.");
+        }
+
         const fromStatus = order.status;
         order.status = newStatus;
 
         if (newStatus === OrderStatus.PREPARING) {
             order.preparingAt = new Date();
-        } else if (newStatus === OrderStatus.READY_FOR_PICKUP) {
+        } else if (newStatus === OrderStatus.READY_FOR_PICKUP || newStatus === OrderStatus.READY_FOR_DELIVERY) {
             order.readyAt = new Date();
         }
 
@@ -424,7 +466,12 @@ export class MerchantService {
             },
             [OrderStatus.READY_FOR_PICKUP]: {
                 title: "Order Ready! 📦",
-                body: `Your order #${order.orderNumber} is ready for pickup/delivery!`,
+                body: `Your order #${order.orderNumber} is ready for pickup! Come on over.`,
+                type: NotificationType.ORDER_READY,
+            },
+            [OrderStatus.READY_FOR_DELIVERY]: {
+                title: "Order Prepared! 🚀",
+                body: `Your order #${order.orderNumber} is ready and we're looking for a driver.`,
                 type: NotificationType.ORDER_READY,
             },
         };
@@ -457,7 +504,9 @@ export class MerchantService {
         });
 
         if (!order) throw new Error("Order not found");
-        if (order.status !== OrderStatus.READY_FOR_PICKUP && order.status !== OrderStatus.DRIVER_ASSIGNED) {
+        if (order.status !== OrderStatus.READY_FOR_PICKUP && 
+            order.status !== OrderStatus.READY_FOR_DELIVERY && 
+            order.status !== OrderStatus.DRIVER_ASSIGNED) {
             throw new Error(`Cannot verify pickup code in ${order.status} status`);
         }
 
@@ -587,7 +636,7 @@ export class MerchantService {
         // Wallet balance
         const wallet = await this.walletService.getWallet(merchantId);
         const walletBalance = wallet ? Number(wallet.balance) : 0;
-        const currency = wallet?.currency || "GHS";
+        const currencyCode = wallet?.currency || "GHS";
 
         // Stats
         const stats = await this.statsRepo.findOne({ where: { merchantId } });
@@ -601,30 +650,76 @@ export class MerchantService {
             .andWhere("order.paymentStatus != :settled", { settled: OrderPaymentStatus.SETTLED })
             .getRawOne();
 
-        const pendingSettlement = Number(pendingResult?.pending || 0);
+        const pendingBalance = Number(pendingResult?.pending || 0);
 
-        // Completed orders count
-        const completedOrders = await this.orderRepo.count({
-            where: { merchantId, status: OrderStatus.COMPLETED },
-        });
+        // Next payout date (assume nearest sunday)
+        const nextPayout = new Date();
+        nextPayout.setDate(nextPayout.getDate() + (7 - nextPayout.getDay()) % 7);
 
-        // Recent wallet transactions
-        const recentTransactions = wallet
+        // Recent wallet transactions (mapping to categorised structure)
+        const rawTxs = wallet
             ? await AppDataSource.getRepository("wallet_transactions")
                   .createQueryBuilder("tx")
                   .where("tx.walletId = :walletId", { walletId: wallet.id })
                   .orderBy("tx.createdAt", "DESC")
                   .limit(10)
-                  .getMany() as unknown as WalletTransactionResponse[]
+                  .getMany() as any[]
             : [];
+
+        const recentTransactions = rawTxs.map(tx => this.mapTransaction(tx));
 
         return {
             walletBalance,
-            currency,
-            totalEarnings: stats ? Number(stats.totalRevenue) : 0,
-            pendingSettlement,
-            completedOrders,
+            pendingBalance,
+            lifetimeEarnings: stats ? Number(stats.totalRevenue) : 0,
+            nextPayoutDate: nextPayout.toISOString(),
+            currencyCode,
+            payoutLimit: 5000,
             recentTransactions,
+        };
+    }
+
+    /**
+     * Get paginated transactions list for activity screen.
+     */
+    async getTransactions(merchantId: string, page: number = 1, limit: number = 20) {
+        const wallet = await this.walletService.getWallet(merchantId);
+        if (!wallet) return { transactions: [], total: 0 };
+
+        const skip = (page - 1) * limit;
+
+        const [txs, total] = await AppDataSource.getRepository("wallet_transactions")
+            .createQueryBuilder("tx")
+            .where("tx.walletId = :walletId", { walletId: wallet.id })
+            .orderBy("tx.createdAt", "DESC")
+            .skip(skip)
+            .take(limit)
+            .getManyAndCount();
+
+        return {
+            transactions: txs.map(tx => this.mapTransaction(tx)),
+            total,
+            page,
+            limit
+        };
+    }
+
+    /**
+     * Helper to map internal transaction data to categorised UI response.
+     */
+    private mapTransaction(tx: any): WalletTransactionResponse {
+        const metadata = tx.metadata || {};
+        const isDebit = tx.type === "debit";
+
+        return {
+            id: tx.reference,
+            reference: tx.reference,
+            category: metadata.type === "payout" ? "payout" : (metadata.type === "refund" ? "refund" : "payment"),
+            type: tx.description,
+            amount: isDebit ? -Math.abs(Number(tx.amount)) : Number(tx.amount),
+            balanceAfter: Number(tx.balanceAfter),
+            status: metadata.status === "failed" ? "failed" : (metadata.status === "pending" ? "processing" : "completed"),
+            date: tx.createdAt.toISOString()
         };
     }
 

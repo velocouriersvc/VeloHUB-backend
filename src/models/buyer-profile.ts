@@ -25,6 +25,12 @@ export class BuyerProfile {
     @Column({ type: "boolean", default: false })
     hasServicesAccess: boolean;
 
+    @Column({ type: "decimal", precision: 3, scale: 2, default: 5.0 })
+    averageRating: number;
+
+    @Column({ type: "int", default: 0 })
+    ratingCount: number;
+
     @OneToOne(() => Identification, { nullable: true })
     @JoinColumn({ name: "identificationId" })
     identification: Identification | null;

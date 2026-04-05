@@ -3,6 +3,8 @@ import { Product, ProductCategory } from "../models/product";
 import { ProductCustomization } from "../models/product-customization";
 import { CustomizationOption } from "../models/customization-option";
 import { MerchantStats } from "../models/merchant-stats";
+import { NotificationType } from "../models/notification";
+import { NotificationService } from "./notification-service";
 import { createServiceLogger } from "../utils/logger";
 import { productViewsTotal } from "../utils/metrics";
 import { In } from "typeorm";
@@ -77,6 +79,11 @@ export class ProductService {
     private customizationRepo = AppDataSource.getRepository(ProductCustomization);
     private optionRepo = AppDataSource.getRepository(CustomizationOption);
     private statsRepo = AppDataSource.getRepository(MerchantStats);
+    private notificationService: NotificationService;
+
+    constructor() {
+        this.notificationService = new NotificationService();
+    }
 
     // ── Create ──────────────────────────────────────────────────────
 
@@ -563,12 +570,26 @@ export class ProductService {
 
         // All items in stock — decrement
         for (const item of items) {
-            await this.productRepo
-                .createQueryBuilder()
-                .update(Product)
-                .set({ stockQuantity: () => `"stockQuantity" - ${item.quantity}` })
-                .where("id = :id", { id: item.productId })
-                .execute();
+            const product = await this.productRepo.findOne({ where: { id: item.productId } });
+            if (!product) continue;
+
+            const newQuantity = product.stockQuantity - item.quantity;
+            
+            await this.productRepo.update(
+                { id: item.productId },
+                { stockQuantity: newQuantity }
+            );
+
+            // Check for low stock alert
+            if (newQuantity <= product.minStockAlert && product.minStockAlert > 0) {
+                await this.notificationService.notify(
+                    product.merchantId,
+                    NotificationType.LOW_STOCK_ALERT,
+                    "Low Stock Alert! ⚠️",
+                    `${product.name} has only ${newQuantity} left. Restock soon!`,
+                    { productId: product.id, stockLevel: newQuantity }
+                );
+            }
         }
 
         return { success: true };

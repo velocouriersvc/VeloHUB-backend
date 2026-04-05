@@ -132,6 +132,44 @@ export class DeliveryController {
         }
     };
 
+    /**
+     * POST /driver/deliveries/:orderId/cancel
+     * Driver cancels their assignment before picking up the order.
+     */
+    cancelDeliveryAssignment = async (req: AuthRequest, res: Response) => {
+        try {
+            const driverId = req.user?.id;
+            if (!driverId) return res.status(401).json({ message: "User ID required" });
+            
+            const { orderId } = req.params;
+            const { reason } = req.body;
+            if (!orderId) return res.status(400).json({ message: "orderId is required" });
+
+            const order = await this.deliveryService.cancelDeliveryAssignment(driverId, orderId, reason);
+
+            return res.status(200).json({
+                message: "Delivery assignment cancelled",
+                order: {
+                    id: order.id,
+                    orderNumber: order.orderNumber,
+                    status: order.status,
+                },
+            });
+        } catch (error) {
+            const message = (error as Error).message;
+
+            if (message.includes("not assigned") || message.includes("Cannot cancel")) {
+                return res.status(400).json({ message });
+            }
+            if (message.includes("not found")) {
+                return res.status(404).json({ message });
+            }
+
+            log.error("Error cancelling delivery assignment", { error: message });
+            return res.status(500).json({ message: "Internal server error" });
+        }
+    };
+
     // ── Complete Delivery ────────────────────────────────────────────
 
     /**

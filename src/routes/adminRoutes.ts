@@ -219,7 +219,7 @@ router.get("/dashboard", adminRole, adminController.getDashboard);
  *         name: status
  *         schema:
  *           type: string
- *           enum: [PENDING, CONFIRMED, PREPARING, READY_FOR_PICKUP, DRIVER_ASSIGNED, PICKED_UP, IN_TRANSIT, DELIVERED, COMPLETED, CANCELLED, REFUNDED]
+ *           enum: [PENDING, CONFIRMED, PREPARING, READY_FOR_PICKUP, READY_FOR_DELIVERY, DRIVER_ASSIGNED, PICKED_UP, IN_TRANSIT, DELIVERED, COMPLETED, CANCELLED, REFUNDED]
  *       - in: query
  *         name: merchantId
  *         schema:
@@ -310,7 +310,7 @@ router.get("/orders/:id", adminRole, adminController.getOrderDetail);
  *             properties:
  *               status:
  *                 type: string
- *                 enum: [PENDING, CONFIRMED, PREPARING, READY_FOR_PICKUP, DRIVER_ASSIGNED, PICKED_UP, IN_TRANSIT, DELIVERED, COMPLETED, CANCELLED, REFUNDED]
+ *                 enum: [PENDING, CONFIRMED, PREPARING, READY_FOR_PICKUP, READY_FOR_DELIVERY, DRIVER_ASSIGNED, PICKED_UP, IN_TRANSIT, DELIVERED, COMPLETED, CANCELLED, REFUNDED]
  *               note:
  *                 type: string
  *     responses:

@@ -539,6 +539,48 @@ router.post("/deliveries/:orderId/accept", driverRole, deliveryController.accept
 
 /**
  * @openapi
+ * /driver/deliveries/{orderId}/cancel:
+ *   post:
+ *     tags: [Driver - Deliveries]
+ *     summary: Cancel a delivery assignment
+ *     description: |
+ *       Driver cancels a delivery assignment they previously accepted.
+ *       Only allowed **before** the order is marked as **picked_up**.
+ *       Resets order status to **READY_FOR_DELIVERY** and clears driver assignment.
+ *       Notifies the merchant.
+ *       Requires **driver** role.
+ *     security:
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - $ref: '#/components/parameters/PhoneNumber'
+ *       - in: path
+ *         name: orderId
+ *         required: true
+ *         description: Order ID (UUID)
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               reason:
+ *                 type: string
+ *                 description: Reason for cancellation
+ *     responses:
+ *       200:
+ *         description: Delivery assignment cancelled
+ *       400:
+ *         description: Cannot cancel (already picked up or not assigned)
+ *       404:
+ *         description: Order not found
+ */
+router.post("/deliveries/:orderId/cancel", driverRole, deliveryController.cancelDeliveryAssignment);
+
+/**
+ * @openapi
  * /driver/deliveries/{orderId}/status:
  *   patch:
  *     tags: [Driver - Deliveries]

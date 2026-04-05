@@ -29,6 +29,12 @@ export class OrderRating {
     @Column({ type: "text", nullable: true })
     merchantComment: string | null;
 
+    @Column({ type: "int", nullable: true })
+    customerRating: number | null; // Merchant rates customer (1-5)
+
+    @Column({ type: "text", nullable: true })
+    customerComment: string| null; // Merchant's feedback on customer behavior
+
     @Column({ type: "uuid", nullable: true })
     driverId: string | null;
 

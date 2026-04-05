@@ -301,7 +301,10 @@ export class AdminService {
         switch (newStatus) {
             case OrderStatus.ACCEPTED: order.acceptedAt = now; break;
             case OrderStatus.PREPARING: order.preparingAt = now; break;
-            case OrderStatus.READY_FOR_PICKUP: order.readyAt = now; break;
+            case OrderStatus.READY_FOR_PICKUP: 
+            case OrderStatus.READY_FOR_DELIVERY: 
+                order.readyAt = now; 
+                break;
             case OrderStatus.PICKED_UP: order.pickedUpAt = now; break;
             case OrderStatus.DELIVERED: order.deliveredAt = now; break;
             case OrderStatus.COMPLETED: order.completedAt = now; break;

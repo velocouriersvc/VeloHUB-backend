@@ -15,6 +15,10 @@ export interface UpdateMerchantProfileBody {
     latitude?: number;
     longitude?: number;
     coverImageUrl?: string;
+    autoAcceptOrders?: boolean;
+    isPublicRatings?: boolean;
+    payoutSchedule?: "daily" | "weekly" | "manual";
+    hours?: Record<string, OperatingHoursEntry>; // Dictionary for days
 }
 
 /** PATCH /merchant/toggle-open */
@@ -100,6 +104,15 @@ export interface MerchantProfileResponse {
     pickupFeeRate: number | null;
     createdAt: Date;
     updatedAt: Date;
+
+    // Behavioral
+    autoAcceptOrders: boolean;
+    isPublicRatings: boolean;
+    payoutSchedule: string;
+    businessType: "products" | "services";
+
+    // Operations hours dictionary
+    operatingHours: Record<string, OperatingHoursEntry>;
 }
 
 export interface MerchantDashboardResponse {
@@ -126,23 +139,23 @@ export interface MerchantStatsResponse {
 
 export interface MerchantFinancesResponse {
     walletBalance: number;
-    currency: string;
-    totalEarnings: number;
-    pendingSettlement: number;
-    completedOrders: number;
+    pendingBalance: number;
+    lifetimeEarnings: number;
+    nextPayoutDate: string | null; // ISO Date
+    currencyCode: string;
+    payoutLimit: number;
     recentTransactions: WalletTransactionResponse[];
 }
 
 export interface WalletTransactionResponse {
-    id: string;
-    type: "credit" | "debit";
-    amount: number;
-    balanceBefore: number;
+    id: string; // transaction reference
+    category: "payment" | "payout" | "refund";
+    type: string; // display string
+    amount: number; // signed number
     balanceAfter: number;
+    status: "completed" | "processing" | "failed" | "cancelled";
+    date: string; // ISO Date timestamp
     reference: string;
-    description: string;
-    metadata: Record<string, unknown> | null;
-    createdAt: Date;
 }
 
 export interface PayoutResultResponse {

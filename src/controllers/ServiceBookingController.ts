@@ -85,4 +85,28 @@ export class ServiceBookingController {
             return res.status(400).json({ message: (error as Error).message });
         }
     }
+
+    /**
+     * POST /services/bookings/:bookingId/complete
+     */
+    async completeBooking(req: Request, res: Response) {
+        try {
+            const userId = (req as any).user?.id;
+            const { bookingId } = req.params;
+            const { completionCode } = req.body;
+
+            if (!userId) return res.status(401).json({ message: "Unauthorized" });
+            if (!completionCode) return res.status(400).json({ message: "Completion code is required" });
+
+            const booking = await this.bookingService.completeBooking(bookingId, userId, completionCode);
+
+            return res.json({
+                message: "Service booking completed and verified",
+                booking
+            });
+        } catch (error) {
+            log.error("Error completing service booking", { error: (error as Error).message });
+            return res.status(400).json({ message: (error as Error).message });
+        }
+    }
 }

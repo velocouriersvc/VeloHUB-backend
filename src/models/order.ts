@@ -18,6 +18,7 @@ export enum OrderStatus {
     ACCEPTED = "accepted",
     PREPARING = "preparing",
     READY_FOR_PICKUP = "ready_for_pickup",
+    READY_FOR_DELIVERY = "ready_for_delivery",
     DRIVER_ASSIGNED = "driver_assigned",
     PICKED_UP = "picked_up",
     IN_TRANSIT = "in_transit",

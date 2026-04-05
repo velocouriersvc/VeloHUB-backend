@@ -90,13 +90,13 @@ export class NotificationService {
     }
 
     /**
-     * Get user's notifications (for the notification screen)
+     * Get user's notifications (for the notification screen) — enriched with icons/categories.
      */
     async getUserNotifications(
         userId: string,
         limit: number = 30,
         offset: number = 0
-    ): Promise<{ notifications: Notification[]; total: number; unreadCount: number }> {
+    ): Promise<{ notifications: any[]; total: number; unreadCount: number }> {
         const [notifications, total] = await this.notifRepo.findAndCount({
             where: { userId },
             order: { createdAt: "DESC" },
@@ -108,7 +108,60 @@ export class NotificationService {
             where: { userId, isRead: false },
         });
 
-        return { notifications, total, unreadCount };
+        // Enrich with UI metadata
+        const enriched = notifications.map(n => {
+            const ui = this.getUIMetadata(n.type);
+            return {
+                ...n,
+                icon: ui.icon,
+                color: ui.color,
+                category: ui.category,
+            };
+        });
+
+        return { notifications: enriched, total, unreadCount };
+    }
+
+    /**
+     * Helper to map NotificationType to UI aesthetics (icons, colors).
+     */
+    private getUIMetadata(type: NotificationType): { icon: string; color: string; category: string } {
+        switch (type) {
+            case NotificationType.ORDER_PLACED:
+            case NotificationType.ORDER_ACCEPTED:
+            case NotificationType.SERVICE_REQUESTED:
+                return { icon: "shopping-bag", color: "#34C759", category: "order" };
+            
+            case NotificationType.ORDER_READY:
+            case NotificationType.ORDER_PICKED_UP:
+            case NotificationType.DRIVER_ARRIVED:
+                return { icon: "package", color: "#5856D6", category: "operational" };
+
+            case NotificationType.ORDER_CANCELLED:
+            case NotificationType.ORDER_REJECTED:
+            case NotificationType.SERVICE_DECLINED:
+            case NotificationType.SERVICE_CANCELLED:
+                return { icon: "x-circle", color: "#FF3B30", category: "warning" };
+
+            case NotificationType.WALLET_CREDITED:
+            case NotificationType.PAYMENT_RECEIVED:
+            case NotificationType.PAYOUT_COMPLETED:
+                return { icon: "dollar-sign", color: "#FF9500", category: "finance" };
+
+            case NotificationType.WALLET_DEBITED:
+            case NotificationType.COMMISSION_DEDUCTED:
+                return { icon: "arrow-down-right", color: "#8E8E93", category: "finance" };
+
+            case NotificationType.LOW_STOCK_ALERT:
+                return { icon: "alert-triangle", color: "#FFCC00", category: "inventory" };
+
+            case NotificationType.NEW_RATING:
+            case NotificationType.NEW_PRODUCT_REVIEW:
+                return { icon: "star", color: "#FFD60A", category: "reputation" };
+
+            default:
+                return { icon: "bell", color: "#007AFF", category: "system" };
+        }
     }
 
     /**

@@ -445,6 +445,25 @@ export class MerchantController {
         }
     };
 
+    /**
+     * GET /merchant/transactions — Full transaction history.
+     */
+    getTransactions = async (req: AuthRequest, res: Response) => {
+        try {
+            const merchantId = req.user?.id;
+            if (!merchantId) return res.status(401).json({ message: "User ID required" });
+
+            const page = Number(req.query.page) || 1;
+            const limit = Number(req.query.limit) || 20;
+
+            const result = await this.merchantService.getTransactions(merchantId, page, limit);
+            return res.status(200).json(result);
+        } catch (error) {
+            log.error("Error getting transactions", { error: (error as Error).message });
+            return res.status(500).json({ message: "Internal server error" });
+        }
+    };
+
     // ── Stats ───────────────────────────────────────────────────────
 
     /**

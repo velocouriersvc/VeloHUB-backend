@@ -132,4 +132,39 @@ router.get("/:bookingId", requireRole(["buyer", "merchant"]), (req, res) => cont
  */
 router.patch("/:bookingId/status", requireRole(["buyer", "merchant"]), (req, res) => controller.updateStatus(req, res));
 
+/**
+ * @openapi
+ * /services/bookings/{bookingId}/complete:
+ *   post:
+ *     tags: [Services]
+ *     summary: Complete booking via code (Merchant)
+ *     description: Merchant provides the 6-character code from the customer to verify and complete the service hire. Requires **merchant** role.
+ *     parameters:
+ *       - in: path
+ *         name: bookingId
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [completionCode]
+ *             properties:
+ *               completionCode:
+ *                 type: string
+ *                 example: "A7K3M2"
+ *     responses:
+ *       200:
+ *         description: Service completed and verified
+ *       400:
+ *         description: Invalid code or wrong status
+ *       401:
+ *         description: Unauthorized
+ */
+router.post("/:bookingId/complete", requireRole(["merchant"]), (req, res) => controller.completeBooking(req, res));
+
 export default router;
