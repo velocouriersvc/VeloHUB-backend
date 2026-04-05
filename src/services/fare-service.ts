@@ -69,8 +69,13 @@ export class FareService {
         if (promoCode) {
             const promo = await this.validatePromoCode(promoCode);
             if (promo) {
-                discountPercent = Number(promo.discountPercent);
-                discountAmount = afterSurge * (discountPercent / 100);
+                if (promo.discountType === "fixed") {
+                    discountAmount = Number(promo.discountValue);
+                    discountPercent = (discountAmount / afterSurge) * 100;
+                } else {
+                    discountPercent = Number(promo.discountValue || promo.discountPercent);
+                    discountAmount = afterSurge * (discountPercent / 100);
+                }
 
                 // Cap discount if maxDiscountAmt is set
                 if (promo.maxDiscountAmt && discountAmount > Number(promo.maxDiscountAmt)) {
@@ -161,10 +166,12 @@ export class FareService {
         if (!promo) return null;
 
         // Check expiry
-        if (promo.expiryDate && new Date() > promo.expiryDate) return null;
+        const now = new Date();
+        if (promo.expiresAt && now > promo.expiresAt) return null;
+        if (promo.expiryDate && now > promo.expiryDate) return null;
 
         // Check usage limit
-        if (promo.usageLimit && promo.usedCount >= promo.usageLimit) return null;
+        if (promo.usageLimit && (promo.currentUses >= promo.usageLimit || promo.usedCount >= promo.usageLimit)) return null;
 
         return promo;
     }

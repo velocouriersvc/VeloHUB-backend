@@ -87,8 +87,10 @@ export class WaitlistController {
      */
     getCountries = async (req: Request, res: Response) => {
         try {
+            const { all } = req.query;
+            const where = all === "true" ? {} : { isActive: true };
             const countries = await this.countryRepo.find({
-                where: { isActive: true },
+                where,
                 order: { name: "ASC" }
             });
             return res.json(countries);
@@ -134,6 +136,71 @@ export class WaitlistController {
                 return res.status(400).json({ message: "Country code already exists" });
             }
             return res.status(500).json({ message: "Internal server error", error: message });
+        }
+    };
+
+    /**
+     * PATCH /api/v1/waitlist/countries/:id
+     */
+    updateCountry = async (req: Request, res: Response) => {
+        try {
+            const { id } = req.params;
+            const { name, code, isActive } = req.body;
+
+            const country = await this.countryRepo.findOneBy({ id });
+            if (!country) {
+                return res.status(404).json({ message: "Country not found" });
+            }
+
+            if (name !== undefined) country.name = name;
+            if (code !== undefined) country.code = code;
+            if (isActive !== undefined) country.isActive = isActive;
+
+            await this.countryRepo.save(country);
+
+            await AuditLogController.record({
+                action: "Update Waitlist Country",
+                entity_type: "waitlist_country",
+                entity_id: id,
+                performed_by: (req as any).user?.email || (req as any).user?.phoneNumber || "Admin",
+                details: `Updated country: ${country.name} (${country.code}), Active: ${country.isActive}`,
+                risk_level: AuditRiskLevel.LOW
+            });
+
+            return res.json(country);
+        } catch (error) {
+            console.error("Error updating waitlist country:", error);
+            return res.status(500).json({ message: "Internal server error", error: (error as Error).message });
+        }
+    };
+
+    /**
+     * DELETE /api/v1/waitlist/countries/:id
+     */
+    deleteCountry = async (req: Request, res: Response) => {
+        try {
+            const { id } = req.params;
+            const country = await this.countryRepo.findOneBy({ id });
+            
+            if (!country) {
+                return res.status(404).json({ message: "Country not found" });
+            }
+
+            await this.countryRepo.delete(id);
+
+            await AuditLogController.record({
+                action: "Delete Waitlist Country",
+                entity_type: "waitlist_country",
+                entity_id: id,
+                performed_by: (req as any).user?.email || (req as any).user?.phoneNumber || "Admin",
+                details: `Deleted country: ${country.name} (${country.code})`,
+                risk_level: AuditRiskLevel.MEDIUM
+            });
+
+            return res.status(204).send();
+        } catch (error) {
+            console.error("Error deleting waitlist country:", error);
+            return res.status(500).json({ message: "Internal server error", error: (error as Error).message });
         }
     };
 }

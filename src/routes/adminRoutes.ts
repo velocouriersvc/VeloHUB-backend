@@ -52,6 +52,10 @@ const adminRole = requireRole(["admin"]);
 router.get("/drivers", adminRole, adminController.getDrivers);
 router.post("/drivers", adminRole, adminController.createDriver);
 
+router.get("/merchants", adminRole, adminController.getMerchants);
+router.post("/merchants", adminRole, adminController.createMerchant);
+router.get("/merchants/:id", adminRole, adminController.getMerchantById);
+
 /**
  * @openapi
  * /admin/merchants:
@@ -508,10 +512,51 @@ router.get("/products", adminRole, adminController.getProducts);
 
 /**
  * @openapi
+ * /admin/products:
+ *   post:
+ *     tags: [Admin - Products]
+ *     summary: Create a new product (physical or service) for a merchant
+ *     security:
+ *       - ApiKeyAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [merchantId, name, category, price]
+ *             properties:
+ *               merchantId:
+ *                 type: string
+ *               name:
+ *                 type: string
+ *               description:
+ *                 type: string
+ *               category:
+ *                 type: string
+ *               price:
+ *                 type: number
+ *               images:
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *               type:
+ *                 type: string
+ *                 enum: [physical, service]
+ *     responses:
+ *       201:
+ *         description: Product created
+ *       400:
+ *         description: Invalid input
+ */
+router.post("/products", adminRole, adminController.createProduct);
+
+/**
+ * @openapi
  * /admin/products/{id}:
  *   patch:
  *     tags: [Admin - Products]
- *     summary: Suspend or reactivate a product
+ *     summary: Update a product (general update or suspend/reactivate)
  *     security:
  *       - ApiKeyAuth: []
  *     parameters:
@@ -526,11 +571,22 @@ router.get("/products", adminRole, adminController.getProducts);
  *         application/json:
  *           schema:
  *             type: object
- *             required: [action]
  *             properties:
  *               action:
  *                 type: string
  *                 enum: [suspend, reactivate]
+ *               name:
+ *                 type: string
+ *               description:
+ *                 type: string
+ *               category:
+ *                 type: string
+ *               price:
+ *                 type: number
+ *               images:
+ *                 type: array
+ *                 items:
+ *                   type: string
  *     responses:
  *       200:
  *         description: Product updated
@@ -560,6 +616,107 @@ router.patch("/products/:id", adminRole, adminController.updateProduct);
  *         description: Product not found
  */
 router.delete("/products/:id", adminRole, adminController.deleteProduct);
+
+// ────────────────────────────────────────────────────────────────
+//  Product Categories
+// ────────────────────────────────────────────────────────────────
+
+/**
+ * @openapi
+ * /admin/product-categories:
+ *   get:
+ *     tags: [Admin - Products]
+ *     summary: List product/service categories
+ *     security:
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: type
+ *         schema:
+ *           type: string
+ *           enum: [product, service, marketplace]
+ *     responses:
+ *       200:
+ *         description: List of categories
+ */
+router.get("/product-categories", adminRole, adminController.getProductCategories);
+
+/**
+ * @openapi
+ * /admin/product-categories:
+ *   post:
+ *     tags: [Admin - Products]
+ *     summary: Create a new product/service category
+ *     security:
+ *       - ApiKeyAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [name]
+ *             properties:
+ *               name: { type: string }
+ *               slug: { type: string }
+ *               icon: { type: string }
+ *               type: { type: string, enum: [product, service, marketplace] }
+ *     responses:
+ *       201:
+ *         description: Category created
+ */
+router.post("/product-categories", adminRole, adminController.createProductCategory);
+
+/**
+ * @openapi
+ * /admin/product-categories/{id}:
+ *   patch:
+ *     tags: [Admin - Products]
+ *     summary: Update a product/service category
+ *     security:
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               name: { type: string }
+ *               slug: { type: string }
+ *               icon: { type: string }
+ *               isActive: { type: boolean }
+ *     responses:
+ *       200:
+ *         description: Category updated
+ */
+router.patch("/product-categories/:id", adminRole, adminController.updateProductCategory);
+
+/**
+ * @openapi
+ * /admin/product-categories/{id}:
+ *   delete:
+ *     tags: [Admin - Products]
+ *     summary: Delete a product/service category
+ *     security:
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       204:
+ *         description: Category deleted
+ */
+router.delete("/product-categories/:id", adminRole, adminController.deleteProductCategory);
 
 // ────────────────────────────────────────────────────────────────
 //  Merchants (extended)
@@ -681,6 +838,42 @@ router.post("/merchants/:id/suspend", adminRole, adminController.suspendMerchant
  *         description: Merchant not found
  */
 router.post("/merchants/:id/approve", adminRole, adminController.approveMerchant);
+
+/**
+ * @openapi
+ * /admin/merchants/{id}/profile:
+ *   patch:
+ *     tags: [Admin - Merchants]
+ *     summary: Update merchant profile details
+ *     security:
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               businessName: { type: string }
+ *               description: { type: string }
+ *               coverImageUrl: { type: string }
+ *               category: { type: string }
+ *               address: { type: string }
+ *               businessEmail: { type: string }
+ *               businessPhone: { type: string }
+ *     responses:
+ *       200:
+ *         description: Profile updated
+ *       404:
+ *         description: Merchant not found
+ */
+router.patch("/merchants/:id/profile", adminRole, adminController.updateMerchantProfile);
 
 /**
  * @openapi
@@ -1174,6 +1367,31 @@ router.post("/zones", adminRole, adminController.createZone);
  *         description: Zone updated
  */
 router.put("/zones/:id", adminRole, adminController.updateZone);
+router.patch("/zones/:id", adminRole, adminController.updateZone);
+
+/**
+ * @openapi
+ * /admin/surge/global:
+ *   post:
+ *     tags: [Admin - Surge]
+ *     summary: Update global surge settings
+ *     security:
+ *       - ApiKeyAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [isActive, multiplier]
+ *             properties:
+ *               isActive: { type: boolean }
+ *               multiplier: { type: number }
+ *     responses:
+ *       200:
+ *         description: Global surge updated
+ */
+router.post("/surge/global", adminRole, adminController.updateGlobalSurge);
 
 /**
  * @openapi
@@ -1265,5 +1483,67 @@ router.put("/withdrawals/:id", adminRole, adminController.updateWithdrawal);
 
 router.post("/simulate/ride", adminRole, adminController.simulateController.createSimulationRide);
 router.patch("/simulate/ride/:id/advance", adminRole, adminController.simulateController.advanceRideStatus);
+
+// ────────────────────────────────────────────────────────────────
+//  SERVICES
+// ────────────────────────────────────────────────────────────────
+
+router.get("/services/providers", adminRole, adminController.getServiceProviders);
+router.get("/services/bookings", adminRole, adminController.getServiceBookings);
+router.get("/services/stats", adminRole, adminController.getServiceStats);
+router.patch("/services/providers/:id/approve", adminRole, adminController.approveServiceProvider);
+
+// ────────────────────────────────────────────────────────────────
+//  CAMPAIGNS (PROMOS & BANNERS)
+// ────────────────────────────────────────────────────────────────
+
+router.get("/promos", adminRole, adminController.getPromoCodes);
+router.post("/promos", adminRole, adminController.createPromoCode);
+router.patch("/promos/:id", adminRole, adminController.updatePromoCode);
+router.delete("/promos/:id", adminRole, adminController.deletePromoCode);
+
+router.get("/banners", adminRole, adminController.getBanners);
+router.post("/banners", adminRole, adminController.createBanner);
+router.patch("/banners/:id", adminRole, adminController.updateBanner);
+router.delete("/banners/:id", adminRole, adminController.deleteBanner);
+
+// ────────────────────────────────────────────────────────────────
+//  COMMUNICATIONS
+// ────────────────────────────────────────────────────────────────
+
+router.get("/broadcasts", adminRole, adminController.getBroadcasts);
+router.post("/broadcast-notification", adminRole, adminController.broadcastNotification);
+router.post("/notifications/private", adminRole, adminController.sendPrivateNotification);
+
+// ────────────────────────────────────────────────────────────────
+//  REFERRALS
+// ────────────────────────────────────────────────────────────────
+
+router.get("/referrals/stats", adminRole, adminController.getReferralStats);
+router.get("/referrals", adminRole, adminController.getReferrals);
+router.get("/referrals/code/:userId", adminRole, adminController.getReferralCode);
+router.patch("/referrals/:id", adminRole, adminController.updateReferralStatus);
+
+// ────────────────────────────────────────────────────────────────
+//  SUPPORT TICKETS
+// ────────────────────────────────────────────────────────────────
+
+router.get("/support-tickets", adminRole, adminController.getSupportTickets);
+router.patch("/support-tickets/:id", adminRole, adminController.updateSupportTicket);
+
+router.get("/export-orders", adminRole, adminController.exportOrdersCSV);
+router.get("/platform-settings", adminRole, adminController.getPlatformSettings);
+router.patch("/platform-settings/:id", adminRole, adminController.updatePlatformSetting);
+
+router.get("/broadcasts", adminRole, adminController.getBroadcasts);
+router.get("/leaderboard", adminRole, adminController.getLeaderboard);
+router.get("/staff", adminRole, adminController.getStaff);
+router.post("/staff", adminRole, adminController.createStaff);
+router.patch("/staff/:id", adminRole, adminController.updateStaff);
+
+router.get("/categories", adminRole, adminController.getCategories);
+router.post("/categories", adminRole, adminController.createCategory);
+router.patch("/categories/:id", adminRole, adminController.updateCategory);
+router.delete("/categories/:id", adminRole, adminController.deleteCategory);
 
 export default router;

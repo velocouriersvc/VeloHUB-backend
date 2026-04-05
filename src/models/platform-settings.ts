@@ -49,6 +49,18 @@ export class PlatformSettings {
     @Column({ type: "decimal", precision: 5, scale: 2, default: 15.00 })
     serviceCommissionRate: number;
 
+    @Column({ type: "decimal", precision: 10, scale: 2, default: 5.00 })
+    referralRewardAmount: number;
+
+    @Column({ type: "integer", default: 10 })
+    leaderboardLimit: number;
+
+    @Column({ type: "boolean", default: false })
+    isGlobalSurgeActive: boolean;
+
+    @Column({ type: "decimal", precision: 5, scale: 2, default: 1.00 })
+    globalSurgeMultiplier: number;
+
     @Column({ type: "boolean", default: true })
     isActive: boolean;
 

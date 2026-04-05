@@ -1,5 +1,3 @@
-import { ProductCategory } from "../models/product";
-
 // ═══════════════════════════════════════════════════════════════════
 //  PRODUCT – Request DTOs
 // ═══════════════════════════════════════════════════════════════════
@@ -8,7 +6,7 @@ import { ProductCategory } from "../models/product";
 export interface CreateProductBody {
     name: string;
     description?: string;
-    category: ProductCategory;
+    category: string;
     price: number;
     compareAtPrice?: number;
     stockQuantity?: number;
@@ -21,6 +19,8 @@ export interface CreateProductBody {
     dosageInfo?: string;
     prescriptionRequired?: boolean;
     serviceDurationMin?: number;
+    rentalDuration?: string;
+    deposit?: number;
     customizations?: CreateCustomizationBody[];
     options?: FoodOptionGroupBody[];
 }
@@ -44,6 +44,8 @@ export interface UpdateProductBody {
     dosageInfo?: string | null;
     prescriptionRequired?: boolean;
     serviceDurationMin?: number | null;
+    rentalDuration?: string | null;
+    deposit?: number | null;
 }
 
 /** POST /products/:id/customizations */
@@ -82,7 +84,7 @@ export interface RemoveImageBody {
 /** GET /products (query) */
 export interface ProductListQuery {
     merchantId?: string;
-    category?: ProductCategory;
+    category?: string;
     search?: string;
     page?: string;
     limit?: string;
@@ -97,7 +99,7 @@ export interface ProductResponse {
     merchantId: string;
     name: string;
     description: string | null;
-    category: ProductCategory;
+    category: string;
     price: number;
     compareAtPrice: number | null;
     stockQuantity: number;

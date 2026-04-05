@@ -17,6 +17,7 @@ import { SimulateController } from "./SimulateController";
 import { Wallet } from "../models/wallet";
 import { UserRole, RoleStatus } from "../models/user-role";
 import { Role, RoleType } from "../models/role";
+import { ServiceBookingStatus } from "../models/service-booking";
 import crypto from "crypto";
 
 const log = createServiceLogger("AdminController");
@@ -36,8 +37,18 @@ export class AdminController {
     public simulateController = new SimulateController();
 
     /**
-     * GET /admin/drivers
+     * POST /admin/merchants
      */
+    createMerchant = async (req: AuthRequest, res: Response) => {
+        try {
+            const result = await this.adminService.createQuickMerchant(req.body);
+            return res.json(result);
+        } catch (error) {
+            log.error("Error creating merchant:", error);
+            return res.status(500).json({ message: "Internal server error" });
+        }
+    };
+
     getDrivers = async (req: Request, res: Response) => {
         try {
             const drivers = await this.driverRepo.find({
@@ -65,20 +76,49 @@ export class AdminController {
     getMerchants = async (req: Request, res: Response) => {
         try {
             const merchants = await this.merchantRepo.find({
-                relations: ["user"]
+                relations: ["user", "user.buyerProfile"]
             });
             return res.json(merchants.map(m => ({
                 id: m.userId,
                 business_name: m.businessName,
-                owner_name: m.user.email, // Or some other name field if available
-                email: m.businessEmail || m.user.email,
-                phone: m.businessPhone || m.user.phoneNumber,
+                owner_name: m.user?.buyerProfile?.fullName || m.user?.email || "N/A",
+                email: m.businessEmail || m.user?.email,
+                phone: m.businessPhone || m.user?.phoneNumber,
                 category: m.category,
                 status: m.status,
-                created_date: m.user.createdAt,
+                logo_url: m.coverImageUrl,
+                created_date: m.user?.createdAt || m.createdAt,
             })));
         } catch (error) {
-            console.error("Error fetching merchants:", error);
+            log.error("Error fetching merchants:", error);
+            return res.status(500).json({ message: "Internal server error" });
+        }
+    };
+
+    getMerchantById = async (req: Request, res: Response) => {
+        try {
+            const { id } = req.params;
+            const merchant = await this.merchantRepo.findOne({
+                where: { userId: id },
+                relations: ["user", "user.buyerProfile"]
+            });
+            if (!merchant) return res.status(404).json({ message: "Merchant not found" });
+            return res.json({
+                id: merchant.userId,
+                business_name: merchant.businessName,
+                owner_name: merchant.user?.buyerProfile?.fullName || merchant.user?.email || "N/A",
+                email: merchant.businessEmail || merchant.user?.email,
+                phone: merchant.businessPhone || merchant.user?.phoneNumber,
+                category: merchant.category,
+                status: merchant.status,
+                logo_url: merchant.coverImageUrl,
+                description: merchant.description,
+                commission_rate: merchant.commissionRate,
+                address: merchant.address,
+                created_date: merchant.user?.createdAt || merchant.createdAt,
+            });
+        } catch (error) {
+            log.error("Error fetching merchant by ID:", error);
             return res.status(500).json({ message: "Internal server error" });
         }
     };
@@ -111,17 +151,10 @@ export class AdminController {
      */
     getUsers = async (req: Request, res: Response) => {
         try {
-            const users = await this.userRepo.find();
-            return res.json(users.map(u => ({
-                id: u.id,
-                full_name: u.email, // Simplification
-                email: u.email,
-                phone: u.phoneNumber,
-                status: u.status,
-                created_date: u.createdAt,
-            })));
+            const users = await this.adminService.getRiderStats();
+            return res.json(users);
         } catch (error) {
-            console.error("Error fetching users:", error);
+            log.error("Error fetching users:", error);
             return res.status(500).json({ message: "Internal server error" });
         }
     };
@@ -440,23 +473,53 @@ export class AdminController {
         }
     };
 
+    createProduct = async (req: AuthRequest, res: Response) => {
+        try {
+            const { merchantId, ...productData } = req.body;
+            if (!merchantId) return res.status(400).json({ message: "merchantId is required" });
+
+            const product = await this.adminService.createProduct(merchantId, productData);
+
+            await AuditLogController.record({
+                action: "Create Product",
+                entity_type: "product",
+                entity_id: product.id,
+                performed_by: req.user?.email || "Admin",
+                details: `Created product "${product.name}" for merchant ${merchantId}`,
+                risk_level: AuditRiskLevel.LOW
+            });
+
+            return res.status(201).json(product);
+        } catch (error) {
+            log.error("Error creating product:", error);
+            const msg = (error as Error).message;
+            return res.status(500).json({ message: msg || "Internal server error" });
+        }
+    };
+
     updateProduct = async (req: AuthRequest, res: Response) => {
         try {
             const adminId = req.user?.id;
             if (!adminId) return res.status(401).json({ message: "User ID required" });
 
             const { id } = req.params;
-            const { action } = req.body; // "suspend" | "reactivate"
+            const { action, ...updateData } = req.body;
 
-            if (!action || !["suspend", "reactivate"].includes(action)) {
-                return res.status(400).json({ message: 'action is required: "suspend" or "reactivate"' });
+            let product;
+            if (action) {
+                if (!["suspend", "reactivate"].includes(action)) {
+                    return res.status(400).json({ message: 'action must be "suspend" or "reactivate"' });
+                }
+                product = action === "suspend"
+                    ? await this.adminService.suspendProduct(id, adminId)
+                    : await this.adminService.reactivateProduct(id, adminId);
+            } else if (Object.keys(updateData).length > 0) {
+                product = await this.adminService.updateProduct(id, updateData, adminId);
+            } else {
+                return res.status(400).json({ message: "No update data provided" });
             }
 
-            const product = action === "suspend"
-                ? await this.adminService.suspendProduct(id, adminId)
-                : await this.adminService.reactivateProduct(id, adminId);
-
-            return res.json({ message: `Product ${action}d`, product: { id: product.id, name: product.name, isActive: product.isActive } });
+            return res.json({ message: "Product updated", product });
         } catch (error) {
             const msg = (error as Error).message;
             if (msg.includes("not found")) return res.status(404).json({ message: msg });
@@ -560,6 +623,32 @@ export class AdminController {
         }
     };
 
+    updateMerchantProfile = async (req: AuthRequest, res: Response) => {
+        try {
+            const adminId = req.user?.id;
+            if (!adminId) return res.status(401).json({ message: "User ID required" });
+
+            const { id } = req.params;
+            const profile = await this.adminService.updateMerchantProfile(id, req.body, adminId);
+
+            await AuditLogController.record({
+                action: "Update Merchant Profile",
+                entity_type: "merchant",
+                entity_id: id,
+                performed_by: req.user?.email || "Admin",
+                details: `Updated merchant profile fields: ${Object.keys(req.body).join(", ")}`,
+                risk_level: AuditRiskLevel.MEDIUM
+            });
+
+            return res.json({ message: "Merchant profile updated", profile });
+        } catch (error) {
+            const msg = (error as Error).message;
+            if (msg.includes("not found")) return res.status(404).json({ message: msg });
+            log.error("Error updating merchant profile", { error: msg });
+            return res.status(500).json({ message: "Internal server error" });
+        }
+    };
+
     getMerchantOrders = async (req: AuthRequest, res: Response) => {
         try {
             const { id } = req.params;
@@ -584,6 +673,65 @@ export class AdminController {
             return res.json(result);
         } catch (error) {
             log.error("Error getting merchant finances", { error: (error as Error).message });
+            return res.status(500).json({ message: "Internal server error" });
+        }
+    };
+
+    // ════════════════════════════════════════════════════════════════
+    //  SERVICES
+    // ════════════════════════════════════════════════════════════════
+
+    getServiceProviders = async (req: AuthRequest, res: Response) => {
+        try {
+            const { search, status, page, limit } = req.query;
+            const result = await this.adminService.getServiceProviders({
+                search: search as string,
+                status: status as MerchantVerificationStatus,
+                page: page ? Number(page) : undefined,
+                limit: limit ? Number(limit) : undefined,
+            });
+            return res.json(result);
+        } catch (error) {
+            log.error("Error getting service providers", { error: (error as Error).message });
+            return res.status(500).json({ message: "Internal server error" });
+        }
+    };
+
+    getServiceBookings = async (req: AuthRequest, res: Response) => {
+        try {
+            const { status, merchantId, page, limit } = req.query;
+            const result = await this.adminService.getServiceBookings({
+                status: status as ServiceBookingStatus,
+                merchantId: merchantId as string,
+                page: page ? Number(page) : undefined,
+                limit: limit ? Number(limit) : undefined,
+            });
+            return res.json(result);
+        } catch (error) {
+            log.error("Error getting service bookings", { error: (error as Error).message });
+            return res.status(500).json({ message: "Internal server error" });
+        }
+    };
+
+    getServiceStats = async (req: AuthRequest, res: Response) => {
+        try {
+            const stats = await this.adminService.getServiceStats();
+            return res.json(stats);
+        } catch (error) {
+            log.error("Error getting service stats", { error: (error as Error).message });
+            return res.status(500).json({ message: "Internal server error" });
+        }
+    };
+
+    approveServiceProvider = async (req: AuthRequest, res: Response) => {
+        try {
+            const adminId = (req as any).user.id;
+            const profile = await this.adminService.approveServiceProvider(req.params.id, adminId);
+            return res.json({ message: "Service provider approved", status: profile.status });
+        } catch (error) {
+            const msg = (error as Error).message;
+            if (msg.includes("not found")) return res.status(404).json({ message: msg });
+            log.error("Error approving service provider", { error: msg });
             return res.status(500).json({ message: "Internal server error" });
         }
     };
@@ -988,4 +1136,408 @@ export class AdminController {
             return res.status(500).json({ message: "Error updating withdrawal" });
         }
     };
+
+    // ════════════════════════════════════════════════════════════════
+    //  CAMPAIGNS (PROMOS & BANNERS)
+    // ════════════════════════════════════════════════════════════════
+
+    getPromoCodes = async (req: AuthRequest, res: Response) => {
+        try {
+            const promos = await this.adminService.getPromoCodes();
+            return res.json(promos);
+        } catch (error) {
+            log.error("Error getting promo codes", { error: (error as Error).message });
+            return res.status(500).json({ message: "Internal server error" });
+        }
+    }
+
+    createPromoCode = async (req: AuthRequest, res: Response) => {
+        try {
+            const adminId = (req as any).user.id;
+            const promo = await this.adminService.createPromoCode(req.body, adminId);
+            return res.status(201).json(promo);
+        } catch (error) {
+            log.error("Error creating promo code", { error: (error as Error).message });
+            return res.status(500).json({ message: "Internal server error" });
+        }
+    }
+
+    updatePromoCode = async (req: AuthRequest, res: Response) => {
+        try {
+            const adminId = (req as any).user.id;
+            const updated = await this.adminService.updatePromoCode(req.params.id, req.body, adminId);
+            return res.json(updated);
+        } catch (error) {
+            log.error("Error updating promo code", { error: (error as Error).message });
+            return res.status(500).json({ message: "Internal server error" });
+        }
+    }
+
+    deletePromoCode = async (req: AuthRequest, res: Response) => {
+        try {
+            const adminId = (req as any).user.id;
+            await this.adminService.deletePromoCode(req.params.id, adminId);
+            return res.status(204).send();
+        } catch (error) {
+            log.error("Error deleting promo code", { error: (error as Error).message });
+            return res.status(500).json({ message: "Internal server error" });
+        }
+    }
+
+    getBanners = async (req: AuthRequest, res: Response) => {
+        try {
+            const banners = await this.adminService.getBanners();
+            return res.json(banners);
+        } catch (error) {
+            log.error("Error getting banners", { error: (error as Error).message });
+            return res.status(500).json({ message: "Internal server error" });
+        }
+    }
+
+    createBanner = async (req: AuthRequest, res: Response) => {
+        try {
+            const adminId = (req as any).user.id;
+            const banner = await this.adminService.createBanner(req.body, adminId);
+            return res.status(201).json(banner);
+        } catch (error) {
+            log.error("Error creating banner", { error: (error as Error).message });
+            return res.status(500).json({ message: "Internal server error" });
+        }
+    }
+
+    updateBanner = async (req: AuthRequest, res: Response) => {
+        try {
+            const adminId = (req as any).user.id;
+            const updated = await this.adminService.updateBanner(req.params.id, req.body, adminId);
+            return res.json(updated);
+        } catch (error) {
+            log.error("Error updating banner", { error: (error as Error).message });
+            return res.status(500).json({ message: "Internal server error" });
+        }
+    }
+
+    deleteBanner = async (req: AuthRequest, res: Response) => {
+        try {
+            const adminId = (req as any).user.id;
+            await this.adminService.deleteBanner(req.params.id, adminId);
+            return res.status(204).send();
+        } catch (error) {
+            log.error("Error deleting banner", { error: (error as Error).message });
+            return res.status(500).json({ message: "Internal server error" });
+        }
+    }
+
+    broadcastNotification = async (req: AuthRequest, res: Response) => {
+        try {
+            const adminId = (req as any).user.id;
+            const result = await this.adminService.broadcastNotification(req.body, adminId);
+            return res.json(result);
+        } catch (error) {
+            log.error("Error broadcasting notification", { error: (error as Error).message });
+            return res.status(500).json({ message: "Internal server error" });
+        }
+    }
+
+    sendPrivateNotification = async (req: AuthRequest, res: Response) => {
+        try {
+            const adminId = (req as any).user.id;
+            const { userId, title, body, data } = req.body;
+            
+            if (!userId || !title || !body) {
+                return res.status(400).json({ message: "userId, title, and body are required" });
+            }
+
+            const result = await this.adminService.sendPrivateNotification(userId, { title, body, data }, adminId);
+            return res.json(result);
+        } catch (error) {
+            log.error("Error sending private notification", { error: (error as Error).message });
+            return res.status(500).json({ message: (error as Error).message || "Internal server error" });
+        }
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    //  SUPPORT TICKETS
+    // ════════════════════════════════════════════════════════════════
+
+    getSupportTickets = async (req: AuthRequest, res: Response) => {
+        try {
+            const limit = req.query.limit ? parseInt(req.query.limit as string) : 200;
+            const tickets = await this.adminService.getSupportTickets(limit);
+            return res.json(tickets);
+        } catch (error) {
+            log.error("Error getting support tickets", { error: (error as Error).message });
+            return res.status(500).json({ message: "Internal server error" });
+        }
+    }
+
+    updateSupportTicket = async (req: AuthRequest, res: Response) => {
+        try {
+            const adminId = (req as any).user.id;
+            const updated = await this.adminService.updateSupportTicket(req.params.id, req.body, adminId);
+            return res.json(updated);
+        } catch (error) {
+            log.error("Error updating support ticket", { error: (error as Error).message });
+            return res.status(500).json({ message: "Internal server error" });
+        }
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    //  FINANCE & SETTINGS
+    // ════════════════════════════════════════════════════════════════
+
+    exportOrdersCSV = async (req: AuthRequest, res: Response) => {
+        try {
+            const csv = await this.adminService.exportOrdersToCSV(req.query);
+            res.setHeader("Content-Type", "text/csv");
+            res.setHeader("Content-Disposition", `attachment; filename=orders_report_${new Date().toISOString().slice(0, 10)}.csv`);
+            return res.status(200).send(csv);
+        } catch (error) {
+            log.error("Error exporting orders", { error: (error as Error).message });
+            return res.status(500).json({ message: "Internal server error" });
+        }
+    }
+
+    getPlatformSettings = async (req: AuthRequest, res: Response) => {
+        try {
+            const settings = await this.adminService.getPlatformSettings();
+            return res.json(settings);
+        } catch (error) {
+            log.error("Error getting settings", { error: (error as Error).message });
+            return res.status(500).json({ message: "Internal server error" });
+        }
+    }
+
+    updatePlatformSetting = async (req: AuthRequest, res: Response) => {
+        try {
+            const adminId = (req as any).user.id;
+            const updated = await this.adminService.updatePlatformSetting(req.params.id, req.body, adminId);
+            return res.json(updated);
+        } catch (error) {
+            log.error("Error updating setting", { error: (error as Error).message });
+            return res.status(500).json({ message: "Internal server error" });
+        }
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    //  REFERRALS
+    // ════════════════════════════════════════════════════════════════
+
+    getReferralStats = async (req: AuthRequest, res: Response) => {
+        try {
+            const stats = await this.adminService.getReferralStats();
+            return res.json(stats);
+        } catch (error) {
+            log.error("Error getting referral stats", { error: (error as Error).message });
+            return res.status(500).json({ message: "Internal server error" });
+        }
+    }
+
+    getReferrals = async (req: AuthRequest, res: Response) => {
+        try {
+            const limit = req.query.limit ? parseInt(req.query.limit as string) : 100;
+            const referrals = await this.adminService.getReferrals(limit);
+            return res.json(referrals);
+        } catch (error) {
+            log.error("Error getting referrals", { error: (error as Error).message });
+            return res.status(500).json({ message: "Internal server error" });
+        }
+    }
+
+    getReferralCode = async (req: AuthRequest, res: Response) => {
+        try {
+            const { userId } = req.params;
+            const code = await this.adminService.getReferralCodeForUser(userId);
+            return res.json(code);
+        } catch (error) {
+            const message = (error as Error).message;
+            log.error("Error getting referral code", { error: message });
+            
+            if (message === "User not found") {
+                return res.status(404).json({ message });
+            }
+            
+            return res.status(500).json({ message: "Internal server error" });
+        }
+    }
+
+    updateReferralStatus = async (req: AuthRequest, res: Response) => {
+        try {
+            const adminId = (req as any).user.id;
+            const { status } = req.body;
+            const updated = await this.adminService.updateReferralStatus(req.params.id, status, adminId);
+            return res.json(updated);
+        } catch (error) {
+            log.error("Error updating referral status", { error: (error as Error).message });
+            return res.status(500).json({ message: "Internal server error" });
+        }
+    }
+
+    getBroadcasts = async (req: AuthRequest, res: Response) => {
+        try {
+            const history = await this.adminService.getBroadcasts();
+            return res.json(history);
+        } catch (error) {
+            log.error("Error getting broadcasts", { error: (error as Error).message });
+            return res.status(500).json({ message: "Internal server error" });
+        }
+    }
+
+    getLeaderboard = async (req: AuthRequest, res: Response) => {
+        try {
+            const { type, country } = req.query as { type: 'riders' | 'customers' | 'drivers' | 'merchants' | 'services', country: string };
+            if (!type || !country) {
+                return res.status(400).json({ message: "Type and country are required" });
+            }
+            const leaderboard = await this.adminService.getLeaderboard(type, country);
+            return res.json(leaderboard);
+        } catch (error) {
+            log.error("Error getting leaderboard", { error: (error as Error).message });
+            return res.status(500).json({ message: "Internal server error" });
+        }
+    }
+
+    getStaff = async (req: AuthRequest, res: Response) => {
+        try {
+            const staff = await this.adminService.getStaff();
+            return res.json(staff);
+        } catch (error) {
+            log.error("Error getting staff", { error: (error as Error).message });
+            return res.status(500).json({ message: "Internal server error" });
+        }
+    }
+
+    createStaff = async (req: AuthRequest, res: Response) => {
+        try {
+            const staff = await this.adminService.createStaffMember(req.body);
+            return res.status(201).json(staff);
+        } catch (error) {
+            log.error("Error creating staff member", { error: (error as Error).message });
+            return res.status(error instanceof Error && error.message.includes("found") ? 404 : 400)
+                .json({ message: (error as Error).message });
+        }
+    }
+
+    updateStaff = async (req: AuthRequest, res: Response) => {
+        try {
+            const { id } = req.params;
+            const staff = await this.adminService.updateStaffMember(id, req.body);
+            return res.json(staff);
+        } catch (error) {
+            log.error("Error updating staff member", { error: (error as Error).message });
+            return res.status(error instanceof Error && error.message.includes("found") ? 404 : 400)
+                .json({ message: (error as Error).message });
+        }
+    }
+
+    getCategories = async (req: AuthRequest, res: Response) => {
+        try {
+            const categories = await this.adminService.getMerchantCategories();
+            return res.json(categories);
+        } catch (error) {
+            log.error("Error getting categories", { error: (error as Error).message });
+            return res.status(500).json({ message: "Internal server error" });
+        }
+    }
+
+    createCategory = async (req: AuthRequest, res: Response) => {
+        try {
+            const category = await this.adminService.createMerchantCategory(req.body);
+            return res.status(201).json(category);
+        } catch (error) {
+            log.error("Error creating category", { error: (error as Error).message });
+            return res.status(400).json({ message: (error as Error).message });
+        }
+    }
+
+    updateCategory = async (req: AuthRequest, res: Response) => {
+        try {
+            const { id } = req.params;
+            const category = await this.adminService.updateMerchantCategory(id, req.body);
+            return res.json(category);
+        } catch (error) {
+            log.error("Error updating category", { error: (error as Error).message });
+            return res.status(400).json({ message: (error as Error).message });
+        }
+    }
+
+    deleteCategory = async (req: AuthRequest, res: Response) => {
+        try {
+            const { id } = req.params;
+            await this.adminService.deleteMerchantCategory(id);
+            return res.status(204).send();
+        } catch (error) {
+            log.error("Error deleting category", { error: (error as Error).message });
+            return res.status(400).json({ message: (error as Error).message });
+        }
+    }
+
+    getProductCategories = async (req: Request, res: Response) => {
+        try {
+            const { type } = req.query;
+            const categories = await this.adminService.getProductCategories(type as string);
+            return res.json(categories);
+        } catch (error) {
+            log.error("Error fetching product categories", { error: (error as Error).message });
+            return res.status(500).json({ message: "Internal server error" });
+        }
+    }
+
+    createProductCategory = async (req: AuthRequest, res: Response) => {
+        try {
+            const category = await this.adminService.createProductCategory(req.body);
+            return res.json(category);
+        } catch (error) {
+            log.error("Error creating product category", { error: (error as Error).message });
+            return res.status(400).json({ message: (error as Error).message });
+        }
+    }
+
+    updateProductCategory = async (req: AuthRequest, res: Response) => {
+        try {
+            const { id } = req.params;
+            const category = await this.adminService.updateProductCategory(id, req.body);
+            return res.json(category);
+        } catch (error) {
+            log.error("Error updating product category", { error: (error as Error).message });
+            return res.status(400).json({ message: (error as Error).message });
+        }
+    }
+
+    deleteProductCategory = async (req: AuthRequest, res: Response) => {
+        try {
+            const { id } = req.params;
+            await this.adminService.deleteProductCategory(id);
+            return res.status(204).send();
+        } catch (error) {
+            log.error("Error deleting product category", { error: (error as Error).message });
+            return res.status(400).json({ message: (error as Error).message });
+        }
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    //  ZONES & SURGE
+    // ════════════════════════════════════════════════════════════════
+
+    updateGlobalSurge = async (req: AuthRequest, res: Response) => {
+        try {
+            const adminId = req.user?.id;
+            if (!adminId) return res.status(401).json({ message: "User ID required" });
+
+            const result = await this.adminService.updateGlobalSurge(req.body, adminId);
+            
+            await AuditLogController.record({
+                action: "Update Global Surge",
+                entity_type: "platform_settings",
+                entity_id: "global",
+                performed_by: req.user?.email || "Admin",
+                details: `Global surge ${req.body.isActive ? 'activated' : 'deactivated'} at ${req.body.multiplier}x`,
+                risk_level: AuditRiskLevel.MEDIUM
+            });
+
+            return res.json(result);
+        } catch (error) {
+            log.error("Error updating global surge", { error: (error as Error).message });
+            return res.status(500).json({ message: "Internal server error" });
+        }
+    }
 }

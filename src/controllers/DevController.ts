@@ -9,6 +9,14 @@ import { Role, RoleType } from "../models/role";
 import { UserRole, RoleStatus } from "../models/user-role";
 import { Otp } from "../models/otp";
 import { Identification } from "../models/identification";
+import { Zone } from "../models/zone";
+import { PlatformSettings } from "../models/platform-settings";
+import { Ride } from "../models/ride";
+import { Order } from "../models/order";
+import { ServiceBooking } from "../models/service-booking";
+import { MerchantCategory } from "../models/merchant-category";
+import { Wallet } from "../models/wallet";
+import { WalletTransaction } from "../models/wallet-transaction";
 import { createServiceLogger } from "../utils/logger";
 import crypto from "crypto";
 
@@ -29,6 +37,14 @@ export class DevController {
                 take: 50 // Limit to last 50 OTPs
             });
             const identifications = await AppDataSource.getRepository(Identification).find();
+            const zones = await AppDataSource.getRepository(Zone).find();
+            const settings = await AppDataSource.getRepository(PlatformSettings).find();
+            const rides = await AppDataSource.getRepository(Ride).find({ take: 50, order: { createdAt: "DESC" } });
+            const orders = await AppDataSource.getRepository(Order).find({ take: 50, order: { createdAt: "DESC" } });
+            const bookings = await AppDataSource.getRepository(ServiceBooking).find({ take: 50, order: { createdAt: "DESC" } });
+            const categories = await AppDataSource.getRepository(MerchantCategory).find();
+            const wallets = await AppDataSource.getRepository(Wallet).find();
+            const transactions = await AppDataSource.getRepository(WalletTransaction).find({ take: 50, order: { createdAt: "DESC" } });
 
             return res.status(200).json({
                 users,
@@ -37,7 +53,15 @@ export class DevController {
                 merchantProfiles,
                 roles,
                 otps,
-                identifications
+                identifications,
+                zones,
+                settings,
+                rides,
+                orders,
+                bookings,
+                categories,
+                wallets,
+                transactions
             });
         } catch (error) {
             log.error("Error fetching dev data", { error: (error as Error).message });

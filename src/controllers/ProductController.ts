@@ -1,9 +1,9 @@
 import { Response } from "express";
 import { AuthRequest } from "../middleware/role-middleware";
+import { ProductCategory } from "../models/product";
 import { ProductService, CreateProductInput, UpdateProductInput, CreateCustomizationInput, CreateOptionInput } from "../services/product-service";
 import { UploadService } from "../services/upload-service";
 import { SearchService } from "../services/search-service";
-import { ProductCategory } from "../models/product";
 import { createServiceLogger } from "../utils/logger";
 
 const log = createServiceLogger("ProductController");
@@ -37,7 +37,7 @@ export class ProductController {
 
             const result = await this.productService.getProducts({
                 merchantId: merchantId as string,
-                category: category as ProductCategory,
+                category: category as string,
                 search: search as string,
                 page: page ? Number(page) : undefined,
                 limit: limit ? Number(limit) : undefined,
@@ -106,12 +106,6 @@ export class ProductController {
             // Validate required fields
             if (!input.name || !input.category || input.price === undefined) {
                 return res.status(400).json({ message: "name, category, and price are required" });
-            }
-
-            if (!Object.values(ProductCategory).includes(input.category)) {
-                return res.status(400).json({
-                    message: `Invalid category. Must be one of: ${Object.values(ProductCategory).join(", ")}`,
-                });
             }
 
             const product = await this.productService.createProduct(merchantId, input);

@@ -52,6 +52,7 @@ export enum NotificationType {
     // General
     SYSTEM = "system",
     LOW_STOCK_ALERT = "low_stock_alert",
+    GENERAL_ANNOUNCEMENT = "general_announcement",
 
     // Services
     SERVICE_REQUESTED = "service_requested",

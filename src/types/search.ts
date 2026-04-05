@@ -1,5 +1,3 @@
-import { ProductCategory } from "../models/product";
-
 // ═══════════════════════════════════════════════════════════════════
 //  SEARCH – Request DTOs
 // ═══════════════════════════════════════════════════════════════════
@@ -9,7 +7,7 @@ export type SearchSortBy = "relevance" | "distance" | "rating" | "price_asc" | "
 /** GET /search (query) */
 export interface SearchQuery {
     query?: string;
-    category?: ProductCategory;
+    category?: string;
     latitude?: string;
     longitude?: string;
     radiusKm?: string;
@@ -51,7 +49,7 @@ export interface ProductSearchItem {
     id: string;
     name: string;
     description: string | null;
-    category: ProductCategory;
+    category: string;
     price: number;
     compareAtPrice: number | null;
     images: string[];

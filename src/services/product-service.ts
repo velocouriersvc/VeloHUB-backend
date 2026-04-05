@@ -16,7 +16,7 @@ const log = createServiceLogger("ProductService");
 export interface CreateProductInput {
     name: string;
     description?: string;
-    category: ProductCategory;
+    category: string;
     price: number;
     compareAtPrice?: number;
     stockQuantity?: number;
@@ -29,6 +29,8 @@ export interface CreateProductInput {
     dosageInfo?: string;
     prescriptionRequired?: boolean;
     serviceDurationMin?: number;
+    rentalDuration?: string;
+    deposit?: number;
     customizations?: CreateCustomizationInput[];
     options?: CreateFoodOptionGroupInput[];
 }
@@ -54,6 +56,8 @@ export interface UpdateProductInput {
     dosageInfo?: string | null;
     prescriptionRequired?: boolean;
     serviceDurationMin?: number | null;
+    rentalDuration?: string | null;
+    deposit?: number | null;
 }
 
 export interface CreateCustomizationInput {
@@ -91,17 +95,18 @@ export class ProductService {
      * Create a product with optional customizations & options (one transaction).
      */
     async createProduct(merchantId: string, input: CreateProductInput): Promise<Product> {
-        return AppDataSource.transaction(async (manager) => {
+        const product = await AppDataSource.transaction(async (manager) => {
             const productRepo = manager.getRepository(Product);
             const custRepo = manager.getRepository(ProductCustomization);
             const optRepo = manager.getRepository(CustomizationOption);
+            const statsRepo = manager.getRepository(MerchantStats);
 
             // Create product
-            const product = productRepo.create({
+            const newProduct = productRepo.create({
                 merchantId,
                 name: input.name,
                 description: input.description || null,
-                category: input.category,
+                category: input.category as ProductCategory,
                 price: input.price,
                 compareAtPrice: input.compareAtPrice || null,
                 stockQuantity: input.stock_level ?? input.stockQuantity ?? 0,
@@ -113,8 +118,10 @@ export class ProductService {
                 dosageInfo: input.dosageInfo || null,
                 prescriptionRequired: input.prescriptionRequired ?? false,
                 serviceDurationMin: input.serviceDurationMin || null,
+                rentalDuration: input.rentalDuration as any || null,
+                deposit: input.deposit || null,
             });
-            const savedProduct = await productRepo.save(product);
+            const savedProduct = await productRepo.save(newProduct);
 
             // Map 'options' alias to 'customizations' if provided (standard for food category)
             const customizations = input.customizations || (input.options?.length ? input.options.map(g => ({
@@ -155,11 +162,23 @@ export class ProductService {
             }
 
             // Increment merchant stats product count
-            await this.incrementProductCount(merchantId, 1);
+            const stats = await statsRepo.findOne({ where: { merchantId } });
+            if (stats) {
+                stats.totalProducts = Math.max(0, stats.totalProducts + 1);
+                await statsRepo.save(stats);
+            } else {
+                const newStats = statsRepo.create({
+                    merchantId,
+                    totalProducts: 1,
+                });
+                await statsRepo.save(newStats);
+            }
 
             log.info("Product created", { productId: savedProduct.id, merchantId });
-            return this.getProductById(savedProduct.id) as Promise<Product>;
+            return savedProduct;
         });
+
+        return (await this.getProductById(product.id))!;
     }
 
     // ── Read ────────────────────────────────────────────────────────
@@ -191,7 +210,7 @@ export class ProductService {
      */
     async getProducts(params: {
         merchantId?: string;
-        category?: ProductCategory;
+        category?: string;
         search?: string;
         isActive?: boolean;
         page?: number;
@@ -287,6 +306,8 @@ export class ProductService {
         if (input.prescriptionRequired !== undefined)
             product.prescriptionRequired = input.prescriptionRequired;
         if (input.serviceDurationMin !== undefined) product.serviceDurationMin = input.serviceDurationMin;
+        if (input.rentalDuration !== undefined) product.rentalDuration = input.rentalDuration as any;
+        if (input.deposit !== undefined) product.deposit = input.deposit;
 
         await this.productRepo.save(product);
         log.info("Product updated", { productId, merchantId });

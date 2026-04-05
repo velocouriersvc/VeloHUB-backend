@@ -18,7 +18,14 @@ export enum ProductCategory {
     GROCERY = "grocery",
     PHARMACY = "pharmacy",
     MARKETPLACE = "marketplace",
+    RENTALS = "rentals",
     SERVICES = "services",
+}
+
+export enum RentalDuration {
+    HOURLY = "hourly",
+    DAILY = "daily",
+    WEEKLY = "weekly",
 }
 
 @Entity("products")
@@ -78,6 +85,13 @@ export class Product {
     // ── Services Specific ──
     @Column({ type: "int", nullable: true })
     serviceDurationMin: number | null;
+
+    // ── Rentals Specific ──
+    @Column({ type: "enum", enum: RentalDuration, nullable: true })
+    rentalDuration: RentalDuration | null;
+
+    @Column({ type: "decimal", precision: 10, scale: 2, nullable: true })
+    deposit: number | null;
 
     // ── Timestamps ──
     @CreateDateColumn()
