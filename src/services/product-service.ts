@@ -1,8 +1,10 @@
 import { AppDataSource } from "../db/data-source";
-import { Product } from "../models/product";
+import { Product, ProductCategory } from "../models/product";
 import { ProductCustomization } from "../models/product-customization";
 import { CustomizationOption } from "../models/customization-option";
 import { MerchantStats } from "../models/merchant-stats";
+import { NotificationType } from "../models/notification";
+import { NotificationService } from "./notification-service";
 import { createServiceLogger } from "../utils/logger";
 import { productViewsTotal } from "../utils/metrics";
 import { In } from "typeorm";
@@ -18,14 +20,24 @@ export interface CreateProductInput {
     price: number;
     compareAtPrice?: number;
     stockQuantity?: number;
+    stock_level?: number;
+    min_stock_alert?: number;
+    images?: string[];
     tags?: string[];
     preparationTimeMin?: number;
     expirationDate?: string;
     dosageInfo?: string;
     prescriptionRequired?: boolean;
+    serviceDurationMin?: number;
     rentalDuration?: string;
     deposit?: number;
     customizations?: CreateCustomizationInput[];
+    options?: CreateFoodOptionGroupInput[];
+}
+
+export interface CreateFoodOptionGroupInput {
+    name: string;
+    items: CreateOptionInput[];
 }
 
 export interface UpdateProductInput {
@@ -34,12 +46,16 @@ export interface UpdateProductInput {
     price?: number;
     compareAtPrice?: number | null;
     stockQuantity?: number;
+    stock_level?: number;
+    min_stock_alert?: number;
+    images?: string[];
     tags?: string[];
     isActive?: boolean;
     preparationTimeMin?: number | null;
     expirationDate?: string | null;
     dosageInfo?: string | null;
     prescriptionRequired?: boolean;
+    serviceDurationMin?: number | null;
     rentalDuration?: string | null;
     deposit?: number | null;
 }
@@ -67,6 +83,11 @@ export class ProductService {
     private customizationRepo = AppDataSource.getRepository(ProductCustomization);
     private optionRepo = AppDataSource.getRepository(CustomizationOption);
     private statsRepo = AppDataSource.getRepository(MerchantStats);
+    private notificationService: NotificationService;
+
+    constructor() {
+        this.notificationService = new NotificationService();
+    }
 
     // ── Create ──────────────────────────────────────────────────────
 
@@ -85,24 +106,36 @@ export class ProductService {
                 merchantId,
                 name: input.name,
                 description: input.description || null,
-                category: input.category,
+                category: input.category as ProductCategory,
                 price: input.price,
                 compareAtPrice: input.compareAtPrice || null,
-                stockQuantity: input.stockQuantity ?? 0,
+                stockQuantity: input.stock_level ?? input.stockQuantity ?? 0,
+                minStockAlert: input.min_stock_alert ?? 0,
                 tags: input.tags || [],
-                images: [],
+                images: input.images || [],
                 preparationTimeMin: input.preparationTimeMin || null,
                 expirationDate: input.expirationDate ? new Date(input.expirationDate) : null,
                 dosageInfo: input.dosageInfo || null,
                 prescriptionRequired: input.prescriptionRequired ?? false,
+                serviceDurationMin: input.serviceDurationMin || null,
                 rentalDuration: input.rentalDuration as any || null,
                 deposit: input.deposit || null,
             });
             const savedProduct = await productRepo.save(newProduct);
 
+            // Map 'options' alias to 'customizations' if provided (standard for food category)
+            const customizations = input.customizations || (input.options?.length ? input.options.map(g => ({
+                title: g.name,
+                options: g.items,
+                isRequired: false,
+                minSelections: 0,
+                maxSelections: 1,
+                sortOrder: 0
+            })) : []);
+
             // Create customizations + options
-            if (input.customizations?.length) {
-                for (const custInput of input.customizations) {
+            if (customizations.length) {
+                for (const custInput of customizations) {
                     const customization = custRepo.create({
                         productId: savedProduct.id,
                         title: custInput.title,
@@ -260,7 +293,10 @@ export class ProductService {
         if (input.description !== undefined) product.description = input.description || null;
         if (input.price !== undefined) product.price = input.price;
         if (input.compareAtPrice !== undefined) product.compareAtPrice = input.compareAtPrice;
+        if (input.stock_level !== undefined) product.stockQuantity = input.stock_level;
         if (input.stockQuantity !== undefined) product.stockQuantity = input.stockQuantity;
+        if (input.min_stock_alert !== undefined) product.minStockAlert = input.min_stock_alert;
+        if (input.images !== undefined) product.images = input.images;
         if (input.tags !== undefined) product.tags = input.tags;
         if (input.isActive !== undefined) product.isActive = input.isActive;
         if (input.preparationTimeMin !== undefined) product.preparationTimeMin = input.preparationTimeMin;
@@ -269,6 +305,7 @@ export class ProductService {
         if (input.dosageInfo !== undefined) product.dosageInfo = input.dosageInfo;
         if (input.prescriptionRequired !== undefined)
             product.prescriptionRequired = input.prescriptionRequired;
+        if (input.serviceDurationMin !== undefined) product.serviceDurationMin = input.serviceDurationMin;
         if (input.rentalDuration !== undefined) product.rentalDuration = input.rentalDuration as any;
         if (input.deposit !== undefined) product.deposit = input.deposit;
 
@@ -554,12 +591,26 @@ export class ProductService {
 
         // All items in stock — decrement
         for (const item of items) {
-            await this.productRepo
-                .createQueryBuilder()
-                .update(Product)
-                .set({ stockQuantity: () => `"stockQuantity" - ${item.quantity}` })
-                .where("id = :id", { id: item.productId })
-                .execute();
+            const product = await this.productRepo.findOne({ where: { id: item.productId } });
+            if (!product) continue;
+
+            const newQuantity = product.stockQuantity - item.quantity;
+            
+            await this.productRepo.update(
+                { id: item.productId },
+                { stockQuantity: newQuantity }
+            );
+
+            // Check for low stock alert
+            if (newQuantity <= product.minStockAlert && product.minStockAlert > 0) {
+                await this.notificationService.notify(
+                    product.merchantId,
+                    NotificationType.LOW_STOCK_ALERT,
+                    "Low Stock Alert! ⚠️",
+                    `${product.name} has only ${newQuantity} left. Restock soon!`,
+                    { productId: product.id, stockLevel: newQuantity }
+                );
+            }
         }
 
         return { success: true };

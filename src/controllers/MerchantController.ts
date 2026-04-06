@@ -3,6 +3,8 @@ import { AuthRequest } from "../middleware/role-middleware";
 import { MerchantService, OperatingHoursInput } from "../services/merchant-service";
 import { UploadService } from "../services/upload-service";
 import { OrderStatus } from "../models/order";
+import { MerchantProfile } from "../models/merchant-profile";
+import { AppDataSource } from "../db/data-source";
 import { createServiceLogger } from "../utils/logger";
 
 const log = createServiceLogger("MerchantController");
@@ -443,6 +445,25 @@ export class MerchantController {
         }
     };
 
+    /**
+     * GET /merchant/transactions — Full transaction history.
+     */
+    getTransactions = async (req: AuthRequest, res: Response) => {
+        try {
+            const merchantId = req.user?.id;
+            if (!merchantId) return res.status(401).json({ message: "User ID required" });
+
+            const page = Number(req.query.page) || 1;
+            const limit = Number(req.query.limit) || 20;
+
+            const result = await this.merchantService.getTransactions(merchantId, page, limit);
+            return res.status(200).json(result);
+        } catch (error) {
+            log.error("Error getting transactions", { error: (error as Error).message });
+            return res.status(500).json({ message: "Internal server error" });
+        }
+    };
+
     // ── Stats ───────────────────────────────────────────────────────
 
     /**
@@ -457,6 +478,51 @@ export class MerchantController {
             return res.status(200).json(stats || { totalOrders: 0, totalRevenue: 0, averageRating: 0, ratingCount: 0, totalProducts: 0 });
         } catch (error) {
             log.error("Error getting stats", { error: (error as Error).message });
+            return res.status(500).json({ message: "Internal server error" });
+        }
+    };
+    /**
+     * POST /merchant/:slugOrId/view — Increment store view count (public).
+     */
+    viewProfile = async (req: AuthRequest, res: Response) => {
+        try {
+            const { slugOrId } = req.params;
+            await this.merchantService.incrementViewCount(slugOrId);
+            return res.status(200).json({ success: true });
+        } catch (error) {
+            log.error("Error incrementing store view", { error: (error as Error).message });
+            return res.status(500).json({ message: "Internal server error" });
+        }
+    };
+
+    /**
+     * GET /merchant/:slugOrId — Get public merchant profile (public).
+     */
+    getPublicProfile = async (req: AuthRequest, res: Response) => {
+        try {
+            const { slugOrId } = req.params;
+            let profile = await AppDataSource.getRepository(MerchantProfile).findOne({
+                where: { slug: slugOrId },
+                relations: { user: true },
+            });
+            if (!profile) {
+                profile = await AppDataSource.getRepository(MerchantProfile).findOne({
+                    where: { id: slugOrId },
+                    relations: { user: true },
+                });
+            }
+
+            if (!profile) return res.status(404).json({ message: "Merchant not found" });
+
+            const stats = await this.merchantService.getStats(profile.userId);
+
+            return res.status(200).json({
+                ...profile,
+                storeLink: `https://velocouriersvc.com/store/${profile.slug || profile.id}`,
+                stats,
+            });
+        } catch (error) {
+            log.error("Error fetching public profile", { error: (error as Error).message });
             return res.status(500).json({ message: "Internal server error" });
         }
     };

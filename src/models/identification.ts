@@ -37,6 +37,12 @@ export class Identification {
     })
     status: IdentificationStatus;
 
+    @Column({ type: "varchar", length: 100, nullable: true })
+    stripeVerificationSessionId: string | null;
+
+    @Column({ type: "varchar", length: 100, nullable: true })
+    stripeVerificationReportId: string | null;
+
     @CreateDateColumn()
     createdAt: Date;
 

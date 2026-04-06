@@ -28,8 +28,17 @@ export class DriverProfile {
     @Column({ type: "varchar", length: 50 })
     vehicleType: string;
 
-    @Column({ type: "varchar", length: 20 })
+    @Column({ type: "varchar", length: 50 })
     plateNumber: string;
+
+    @Column({ type: "varchar", length: 100, nullable: true })
+    region: string | null;
+
+    @Column({ type: "varchar", length: 50, nullable: true })
+    vehicleColor: string | null;
+
+    @Column({ type: "varchar", length: 100, nullable: true })
+    vehicleModel: string | null;
 
     @Column({
         type: "enum",

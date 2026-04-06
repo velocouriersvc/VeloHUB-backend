@@ -32,6 +32,40 @@ const merchantRole = requireRole(["merchant"]);
  *     responses:
  *       200:
  *         description: Dashboard data
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 profile:
+ *                   type: object
+ *                 stats:
+ *                   type: object
+ *                 todayOrders:
+ *                   type: integer
+ *                 pendingOrders:
+ *                   type: integer
+ *                 activeOrders:
+ *                   type: integer
+ *                 completedOrders:
+ *                   type: integer
+ *                 totalSales:
+ *                   type: number
+ *                 walletBalance:
+ *                   type: number
+ *                 isOpen:
+ *                   type: boolean
+ *                 viewCount:
+ *                   type: integer
+ *                   example: 125
+ *                 conversionRate:
+ *                   type: number
+ *                   format: float
+ *                   example: 8.5
+ *                 storeLink:
+ *                   type: string
+ *                   format: uri
+ *                   example: "https://velocouriersvc.com/store/abc-bakery"
  *       404:
  *         description: Merchant profile not found
  *       403:
@@ -62,15 +96,30 @@ router.get("/dashboard", merchantRole, merchantController.getDashboard);
  *       403:
  *         description: Invalid API key or merchant role not approved
  */
+/**
+ * @openapi
+ * /merchant/profile:
+ *   get:
+ *     tags: [Merchant]
+ *     summary: Get comprehensive store profile
+ *     description: Returns the full merchant identity, operational status, location, and operating hours dictionary.
+ *     security:
+ *       - ApiKeyAuth: []
+ *     responses:
+ *       200:
+ *         description: Full profile object for iOS Settings
+ *       404:
+ *         description: Profile not found
+ */
 router.get("/profile", merchantRole, merchantController.getProfile);
 
 /**
  * @openapi
  * /merchant/profile:
- *   put:
+ *   patch:
  *     tags: [Merchant]
- *     summary: Update merchant profile
- *     description: Update business details like name, description, address, etc. Requires **merchant** role.
+ *     summary: Update store settings (PATCH)
+ *     description: Update store visuals, behavioural flags, financial preferences, and operating hours. 
  *     security:
  *       - ApiKeyAuth: []
  *     requestBody:
@@ -78,32 +127,27 @@ router.get("/profile", merchantRole, merchantController.getProfile);
  *       content:
  *         application/json:
  *           schema:
- *             type: object
- *             properties:
- *               businessName:
- *                 type: string
- *               description:
- *                 type: string
- *               businessEmail:
- *                 type: string
- *                 format: email
- *               businessPhone:
- *                 type: string
- *               address:
- *                 type: string
- *               latitude:
- *                 type: number
- *               longitude:
- *                 type: number
+ *             $ref: '#/components/schemas/UpdateMerchantProfileBody'
  *     responses:
  *       200:
- *         description: Updated profile
- *       404:
- *         description: Profile not found
- *       403:
- *         description: Invalid API key or merchant role not approved
+ *         description: Updated profile object
+ *   put:
+ *     tags: [Merchant]
+ *     summary: Update store settings (Legacy)
+ *     security:
+ *       - ApiKeyAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/UpdateMerchantProfileBody'
+ *     responses:
+ *       200:
+ *         description: Updated profile object
  */
 router.put("/profile", merchantRole, merchantController.updateProfile);
+router.patch("/profile", merchantRole, merchantController.updateProfile);
 
 /**
  * @openapi
@@ -425,7 +469,8 @@ router.patch("/orders/:orderId/reject", merchantRole, validate([
  *     description: |
  *       Merchant can transition order status:
  *       - ACCEPTED → PREPARING
- *       - PREPARING → READY_FOR_PICKUP
+ *       - PREPARING → READY_FOR_PICKUP (if pickup order)
+ *       - PREPARING → READY_FOR_DELIVERY (if delivery order)
  *
  *       Notifies customer on each transition. Requires **merchant** role.
  *     security:
@@ -448,7 +493,7 @@ router.patch("/orders/:orderId/reject", merchantRole, validate([
  *             properties:
  *               status:
  *                 type: string
- *                 enum: [preparing, ready_for_pickup]
+ *                 enum: [preparing, ready_for_pickup, ready_for_delivery]
  *     responses:
  *       200:
  *         description: Order status updated
@@ -458,9 +503,9 @@ router.patch("/orders/:orderId/reject", merchantRole, validate([
  *         description: Order not found
  *       403:
  *         description: Invalid API key or merchant role not approved
- */
+ * */
 router.patch("/orders/:orderId/status", merchantRole, validate([
-    body("status").required().isIn([OrderStatus.PREPARING, OrderStatus.READY_FOR_PICKUP]),
+    body("status").required().isIn([OrderStatus.PREPARING, OrderStatus.READY_FOR_PICKUP, OrderStatus.READY_FOR_DELIVERY]),
 ]), merchantController.updateOrderStatus);
 
 /**
@@ -650,6 +695,35 @@ router.get("/finances", merchantRole, merchantController.getFinances);
 
 /**
  * @openapi
+ * /merchant/transactions:
+ *   get:
+ *     tags: [Merchant]
+ *     summary: Wallet transaction history
+ *     description: Returns paginated list of all wallet transactions (payments, payouts, refunds).
+ *     security:
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - $ref: '#/components/parameters/PhoneNumber'
+ *       - name: page
+ *         in: query
+ *         schema:
+ *           type: integer
+ *           default: 1
+ *       - name: limit
+ *         in: query
+ *         schema:
+ *           type: integer
+ *           default: 20
+ *     responses:
+ *       200:
+ *         description: Paginated transaction list
+ *       403:
+ *         description: Invalid API key or merchant role not approved
+ */
+router.get("/transactions", merchantRole, merchantController.getTransactions);
+
+/**
+ * @openapi
  * /merchant/stats:
  *   get:
  *     tags: [Merchant]
@@ -662,9 +736,78 @@ router.get("/finances", merchantRole, merchantController.getFinances);
  *     responses:
  *       200:
  *         description: Merchant stats object
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 totalOrders:
+ *                   type: integer
+ *                 totalRevenue:
+ *                   type: number
+ *                 averageRating:
+ *                   type: number
+ *                 ratingCount:
+ *                   type: integer
+ *                 totalProducts:
+ *                   type: integer
+ *                 viewCount:
+ *                   type: integer
+ *                 conversionRate:
+ *                   type: number
  *       403:
  *         description: Invalid API key or merchant role not approved
  */
 router.get("/stats", merchantRole, merchantController.getStats);
+
+// ════════════════════════════════════════════════════════════════════
+//  PUBLIC ENDPOINTS
+// ════════════════════════════════════════════════════════════════════
+
+/**
+ * @openapi
+ * /merchant/{slugOrId}:
+ *   get:
+ *     tags: [Merchant]
+ *     summary: Get public merchant profile
+ *     description: Returns the public business profile by slug or ID. No merchant auth required.
+ *     security:
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - name: slugOrId
+ *         in: path
+ *         required: true
+ *         description: Merchant slug or UUID
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Merchant profile object with stats
+ *       404:
+ *         description: Merchant not found
+ */
+router.get("/:slugOrId", merchantController.getPublicProfile);
+
+/**
+ * @openapi
+ * /merchant/{slugOrId}/view:
+ *   post:
+ *     tags: [Merchant]
+ *     summary: Track store view
+ *     description: Increments the view count for a merchant's store. Call this when the public store page is loaded.
+ *     security:
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - name: slugOrId
+ *         in: path
+ *         required: true
+ *         description: Merchant slug or UUID
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: View tracked successfully
+ */
+router.post("/:slugOrId/view", merchantController.viewProfile);
 
 export default router;

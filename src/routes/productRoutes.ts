@@ -20,6 +20,32 @@ const anyRole = requireRole(["buyer", "driver", "merchant", "admin"]);
 
 /**
  * @openapi
+ * /products/categories:
+ *   get:
+ *     tags: [Products]
+ *     summary: Get product categories
+ *     description: Returns a list of available product categories. Public — any authenticated role.
+ *     security:
+ *       - ApiKeyAuth: []
+ *     responses:
+ *       200:
+ *         description: List of categories
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 categories:
+ *                   type: array
+ *                   items:
+ *                     type: string
+ *       403:
+ *         description: Invalid API key or role not approved
+ */
+router.get("/categories", anyRole, productController.getCategories);
+
+/**
+ * @openapi
  * /products:
  *   get:
  *     tags: [Products]
@@ -40,7 +66,7 @@ const anyRole = requireRole(["buyer", "driver", "merchant", "admin"]);
  *         description: Filter by product category
  *         schema:
  *           type: string
- *           enum: [food, grocery, pharmacy, marketplace, rentals, services]
+ *           enum: [food, grocery, pharmacy, marketplace, services]
  *       - name: search
  *         in: query
  *         description: Text search in name, description, and tags
@@ -363,12 +389,39 @@ router.get("/:id", anyRole, productController.getProduct);
  *               name:
  *                 type: string
  *                 example: "Jollof Rice"
+ *               description:
+ *                 type: string
  *               category:
  *                 type: string
- *                 enum: [food, grocery, pharmacy, marketplace, rentals, services]
+ *                 enum: [food, grocery, pharmacy, marketplace, services]
  *               price:
  *                 type: number
  *                 example: 25.00
+ *               stock_level:
+ *                 type: integer
+ *               min_stock_alert:
+ *                 type: integer
+ *               images:
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *               options:
+ *                 type: array
+ *                 description: Specialized Add-ons & Options for food category (alias for customizations)
+ *                 items:
+ *                   type: object
+ *                   properties:
+ *                     name:
+ *                       type: string
+ *                     items:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           name:
+ *                             type: string
+ *                           price:
+ *                             type: number
  *               customizations:
  *                 type: array
  *                 items:

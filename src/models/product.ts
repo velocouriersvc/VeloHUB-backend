@@ -13,6 +13,14 @@ import {
 import { User } from "./user";
 import { ProductCustomization } from "./product-customization";
 
+export enum ProductCategory {
+    FOOD = "food",
+    GROCERY = "grocery",
+    PHARMACY = "pharmacy",
+    MARKETPLACE = "marketplace",
+    RENTALS = "rentals",
+    SERVICES = "services",
+}
 
 export enum RentalDuration {
     HOURLY = "hourly",
@@ -35,9 +43,9 @@ export class Product {
     @Column({ type: "text", nullable: true })
     description: string | null;
 
-    @Column({ type: "varchar", length: 100, default: "general" })
+    @Column({ type: "enum", enum: ProductCategory })
     @Index()
-    category: string;
+    category: ProductCategory;
 
     @Column({ type: "decimal", precision: 10, scale: 2 })
     price: number;
@@ -47,6 +55,9 @@ export class Product {
 
     @Column({ type: "int", default: 0 })
     stockQuantity: number;
+
+    @Column({ type: "int", default: 0 })
+    minStockAlert: number;
 
     @Column({ type: "boolean", default: true })
     isActive: boolean;
@@ -70,6 +81,10 @@ export class Product {
 
     @Column({ type: "boolean", default: false })
     prescriptionRequired: boolean;
+
+    // ── Services Specific ──
+    @Column({ type: "int", nullable: true })
+    serviceDurationMin: number | null;
 
     // ── Rentals Specific ──
     @Column({ type: "enum", enum: RentalDuration, nullable: true })

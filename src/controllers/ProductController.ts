@@ -1,5 +1,6 @@
 import { Response } from "express";
 import { AuthRequest } from "../middleware/role-middleware";
+import { ProductCategory } from "../models/product";
 import { ProductService, CreateProductInput, UpdateProductInput, CreateCustomizationInput, CreateOptionInput } from "../services/product-service";
 import { UploadService } from "../services/upload-service";
 import { SearchService } from "../services/search-service";
@@ -13,6 +14,19 @@ export class ProductController {
     private searchService = new SearchService();
 
     // ── Public Endpoints ────────────────────────────────────────────
+
+    /**
+     * GET /products/categories — Get available product categories.
+     */
+    getCategories = async (req: AuthRequest, res: Response) => {
+        try {
+            const categories = Object.values(ProductCategory);
+            return res.status(200).json({ categories });
+        } catch (error) {
+            log.error("Error fetching categories", { error: (error as Error).message });
+            return res.status(500).json({ message: "Internal server error" });
+        }
+    };
 
     /**
      * GET /products — List/filter products (public).

@@ -67,7 +67,7 @@ export class DeliveryService {
             .leftJoin("merchant.merchantProfile", "profile")
             .addSelect(["profile.businessName", "profile.latitude", "profile.longitude"])
             .where("order.deliveryType = :deliveryType", { deliveryType: DeliveryType.DELIVERY })
-            .andWhere("order.status = :status", { status: OrderStatus.READY_FOR_PICKUP })
+            .andWhere("order.status = :status", { status: OrderStatus.READY_FOR_DELIVERY })
             .andWhere("order.driverId IS NULL")
             .orderBy("order.createdAt", "ASC"); // oldest first — FIFO
 
@@ -147,7 +147,7 @@ export class DeliveryService {
                 throw new Error("This is not a delivery order");
             }
 
-            if (order.status !== OrderStatus.READY_FOR_PICKUP) {
+            if (order.status !== OrderStatus.READY_FOR_DELIVERY) {
                 throw new Error(`Cannot accept delivery — order status is "${order.status}"`);
             }
 
@@ -188,6 +188,46 @@ export class DeliveryService {
         } finally {
             await redis.del(lockKey);
         }
+    }
+
+    /**
+     * Driver cancels delivery assignment.
+     * Only allowed before the order is PICKED_UP.
+     * Resets status to READY_FOR_DELIVERY and notifies merchant.
+     */
+    async cancelDeliveryAssignment(driverId: string, orderId: string, reason?: string): Promise<Order> {
+        const order = await this.orderRepo.findOne({
+            where: { id: orderId, driverId },
+            relations: { merchant: true },
+        });
+
+        if (!order) {
+            throw new Error("Order not found or not assigned to you");
+        }
+
+        if (order.status !== OrderStatus.DRIVER_ASSIGNED) {
+            throw new Error(`Cannot cancel assignment — order status is "${order.status}". You can only cancel before pickup.`);
+        }
+
+        const fromStatus = order.status;
+        order.driverId = null;
+        order.status = OrderStatus.READY_FOR_DELIVERY;
+
+        await this.orderRepo.save(order);
+        await this.recordStatusChange(orderId, fromStatus, OrderStatus.READY_FOR_DELIVERY, driverId, "driver", reason || "Driver cancelled assignment");
+
+        // Notify merchant
+        await this.notificationService.notify(
+            order.merchantId,
+            NotificationType.ORDER_CANCELLED,
+            "Driver Assignment Cancelled ⚠️",
+            `The driver assigned to order #${order.orderNumber} has cancelled. The order is back in the delivery pool.`,
+            { orderId, orderNumber: order.orderNumber, status: OrderStatus.READY_FOR_DELIVERY }
+        );
+
+        log.info("Delivery assignment cancelled by driver", { orderId, driverId, reason });
+
+        return order;
     }
 
     // ── Update Delivery Status ──────────────────────────────────────

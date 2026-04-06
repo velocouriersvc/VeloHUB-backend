@@ -1,0 +1,15 @@
+{
+  "version": "2020-08-27",
+  "fixtures": [
+    {
+      "name": "verification_session",
+      "path": "/v1/identity/verification_sessions/vs_1THSqpFmyl8p2zMyePPyfEUc",
+      "method": "post",
+      "params": {
+        "metadata": {
+          "userId": "0da344be-2666-4aa4-a59c-9b2ed6e84f3f"
+        }
+      }
+    }
+  ]
+}

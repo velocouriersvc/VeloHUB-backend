@@ -10,14 +10,24 @@ export interface CreateProductBody {
     price: number;
     compareAtPrice?: number;
     stockQuantity?: number;
+    stock_level?: number;
+    min_stock_alert?: number;
+    images?: string[];
     tags?: string[];
     preparationTimeMin?: number;
     expirationDate?: string;
     dosageInfo?: string;
     prescriptionRequired?: boolean;
+    serviceDurationMin?: number;
     rentalDuration?: string;
     deposit?: number;
     customizations?: CreateCustomizationBody[];
+    options?: FoodOptionGroupBody[];
+}
+
+export interface FoodOptionGroupBody {
+    name: string;
+    items: CreateOptionBody[];
 }
 
 /** PUT /products/:id */
@@ -33,6 +43,7 @@ export interface UpdateProductBody {
     expirationDate?: string | null;
     dosageInfo?: string | null;
     prescriptionRequired?: boolean;
+    serviceDurationMin?: number | null;
     rentalDuration?: string | null;
     deposit?: number | null;
 }
@@ -92,6 +103,7 @@ export interface ProductResponse {
     price: number;
     compareAtPrice: number | null;
     stockQuantity: number;
+    minStockAlert: number;
     isActive: boolean;
     images: string[];
     tags: string[];

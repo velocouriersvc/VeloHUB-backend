@@ -109,6 +109,7 @@ export class SettlementService {
             OrderStatus.PICKED_UP,
             OrderStatus.COMPLETED,
             OrderStatus.READY_FOR_PICKUP, // direct pickup by customer (no driver)
+            OrderStatus.READY_FOR_DELIVERY, 
         ];
         if (!settlableStatuses.includes(order.status)) {
             throw new Error(`Cannot settle order in "${order.status}" status`);

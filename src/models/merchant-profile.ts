@@ -37,6 +37,9 @@ export class MerchantProfile {
     @Column({ type: "double precision", nullable: true })
     longitude: number | null;
 
+    @Column({ type: "varchar", length: 100, nullable: true })
+    region: string | null;
+
     @Column({ type: "text", nullable: true })
     registrationDocUrl: string | null;
 
@@ -54,8 +57,21 @@ export class MerchantProfile {
     @Column({ type: "text", nullable: true })
     coverImageUrl: string | null;
 
+    @Column({ type: "varchar", length: 255, nullable: true, unique: true })
+    @Index()
+    slug: string | null;
+
     @Column({ type: "boolean", default: false })
     isOpen: boolean;
+
+    @Column({ type: "varchar", length: 20, default: "weekly" })
+    payoutSchedule: string; // "daily" | "weekly" | "manual"
+
+    @Column({ type: "varchar", length: 100, nullable: true })
+    payoutMethod: string | null;
+
+    @Column({ type: "varchar", length: 100, nullable: true })
+    payoutAccount: string | null;
 
     @Column({ type: "decimal", precision: 5, scale: 2, nullable: true })
     commissionRate: number | null; // overrides platform default
@@ -65,6 +81,12 @@ export class MerchantProfile {
 
     @Column({ type: "decimal", precision: 5, scale: 2, nullable: true })
     pickupFeeRate: number | null; // overrides platform default
+
+    @Column({ type: "boolean", default: false })
+    autoAcceptOrders: boolean; // skip manual confirm
+
+    @Column({ type: "boolean", default: true })
+    isPublicRatings: boolean; // show customer feedback publicly
 
     @CreateDateColumn()
     createdAt: Date;

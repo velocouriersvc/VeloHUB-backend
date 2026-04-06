@@ -25,9 +25,14 @@ router.use(apiKeyMiddleware);
  *           schema:
  *             $ref: '#/components/schemas/BuyerSetupBody'
  *           example:
- *             phoneNumber: "+233501234567"
- *             fullName: "Kwame Asante"
+ *             phone: "+233501234567"
+ *             full_name: "Kwame Asante"
  *             email: "kwame@example.com"
+ *             location: "Greater Accra"
+ *             country_code: "GH"
+ *             ghana_card_number: "GHA-123456789-0"
+ *             role: "customer"
+ *             privacy_consent: true
  *     responses:
  *       200:
  *         description: Buyer profile created/updated
@@ -58,13 +63,21 @@ router.post("/buyer", requireRole(["buyer"]), profileController.setupBuyer);
  *           schema:
  *             $ref: '#/components/schemas/DriverSetupBody'
  *           example:
- *             phoneNumber: "+233501234567"
- *             fullName: "Kofi Mensah"
- *             vehicleType: "motorbike"
- *             licensePlate: "GR-1234-21"
- *             email: "kofi@example.com"
- *             idImageUrl: "http://minio-service:9000/velo-uploads/id-cards/abc123/photo.jpg"
- *             licensePhotoUrl: "http://minio-service:9000/velo-uploads/licenses/abc123/license.jpg"
+ *             phone: "+233501234567"
+ *             full_name: "Isaac Menuve"
+ *             email: "isaac@example.com"
+ *             location: "Greater Accra"
+ *             country_code: "GH"
+ *             vehicle_type: "Motorcycle"
+ *             vehicle_number: "GR 1234-22"
+ *             vehicle_model: "Yamaha"
+ *             vehicle_color: "Blue"
+ *             license_number: "D-1234567"
+ *             ghana_card_number: "GHA-123456789-0"
+ *             ghana_card_front_url: "file:///path/to/front.jpg"
+ *             ghana_card_back_url: "file:///path/to/back.jpg"
+ *             role: "driver"
+ *             privacy_consent: true
  *     responses:
  *       200:
  *         description: Driver profile created/updated
@@ -95,12 +108,17 @@ router.post("/driver", requireRole(["driver"]), profileController.setupDriver);
  *           schema:
  *             $ref: '#/components/schemas/MerchantSetupBody'
  *           example:
- *             phoneNumber: "+233501234567"
- *             businessName: "Accra Express Deliveries"
- *             businessAddress: "15 Independence Ave, Accra"
- *             email: "info@accraexpress.com"
- *             registrationDocUrl: "http://minio-service:9000/velo-uploads/registration/abc123/doc.pdf"
- *             idImageUrl: "http://minio-service:9000/velo-uploads/id-cards/abc123/id.jpg"
+ *             phone: "+233541234567"
+ *             business_name: "Tasty Treats"
+ *             business_type: "Restaurant"
+ *             business_address: "123 Main St, Accra"
+ *             location: "Greater Accra"
+ *             country_code: "GH"
+ *             ghana_card_number: "GHA-123456789-0"
+ *             ghana_card_front_url: "https://minio-service:9000/velo-uploads/id-cards/abc/123.jpg"
+ *             ghana_card_back_url: "https://minio-service:9000/velo-uploads/id-cards/abc/456.jpg"
+ *             role: "merchant"
+ *             privacy_consent: true
  *     responses:
  *       200:
  *         description: Merchant profile created/updated

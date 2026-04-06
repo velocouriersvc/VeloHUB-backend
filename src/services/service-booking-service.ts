@@ -23,6 +23,8 @@ export interface CreateBookingInput {
     customerNotes?: string;
     paymentMethod: ServicePaymentMethod;
     phoneNumber?: string;
+    latitude?: number;
+    longitude?: number;
 }
 
 export class ServiceBookingService {
@@ -59,10 +61,13 @@ export class ServiceBookingService {
             preferredDate: new Date(input.preferredDate),
             preferredTimeSlot: input.preferredTimeSlot || null,
             serviceAddress: input.serviceAddress,
+            latitude: input.latitude || null,
+            longitude: input.longitude || null,
             customerNotes: input.customerNotes || null,
             status: ServiceBookingStatus.REQUESTED,
             paymentMethod: input.paymentMethod,
             paymentStatus: ServicePaymentStatus.PENDING,
+            completionCode: uuidv4().slice(0, 6).toUpperCase(), // Generate 6-char code
         });
 
         const savedBooking = await this.bookingRepo.save(booking);
@@ -158,10 +163,65 @@ export class ServiceBookingService {
     }
 
     async getMerchantBookings(merchantId: string) {
-        return this.bookingRepo.find({
+        const bookings = await this.bookingRepo.find({
             where: { merchantId },
+            relations: { 
+                customer: { 
+                    buyerProfile: true 
+                } 
+            },
             order: { createdAt: "DESC" }
         });
+
+        // Map to include customer profile details as requested
+        return bookings.map(b => ({
+            ...b,
+            customerProfile: {
+                customerName: b.customer?.buyerProfile?.fullName || "Valued Customer",
+                customerPhone: b.customer?.phoneNumber || "N/A",
+                customerRating: 5.0, // Default for now
+            }
+        }));
+    }
+
+    /**
+     * Merchant completes booking by verifying completion code provided by customer.
+     */
+    async completeBooking(bookingId: string, merchantId: string, completionCode: string) {
+        const booking = await this.bookingRepo.findOne({
+            where: { id: bookingId, merchantId },
+            relations: { customer: true, merchant: true }
+        });
+
+        if (!booking) throw new Error("Booking not found");
+
+        if (booking.completionCode !== completionCode) {
+            throw new Error("Invalid completion code");
+        }
+
+        if (booking.status === ServiceBookingStatus.COMPLETED) {
+            throw new Error("Booking already completed");
+        }
+
+        booking.status = ServiceBookingStatus.COMPLETED;
+        booking.completedAt = new Date();
+        await this.bookingRepo.save(booking);
+
+        // Trigger settlement
+        await this.settlementService.settleServiceBooking(bookingId, merchantId, "merchant");
+
+        // Notify customer
+        await this.notificationService.notify(
+            booking.customerId,
+            NotificationType.SERVICE_COMPLETED,
+            "Service Completed! ✅",
+            `Your booking #${booking.bookingNumber} has been verified and completed.`,
+            { bookingId }
+        );
+
+        log.info("Service booking completed via code", { bookingId, merchantId });
+
+        return booking;
     }
 
     async getBookingById(bookingId: string, userId: string) {
