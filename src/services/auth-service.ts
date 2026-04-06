@@ -77,11 +77,11 @@ export class AuthService {
         log.info("User login successful", { userId: user.id, isNewUser });
 
         return {
-            // token: "mock-jwt-token",
             user: {
                 id: user.id,
                 is_new_user: isNewUser,
                 roles: user.userRoles?.map((ur: UserRole) => ur.role.name) || [],
+                activeRole: user.activeRole || null,
             }
         } as any;
     }

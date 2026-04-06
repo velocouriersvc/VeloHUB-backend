@@ -111,6 +111,7 @@ export class AuthController {
                 email: user.email,
                 status: user.status,
                 roles: user.userRoles.map(ur => ur.role.name),
+                activeRole: user.activeRole || null,
                 full_name: (user.email && user.email.includes('@')) ? user.email.split('@')[0] : 'Velo Admin',
                 created_date: user.createdAt
             });
