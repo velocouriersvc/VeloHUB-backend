@@ -7,6 +7,8 @@ import { swaggerSpec } from "./swagger";
 import { ensureBucket } from "./utils/minio-client";
 import logger from "./utils/logger";
 import { metricsMiddleware, register } from "./utils/metrics";
+import path from "path";
+
 
 import orderRoutes from "./routes/orderRoutes";
 import profileRoutes from "./routes/profileRoutes";
@@ -104,6 +106,16 @@ app.use("/api/v1/services/bookings", serviceBookingRoutes);
 app.use("/api/v1/services/subscriptions", subscriptionRoutes);
 app.use("/api/v1/identity", identityRoutes);
 app.use("/api/orders", orderRoutes);
+
+// Explicit DB Viewer Route for local dev
+app.get("/api/v1/db-viewer", (_req, res) => {
+  res.sendFile(path.join(__dirname, "../public/db-viewer.html"));
+});
+
+app.get("/api/v1/db-viewer.html", (_req, res) => {
+  res.sendFile(path.join(__dirname, "../public/db-viewer.html"));
+});
+
 
 // Root — Dashboard
 app.get("/", (_req: Request, res: Response) => {
