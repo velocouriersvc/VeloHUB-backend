@@ -38,8 +38,10 @@ const getUserFromRequest = async (req: AuthRequest): Promise<UserAuthResult> => 
         id: phoneNumber === "+233000000000" ? "guest-id-0" : "guest-id-1",
         phoneNumber: phoneNumber,
         email: phoneNumber === "+233000000000" ? "guest@velo.dev" : "tester@velo.dev",
-        roles: [{ name: "super_admin", allowedCountries: [], allowedCities: [] },
-                { name: "admin", allowedCountries: [], allowedCities: [] }]
+        userRoles: [
+          { role: { name: "super_admin" }, status: RoleStatus.APPROVED, allowedCountries: [], allowedCities: [] },
+          { role: { name: "admin" }, status: RoleStatus.APPROVED, allowedCountries: [], allowedCities: [] }
+        ]
       },
       phoneNumber,
       phoneValidation: { valid: true, formatted: phoneNumber }
