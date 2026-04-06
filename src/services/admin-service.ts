@@ -2047,7 +2047,22 @@ export class AdminService {
     // ════════════════════════════════════════════════════════════════
 
     async getPlatformSettings() {
-        return this.settingsRepo.find();
+        let settings = await this.settingsRepo.find();
+        if (settings.length === 0) {
+            const defaultSetting = this.settingsRepo.create({
+                country: "GH",
+                currency: "GHS",
+                minimumOrderValue: 0,
+                deliveryBaseFee: 10,
+                deliveryPerKmFee: 2,
+                isGlobalSurgeActive: false,
+                globalSurgeMultiplier: 1.0,
+                isActive: true
+            });
+            await this.settingsRepo.save(defaultSetting);
+            settings = [defaultSetting];
+        }
+        return settings;
     }
 
     async updatePlatformSetting(id: string, data: any, adminId: string) {
@@ -2519,12 +2534,27 @@ export class AdminService {
     }
 
     async updateGlobalSurge(data: { isActive: boolean; multiplier: number }, adminId: string) {
-        const settings = await this.settingsRepo.find();
+        let settings = await this.settingsRepo.find();
         
-        for (const setting of settings) {
-            setting.isGlobalSurgeActive = data.isActive;
-            setting.globalSurgeMultiplier = data.multiplier;
-            await this.settingsRepo.save(setting);
+        if (settings.length === 0) {
+            const defaultSetting = this.settingsRepo.create({
+                country: "GH",
+                currency: "GHS",
+                minimumOrderValue: 0,
+                deliveryBaseFee: 10,
+                deliveryPerKmFee: 2,
+                isGlobalSurgeActive: data.isActive,
+                globalSurgeMultiplier: data.multiplier,
+                isActive: true
+            });
+            await this.settingsRepo.save(defaultSetting);
+            settings = [defaultSetting];
+        } else {
+            for (const setting of settings) {
+                setting.isGlobalSurgeActive = data.isActive;
+                setting.globalSurgeMultiplier = data.multiplier;
+                await this.settingsRepo.save(setting);
+            }
         }
 
         log.info("Global surge updated", { ...data, adminId });
