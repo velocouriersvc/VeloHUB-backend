@@ -1008,11 +1008,21 @@ export class AdminService {
         return results;
     }
 
-    async approveMerchant(merchantId: string, adminId: string) {
-        const profile = await this.merchantProfileRepo.findOne({
-            where: { userId: merchantId },
+    async approveMerchant(inputUserIdOrProfileId: string, adminId: string) {
+        // Find profile by userId OR profile.id
+        let profile = await this.merchantProfileRepo.findOne({
+            where: { userId: inputUserIdOrProfileId },
         });
+
+        if (!profile) {
+            profile = await this.merchantProfileRepo.findOne({
+                where: { id: inputUserIdOrProfileId },
+            });
+        }
+
         if (!profile) throw new Error("Merchant not found");
+        
+        const merchantId = profile.userId;
 
         profile.status = MerchantVerificationStatus.APPROVED;
         profile.isOpen = true; // Auto-open on approval
@@ -1043,6 +1053,9 @@ export class AdminService {
                 });
                 await this.userRoleRepo.save(newUserRole);
                 log.info("Created new MERCHANT role for approved merchant", { merchantId });
+            } else {
+                log.error("CRITICAL: MERCHANT role record not found in database roles table.");
+                throw new Error("Master Merchant role not configured in database. Contact tech support.");
             }
         }
 
