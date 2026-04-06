@@ -947,6 +947,7 @@ export class AdminService {
         if (!profile) throw new Error("Merchant not found");
 
         profile.status = MerchantVerificationStatus.APPROVED;
+        profile.isOpen = true; // Auto-open on approval
         await this.merchantProfileRepo.save(profile);
 
         // Approve the merchant role too
@@ -954,10 +955,27 @@ export class AdminService {
             where: { userId: merchantId },
             relations: { role: true },
         });
-        const merchantRole = merchantRoles.find((r) => r.role.name === RoleType.MERCHANT);
-        if (merchantRole) {
-            merchantRole.status = RoleStatus.APPROVED;
-            await this.userRoleRepo.save(merchantRole);
+        // Sync both MERCHANT roles if they exist
+        for (const userRole of merchantRoles) {
+            if (userRole.role.name === RoleType.MERCHANT) {
+                userRole.status = RoleStatus.APPROVED;
+                await this.userRoleRepo.save(userRole);
+            }
+        }
+
+        // Initialize Stats if not present
+        let stats = await this.merchantStatsRepo.findOne({ where: { merchantId } });
+        if (!stats) {
+            stats = this.merchantStatsRepo.create({
+                merchantId,
+                totalOrders: 0,
+                totalRevenue: 0,
+                viewCount: 0,
+                averageRating: 0,
+                ratingCount: 0,
+                totalProducts: 0
+            });
+            await this.merchantStatsRepo.save(stats);
         }
 
         // Un-suspend user if suspended
@@ -975,7 +993,7 @@ export class AdminService {
             merchantId,
             NotificationType.MERCHANT_APPROVED,
             "Merchant Account Approved! 🎉",
-            "Congratulations! Your merchant account has been approved. You can now start listing products.",
+            "Congratulations! Your merchant account has been approved and is now live. You can now start listing products.",
             {}
         );
 
@@ -1238,7 +1256,31 @@ export class AdminService {
         if (!profile) throw new Error("Service provider not found");
 
         profile.status = MerchantVerificationStatus.APPROVED;
+        profile.isOpen = true; // Auto-open on approval
         await this.merchantProfileRepo.save(profile);
+
+        // Sync roles
+        const roles = await this.userRoleRepo.find({
+            where: { userId: merchantId },
+            relations: { role: true },
+        });
+        for (const userRole of roles) {
+            if (userRole.role.name === RoleType.MERCHANT) {
+                userRole.status = RoleStatus.APPROVED;
+                await this.userRoleRepo.save(userRole);
+            }
+        }
+
+        // Initialize Stats if not present
+        let stats = await this.merchantStatsRepo.findOne({ where: { merchantId } });
+        if (!stats) {
+            stats = this.merchantStatsRepo.create({
+                merchantId,
+                totalOrders: 0,
+                totalRevenue: 0
+            });
+            await this.merchantStatsRepo.save(stats);
+        }
 
         log.info("Admin approved service provider", { merchantId, adminId });
         return profile;
