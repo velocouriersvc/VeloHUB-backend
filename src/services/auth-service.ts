@@ -7,6 +7,9 @@ import { Profile } from "../types/profile";
 import { AuthResponse, AuthUserResponse, SupabaseUser, SyncUserResponse } from "../types/auth";
 import { Role, RoleType } from "../models/role";
 import { UserRole, RoleStatus } from "../models/user-role";
+import { BuyerProfile } from "../models/buyer-profile";
+import { DriverProfile } from "../models/driver-profile";
+import { MerchantProfile } from "../models/merchant-profile";
 import { createServiceLogger } from "../utils/logger";
 
 const log = createServiceLogger("AuthService");
@@ -113,7 +116,28 @@ export class AuthService {
 
         const approvedRoles = user.userRoles?.filter((ur: UserRole) => ur.status === RoleStatus.APPROVED).map((ur: UserRole) => ur.role.name) || [];
 
-        log.info("User login successful", { userId: user.id, isNewUser });
+        // Resolve display name and profile existence
+        let fullName: string | null = null;
+        let hasProfile = false;
+        const buyerProfile = await AppDataSource.getRepository(BuyerProfile).findOne({ where: { userId: user.id } });
+        if (buyerProfile?.fullName) {
+            fullName = buyerProfile.fullName;
+            hasProfile = true;
+        } else {
+            const driverProfile = await AppDataSource.getRepository(DriverProfile).findOne({ where: { userId: user.id } });
+            if (driverProfile?.fullName) {
+                fullName = driverProfile.fullName;
+                hasProfile = true;
+            } else {
+                const merchantProfile = await AppDataSource.getRepository(MerchantProfile).findOne({ where: { userId: user.id } });
+                if (merchantProfile?.businessName) {
+                    fullName = merchantProfile.businessName;
+                    hasProfile = true;
+                }
+            }
+        }
+
+        log.info("User login successful", { userId: user.id, isNewUser, hasProfile });
 
         return {
             user: {
@@ -121,6 +145,8 @@ export class AuthService {
                 is_new_user: isNewUser,
                 roles: approvedRoles,
                 activeRole: user.activeRole || null,
+                full_name: fullName || null,
+                has_profile: hasProfile,
             }
         } as any;
     }
