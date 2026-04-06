@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { UploadController } from "../controllers/UploadController";
 import { apiKeyMiddleware } from "../middleware/api-key-middleware";
-import { requireRole } from "../middleware/role-middleware";
+import { requireRole, requireAuth } from "../middleware/role-middleware";
 import { upload } from "../middleware/upload-middleware";
 
 const router = Router();
@@ -81,20 +81,20 @@ router.use(apiKeyMiddleware);
  */
 router.post(
   "/",
-  requireRole(["buyer", "driver", "merchant", "admin", "super_admin"]),
+  requireAuth,
   upload.single("file"),
   uploadController.uploadFile
 );
 
 router.delete(
   "/*",
-  requireRole(["buyer", "driver", "merchant", "admin", "super_admin"]),
+  requireAuth,
   uploadController.deleteFile
 );
 
 router.post(
   "/presigned/*",
-  requireRole(["buyer", "driver", "merchant", "admin", "super_admin"]),
+  requireAuth,
   uploadController.getPresignedUrl
 );
 
