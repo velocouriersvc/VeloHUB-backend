@@ -367,8 +367,9 @@ export class AdminController {
             const results = await this.adminService.syncMerchants(adminId);
             return res.json({ message: "Sync complete", ...results });
         } catch (error) {
-            log.error("Error syncing merchants", { error: (error as Error).message });
-            return res.status(500).json({ message: "Internal server error" });
+            const msg = (error as Error).message;
+            log.error("Error syncing merchants", { error: msg });
+            return res.status(500).json({ message: "Internal server error", error: msg });
         }
     };
 
