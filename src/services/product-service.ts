@@ -199,7 +199,7 @@ export class ProductService {
         });
 
         if (product) {
-            productViewsTotal.inc({ category: product.category });
+            productViewsTotal.inc({ category: product.category || "unknown" });
         }
 
         return product;

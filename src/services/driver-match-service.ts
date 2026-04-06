@@ -104,7 +104,7 @@ export class DriverMatchService {
                 userId: profile.userId,
                 fullName: profile.fullName,
                 vehicleType: profile.vehicleType,
-                plateNumber: profile.plateNumber,
+                plateNumber: profile.plateNumber || "N/A",
                 lat: nearby.location.lat,
                 lng: nearby.location.lng,
                 distanceKm: nearby.distanceKm,

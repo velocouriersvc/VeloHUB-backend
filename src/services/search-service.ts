@@ -341,7 +341,7 @@ export class SearchService {
                 id: p.id,
                 name: p.name,
                 description: p.description,
-                category: p.category,
+                category: p.category || "Uncategorized",
                 price: Number(p.price),
                 compareAtPrice: p.compareAtPrice ? Number(p.compareAtPrice) : null,
                 images: p.images || [],
