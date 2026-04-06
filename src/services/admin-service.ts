@@ -427,7 +427,7 @@ export class AdminService {
 
     async getRiderStats() {
         const users = await this.userRepo.find({
-            relations: ["buyerProfile"],
+            relations: ["buyerProfile", "userRoles", "userRoles.role"],
             order: { createdAt: "DESC" }
         });
 
@@ -475,7 +475,8 @@ export class AdminService {
             total_spent: statsMap[u.id]?.spent || 0,
             total_orders: statsMap[u.id]?.orders || 0,
             total_rides: statsMap[u.id]?.rides || 0,
-            wallet_balance: walletMap.get(u.id) || 0
+            wallet_balance: walletMap.get(u.id) || 0,
+            roles: u.userRoles?.filter(ur => ur.status === RoleStatus.APPROVED).map(ur => ur.role.name) || []
         }));
     }
 
