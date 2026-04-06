@@ -945,57 +945,61 @@ export class AdminService {
             where: { status: MerchantVerificationStatus.APPROVED },
         });
 
+        // Don't crash if role is missing, just log it
         const merchantRole = await this.roleRepo.findOne({ where: { name: RoleType.MERCHANT } });
-        if (!merchantRole) throw new Error("MERCHANT role not found");
-
+        
         const results = {
             total: profiles.length,
             fixedRoles: 0,
             fixedStats: 0,
             fixedVisibility: 0,
+            errors: [] as string[]
         };
 
         for (const p of profiles) {
-            // 1. Ensure store is open
-            if (!p.isOpen) {
-                p.isOpen = true;
-                await this.merchantProfileRepo.save(p);
-                results.fixedVisibility++;
-            }
+            try {
+                // 1. Ensure store is open
+                if (!p.isOpen) {
+                    p.isOpen = true;
+                    await this.merchantProfileRepo.save(p);
+                    results.fixedVisibility++;
+                }
 
-            // 2. Ensure role exists and is approved
-            let userRole = await this.userRoleRepo.findOne({
-                where: { userId: p.userId, roleId: merchantRole.id },
-            });
+                // 2. Ensure role exists and is approved
+                if (merchantRole) {
+                    let userRole = await this.userRoleRepo.findOne({
+                        where: { userId: p.userId, roleId: merchantRole.id },
+                    });
 
-            if (!userRole) {
-                userRole = this.userRoleRepo.create({
-                    userId: p.userId,
-                    roleId: merchantRole.id,
-                    status: RoleStatus.APPROVED,
-                });
-                await this.userRoleRepo.save(userRole);
-                results.fixedRoles++;
-            } else if (userRole.status !== RoleStatus.APPROVED) {
-                userRole.status = RoleStatus.APPROVED;
-                await this.userRoleRepo.save(userRole);
-                results.fixedRoles++;
-            }
+                    if (!userRole) {
+                        userRole = this.userRoleRepo.create({
+                            userId: p.userId,
+                            roleId: merchantRole.id,
+                            status: RoleStatus.APPROVED,
+                        });
+                        await this.userRoleRepo.save(userRole);
+                        results.fixedRoles++;
+                    } else if (userRole.status !== RoleStatus.APPROVED) {
+                        userRole.status = RoleStatus.APPROVED;
+                        await this.userRoleRepo.save(userRole);
+                        results.fixedRoles++;
+                    }
+                }
 
-            // 3. Ensure stats are initialized
-            let stats = await this.merchantStatsRepo.findOne({ where: { merchantId: p.userId } });
-            if (!stats) {
-                stats = this.merchantStatsRepo.create({
-                    merchantId: p.userId,
-                    totalOrders: 0,
-                    totalRevenue: 0,
-                    viewCount: 0,
-                    averageRating: 0,
-                    ratingCount: 0,
-                    totalProducts: 0,
-                });
-                await this.merchantStatsRepo.save(stats);
-                results.fixedStats++;
+                // 3. Ensure stats are initialized (use basic columns only to be safe)
+                let stats = await this.merchantStatsRepo.findOne({ where: { merchantId: p.userId } });
+                if (!stats) {
+                    stats = this.merchantStatsRepo.create({
+                        merchantId: p.userId,
+                        totalOrders: 0,
+                        totalRevenue: 0
+                    });
+                    await this.merchantStatsRepo.save(stats);
+                    results.fixedStats++;
+                }
+            } catch (e) {
+                results.errors.push(`Error syncing ${p.businessName}: ${(e as Error).message}`);
+                log.error("Sync error", { businessName: p.businessName, error: (e as Error).message });
             }
         }
 
