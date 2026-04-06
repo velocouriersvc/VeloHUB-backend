@@ -5,6 +5,9 @@ import { AppDataSource } from "../db/data-source";
 import { UserRole, RoleStatus } from "../models/user-role";
 import { createServiceLogger } from "../utils/logger";
 import { User } from "../models/user";
+import { BuyerProfile } from "../models/buyer-profile";
+import { DriverProfile } from "../models/driver-profile";
+import { MerchantProfile } from "../models/merchant-profile";
 
 const log = createServiceLogger("AuthController");
 
@@ -106,6 +109,23 @@ export class AuthController {
                 return res.status(404).json({ message: "User not found" });
             }
 
+            // Resolve actual display name from profile tables
+            let fullName: string | null = null;
+            const buyerProfile = await AppDataSource.getRepository(BuyerProfile).findOne({ where: { userId: user.id } });
+            if (buyerProfile?.fullName) {
+                fullName = buyerProfile.fullName;
+            } else {
+                const driverProfile = await AppDataSource.getRepository(DriverProfile).findOne({ where: { userId: user.id } });
+                if (driverProfile?.fullName) {
+                    fullName = driverProfile.fullName;
+                } else {
+                    const merchantProfile = await AppDataSource.getRepository(MerchantProfile).findOne({ where: { userId: user.id } });
+                    if (merchantProfile?.businessName) {
+                        fullName = merchantProfile.businessName;
+                    }
+                }
+            }
+
             return res.status(200).json({
                 id: user.id,
                 phoneNumber: user.phoneNumber,
@@ -113,7 +133,7 @@ export class AuthController {
                 status: user.status,
                 roles: (user.userRoles as UserRole[]).filter((ur: UserRole) => ur.status === RoleStatus.APPROVED).map(ur => ur.role.name),
                 activeRole: user.activeRole || null,
-                full_name: (user.email && user.email.includes('@')) ? user.email.split('@')[0] : 'Velo Admin',
+                full_name: fullName || user.email || user.phoneNumber,
                 created_date: user.createdAt
             });
         } catch (error) {

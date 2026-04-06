@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { NotificationController } from "../controllers/NotificationController";
 import { apiKeyMiddleware } from "../middleware/api-key-middleware";
-import { requireRole } from "../middleware/role-middleware";
+import { requireRole, requireAuth } from "../middleware/role-middleware";
 
 const router = Router();
 const notificationController = new NotificationController();
@@ -141,7 +141,7 @@ router.put("/read-all", anyRole, notificationController.markAllAsRead);
  *       403:
  *         description: Invalid API key or role not approved
  */
-router.post("/push-token", anyRole, notificationController.registerPushToken);
-router.delete("/push-token", anyRole, notificationController.removePushToken);
+router.post("/push-token", requireAuth, notificationController.registerPushToken);
+router.delete("/push-token", requireAuth, notificationController.removePushToken);
 
 export default router;
