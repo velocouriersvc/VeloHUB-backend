@@ -505,7 +505,7 @@ export class RideService {
     async getRideById(rideId: string): Promise<Ride | null> {
         return this.rideRepo.findOne({
             where: { id: rideId },
-            relations: ["stops", "sharedContacts"],
+            relations: ["stops", "sharedContacts", "driver", "driver.driverProfile"],
         });
     }
 
@@ -519,6 +519,7 @@ export class RideService {
     ): Promise<{ rides: Ride[]; total: number }> {
         const [rides, total] = await this.rideRepo.findAndCount({
             where: { customerId },
+            relations: ["driver", "driver.driverProfile"],
             order: { createdAt: "DESC" },
             take: limit,
             skip: offset,
@@ -537,6 +538,7 @@ export class RideService {
     ): Promise<{ rides: Ride[]; total: number }> {
         const [rides, total] = await this.rideRepo.findAndCount({
             where: { driverId },
+            relations: ["driver", "driver.driverProfile"],
             order: { createdAt: "DESC" },
             take: limit,
             skip: offset,
@@ -557,6 +559,8 @@ export class RideService {
             })
             .leftJoinAndSelect("ride.stops", "stops")
             .leftJoinAndSelect("ride.sharedContacts", "contacts")
+            .leftJoinAndSelect("ride.driver", "driver")
+            .leftJoinAndSelect("driver.driverProfile", "driverProfile")
             .getOne();
     }
 
@@ -571,6 +575,8 @@ export class RideService {
                 finalStatuses: [RideStatus.COMPLETED, RideStatus.CANCELLED],
             })
             .leftJoinAndSelect("ride.stops", "stops")
+            .leftJoinAndSelect("ride.driver", "driver")
+            .leftJoinAndSelect("driver.driverProfile", "driverProfile")
             .getOne();
     }
 
