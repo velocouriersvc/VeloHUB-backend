@@ -201,12 +201,13 @@ This is used for role-based access (buyer, driver, merchant). Use a real registe
         },
         MerchantSetupBody: {
           type: "object",
-          required: ["phone", "business_name", "business_type", "business_address", "location", "country_code", "privacy_consent"],
+          required: ["phone", "business_name", "business_type", "business_address", "business_email", "location", "country_code", "privacy_consent"],
           properties: {
             phone: { type: "string", example: "+233541234567" },
             business_name: { type: "string", example: "Tasty Treats" },
             business_type: { type: "string", example: "Restaurant" },
             business_address: { type: "string", example: "123 Main St, Accra" },
+            business_email: { type: "string", format: "email", example: "contact@tastytreats.com" },
             location: { type: "string", example: "Greater Accra" },
             country_code: { type: "string", example: "GH" },
             ghana_card_number: { type: "string", example: "GHA-123456789-0" },

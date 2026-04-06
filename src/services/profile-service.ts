@@ -199,8 +199,7 @@ export class ProfileService {
                 userId,
                 businessName: data.business_name,
                 category: data.business_type,
-                // Assuming business email/phone might be same as default if not explicitly separate in form
-                businessEmail: null,
+                businessEmail: data.business_email,
                 businessPhone: data.phone,
                 address: data.business_address,
                 region: data.location,

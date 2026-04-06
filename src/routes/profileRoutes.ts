@@ -112,6 +112,7 @@ router.post("/driver", requireAuth, profileController.setupDriver);
  *             business_name: "Tasty Treats"
  *             business_type: "Restaurant"
  *             business_address: "123 Main St, Accra"
+ *             business_email: "contact@tastytreats.com"
  *             location: "Greater Accra"
  *             country_code: "GH"
  *             ghana_card_number: "GHA-123456789-0"

@@ -57,6 +57,7 @@ export interface MerchantSetupPayload {
     business_name: string;
     business_type: string;
     business_address: string;
+    business_email: string;
     location: string;
     country_code: string;
     ghana_card_number?: string;
