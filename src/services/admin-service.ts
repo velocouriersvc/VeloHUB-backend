@@ -950,16 +950,31 @@ export class AdminService {
         profile.isOpen = true; // Auto-open on approval
         await this.merchantProfileRepo.save(profile);
 
-        // Approve the merchant role too
+        // Approve or create the merchant role
         const merchantRoles = await this.userRoleRepo.find({
             where: { userId: merchantId },
             relations: { role: true },
         });
-        // Sync both MERCHANT roles if they exist
+        
+        let hasMerchantRole = false;
         for (const userRole of merchantRoles) {
             if (userRole.role.name === RoleType.MERCHANT) {
                 userRole.status = RoleStatus.APPROVED;
                 await this.userRoleRepo.save(userRole);
+                hasMerchantRole = true;
+            }
+        }
+
+        if (!hasMerchantRole) {
+            const role = await this.roleRepo.findOne({ where: { name: RoleType.MERCHANT } });
+            if (role) {
+                const newUserRole = this.userRoleRepo.create({
+                    userId: merchantId,
+                    roleId: role.id,
+                    status: RoleStatus.APPROVED
+                });
+                await this.userRoleRepo.save(newUserRole);
+                log.info("Created new MERCHANT role for approved merchant", { merchantId });
             }
         }
 
@@ -1259,15 +1274,30 @@ export class AdminService {
         profile.isOpen = true; // Auto-open on approval
         await this.merchantProfileRepo.save(profile);
 
-        // Sync roles
+        // Sync or create role
         const roles = await this.userRoleRepo.find({
             where: { userId: merchantId },
             relations: { role: true },
         });
+        
+        let hasMerchantRole = false;
         for (const userRole of roles) {
             if (userRole.role.name === RoleType.MERCHANT) {
                 userRole.status = RoleStatus.APPROVED;
                 await this.userRoleRepo.save(userRole);
+                hasMerchantRole = true;
+            }
+        }
+
+        if (!hasMerchantRole) {
+            const role = await this.roleRepo.findOne({ where: { name: RoleType.MERCHANT } });
+            if (role) {
+                const newUserRole = this.userRoleRepo.create({
+                    userId: merchantId,
+                    roleId: role.id,
+                    status: RoleStatus.APPROVED
+                });
+                await this.userRoleRepo.save(newUserRole);
             }
         }
 
