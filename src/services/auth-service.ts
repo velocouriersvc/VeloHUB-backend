@@ -5,8 +5,8 @@ import { OtpService } from "./otp-service";
 import { supabase } from "../utils/supabase-client";
 import { Profile } from "../types/profile";
 import { AuthResponse, AuthUserResponse, SupabaseUser, SyncUserResponse } from "../types/auth";
-import { Role } from "../models/role";
-import { UserRole } from "../models/user-role";
+import { Role, RoleType } from "../models/role";
+import { UserRole, RoleStatus } from "../models/user-role";
 import { createServiceLogger } from "../utils/logger";
 
 const log = createServiceLogger("AuthService");
@@ -42,6 +42,38 @@ export class AuthService {
         }
     }
 
+    private async ensureBuyerRoleExists(user: User) {
+        await AppDataSource.transaction(async manager => {
+            let buyerRole = await manager.findOne(Role, { where: { name: RoleType.BUYER } });
+            if (!buyerRole) {
+                buyerRole = manager.create(Role, {
+                    name: RoleType.BUYER,
+                    description: "Standard buyer role"
+                });
+                await manager.save(buyerRole);
+            }
+
+            const existingUserRole = await manager.findOne(UserRole, {
+                where: { userId: user.id, roleId: buyerRole.id }
+            });
+
+            if (!existingUserRole) {
+                const userRole = manager.create(UserRole, {
+                    userId: user.id,
+                    roleId: buyerRole.id,
+                    status: RoleStatus.APPROVED
+                });
+                await manager.save(userRole);
+            }
+
+            const persistedUser = await manager.findOne(User, { where: { id: user.id } });
+            if (persistedUser && !persistedUser.activeRole) {
+                persistedUser.activeRole = RoleType.BUYER;
+                await manager.save(persistedUser);
+            }
+        });
+    }
+
     async verifyOtp(phoneNumber: string, code: string): Promise<AuthResponse | null> {
         // 1. Check verification with OtpService (Local DB)
         const isApproved = await this.otpService.verifyOtp(phoneNumber, code);
@@ -51,9 +83,6 @@ export class AuthService {
         }
 
         // 2. Check if user exists in local DB
-        // const profile = await this.getProfileByPhone(phoneNumber); // Removed Supabase check
-        // const isNewUser = !profile;
-
         let user = await this.userRepository.findOne({
             where: { phoneNumber },
             relations: ["userRoles", "userRoles.role"]
@@ -74,13 +103,23 @@ export class AuthService {
         user.lastLoginAt = new Date();
         await this.userRepository.save(user);
 
+        if (!user.userRoles?.length) {
+            await this.ensureBuyerRoleExists(user);
+            user = await this.userRepository.findOne({
+                where: { id: user.id },
+                relations: ["userRoles", "userRoles.role"]
+            }) as User;
+        }
+
+        const approvedRoles = user.userRoles?.filter((ur: UserRole) => ur.status === RoleStatus.APPROVED).map((ur: UserRole) => ur.role.name) || [];
+
         log.info("User login successful", { userId: user.id, isNewUser });
 
         return {
             user: {
                 id: user.id,
                 is_new_user: isNewUser,
-                roles: user.userRoles?.map((ur: UserRole) => ur.role.name) || [],
+                roles: approvedRoles,
                 activeRole: user.activeRole || null,
             }
         } as any;
@@ -117,7 +156,7 @@ export class AuthService {
                 email: user.email || undefined,
                 phoneNumber: user.phoneNumber || undefined,
                 status: user.status,
-                roles: user.userRoles?.map((ur: UserRole) => ur.role.name) || [],
+                roles: user.userRoles?.filter((ur: UserRole) => ur.status === RoleStatus.APPROVED).map((ur: UserRole) => ur.role.name) || [],
             },
             isNewUser
         };

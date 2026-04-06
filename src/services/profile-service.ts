@@ -5,10 +5,9 @@ import { DriverProfile, DriverVerificationStatus } from "../models/driver-profil
 import { MerchantProfile, MerchantVerificationStatus } from "../models/merchant-profile";
 import { Identification, IdentificationStatus } from "../models/identification";
 import { supabase, supabaseAdmin } from "../utils/supabase-client";
-import { RoleType } from "../models/role";
+import { Role, RoleType } from "../models/role";
 import { User, UserStatus } from "../models/user";
 import { UserRole, RoleStatus } from "../models/user-role";
-import { Role } from "../models/role";
 import { BuyerSetupPayload, DriverSetupPayload, MerchantSetupPayload } from "../types/profile";
 import { createServiceLogger } from "../utils/logger";
 
@@ -231,19 +230,25 @@ export class ProfileService {
     }
 
     private async ensureRole(queryRunner: QueryRunner, userId: string, roleName: RoleType) {
-        const role = await queryRunner.manager.findOne(Role, { where: { name: roleName } });
-        if (role) {
-            const existingUserRole = await queryRunner.manager.findOne(UserRole, {
-                where: { userId, roleId: role.id }
+        let role = await queryRunner.manager.findOne(Role, { where: { name: roleName } });
+        if (!role) {
+            role = queryRunner.manager.create(Role, {
+                name: roleName,
+                description: `${roleName} role`
             });
-            if (!existingUserRole) {
-                const userRole = queryRunner.manager.create(UserRole, {
-                    userId,
-                    roleId: role.id,
-                    status: (roleName === RoleType.BUYER) ? RoleStatus.APPROVED : RoleStatus.PENDING
-                });
-                await queryRunner.manager.save(userRole);
-            }
+            await queryRunner.manager.save(role);
+        }
+
+        const existingUserRole = await queryRunner.manager.findOne(UserRole, {
+            where: { userId, roleId: role.id }
+        });
+        if (!existingUserRole) {
+            const userRole = queryRunner.manager.create(UserRole, {
+                userId,
+                roleId: role.id,
+                status: (roleName === RoleType.BUYER) ? RoleStatus.APPROVED : RoleStatus.PENDING
+            });
+            await queryRunner.manager.save(userRole);
         }
     }
 }

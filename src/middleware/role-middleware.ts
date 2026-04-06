@@ -28,7 +28,9 @@ type UserAuthResult = {
 };
 
 const getUserFromRequest = async (req: AuthRequest): Promise<UserAuthResult> => {
-  const phoneNumber = (req.body.phoneNumber || req.body.phone || req.headers['x-user-phone']) as string;
+  const rawQueryPhone = req.query?.phoneNumber;
+  const queryPhone = Array.isArray(rawQueryPhone) ? rawQueryPhone[0] : rawQueryPhone;
+  const phoneNumber = (req.body.phoneNumber || req.body.phone || queryPhone || req.headers['x-user-phone']) as string;
 
   // Guest bypass for test phone numbers
   const guestNumbers = ["+233000000000", "+233000000001"];

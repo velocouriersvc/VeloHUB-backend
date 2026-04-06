@@ -1,5 +1,5 @@
 import { AppDataSource } from "../db/data-source";
-import { Between, In, ILike, IsNull, Not } from "typeorm";
+import { Between, In, ILike, IsNull, Not, EntityManager } from "typeorm";
 import { Order, OrderStatus, OrderPaymentStatus, OrderCancelledBy, DeliveryType } from "../models/order";
 import { OrderStatusHistory } from "../models/order-status-history";
 import { Product } from "../models/product";
@@ -1008,8 +1008,36 @@ export class AdminService {
         return results;
     }
 
+    private async ensureUserRole(manager: EntityManager, userId: string, roleName: RoleType, status: RoleStatus, updateExisting: boolean = true) {
+        let role = await manager.findOne(Role, { where: { name: roleName } });
+        if (!role) {
+            role = manager.create(Role, {
+                name: roleName,
+                description: `${roleName} role`
+            });
+            await manager.save(role);
+        }
+
+        let userRole = await manager.findOne(UserRole, {
+            where: { userId, roleId: role.id }
+        });
+
+        if (!userRole) {
+            userRole = manager.create(UserRole, {
+                userId,
+                roleId: role.id,
+                status
+            });
+            await manager.save(userRole);
+        } else if (updateExisting && userRole.status !== status) {
+            userRole.status = status;
+            await manager.save(userRole);
+        }
+
+        return userRole;
+    }
+
     async approveMerchant(inputUserIdOrProfileId: string, adminId: string) {
-        // Find profile by userId OR profile.id
         let profile = await this.merchantProfileRepo.findOne({
             where: { userId: inputUserIdOrProfileId },
         });
@@ -1024,53 +1052,27 @@ export class AdminService {
         
         const merchantId = profile.userId;
 
-        profile.status = MerchantVerificationStatus.APPROVED;
-        profile.isOpen = true; // Auto-open on approval
-        await this.merchantProfileRepo.save(profile);
+        await AppDataSource.transaction(async manager => {
+            const txProfile = await manager.findOne(MerchantProfile, { where: { id: profile!.id } });
+            if (!txProfile) throw new Error("Merchant not found");
 
-        // Approve or create the merchant role
-        const merchantRoles = await this.userRoleRepo.find({
-            where: { userId: merchantId },
-            relations: { role: true },
+            txProfile.status = MerchantVerificationStatus.APPROVED;
+            txProfile.isOpen = true;
+            await manager.save(txProfile);
+
+            await this.ensureUserRole(manager, merchantId, RoleType.MERCHANT, RoleStatus.APPROVED);
+
+            const user = await manager.findOne(User, { where: { id: merchantId } });
+            if (user) {
+                if (user.status === UserStatus.SUSPENDED) {
+                    user.status = UserStatus.ACTIVE;
+                }
+                user.activeRole = RoleType.MERCHANT;
+                await manager.save(user);
+            }
+
+            profile = txProfile;
         });
-        
-        let hasMerchantRole = false;
-        for (const userRole of merchantRoles) {
-            if (userRole.role.name === RoleType.MERCHANT) {
-                userRole.status = RoleStatus.APPROVED;
-                await this.userRoleRepo.save(userRole);
-                hasMerchantRole = true;
-            }
-        }
-
-        if (!hasMerchantRole) {
-            const role = await this.roleRepo.findOne({ where: { name: RoleType.MERCHANT } });
-            if (role) {
-                const newUserRole = this.userRoleRepo.create({
-                    userId: merchantId,
-                    roleId: role.id,
-                    status: RoleStatus.APPROVED
-                });
-                await this.userRoleRepo.save(newUserRole);
-                log.info("Created new MERCHANT role for approved merchant", { merchantId });
-            } else {
-                log.error("CRITICAL: MERCHANT role record not found in database roles table.");
-                throw new Error("Master Merchant role not configured in database. Contact tech support.");
-            }
-        }
-
-        // Un-suspend user if suspended
-        const user = await this.userRepo.findOne({ where: { id: merchantId } });
-        if (user && user.status === UserStatus.SUSPENDED) {
-            user.status = UserStatus.ACTIVE;
-            await this.userRepo.save(user);
-        }
-
-        // Set active role
-        if (user) {
-            user.activeRole = RoleType.MERCHANT;
-            await this.userRepo.save(user);
-        }
 
         // Initialize Stats if not present
         let stats = await this.merchantStatsRepo.findOne({ where: { merchantId } });
@@ -1087,7 +1089,7 @@ export class AdminService {
             await this.merchantStatsRepo.save(stats);
         }
 
-        // Ensure wallet exists
+        const user = await this.userRepo.findOne({ where: { id: merchantId } });
         await this.walletService.createWallet(merchantId, user?.country || "GH");
 
         // Notify merchant
@@ -1352,59 +1354,34 @@ export class AdminService {
     }
 
     async approveServiceProvider(merchantId: string, adminId: string) {
-        const profile = await this.merchantProfileRepo.findOne({
+        let profile = await this.merchantProfileRepo.findOne({
             where: { userId: merchantId, category: "services" as any },
         });
         if (!profile) throw new Error("Service provider not found");
 
-        profile.status = MerchantVerificationStatus.APPROVED;
-        profile.isOpen = true; // Auto-open on approval
-        await this.merchantProfileRepo.save(profile);
+        const profileId = profile.id;
 
-        // Sync or create role
-        const roles = await this.userRoleRepo.find({
-            where: { userId: merchantId },
-            relations: { role: true },
+        await AppDataSource.transaction(async manager => {
+            const txProfile = await manager.findOne(MerchantProfile, { where: { id: profileId } });
+            if (!txProfile) throw new Error("Service provider not found");
+
+            txProfile.status = MerchantVerificationStatus.APPROVED;
+            txProfile.isOpen = true;
+            await manager.save(txProfile);
+
+            await this.ensureUserRole(manager, merchantId, RoleType.MERCHANT, RoleStatus.APPROVED);
+
+            const user = await manager.findOne(User, { where: { id: merchantId } });
+            if (user) {
+                user.activeRole = RoleType.MERCHANT;
+                await manager.save(user);
+            }
+
+            profile = txProfile;
         });
-        
-        let hasMerchantRole = false;
-        for (const userRole of roles) {
-            if (userRole.role.name === RoleType.MERCHANT) {
-                userRole.status = RoleStatus.APPROVED;
-                await this.userRoleRepo.save(userRole);
-                hasMerchantRole = true;
-            }
-        }
 
-        if (!hasMerchantRole) {
-            const role = await this.roleRepo.findOne({ where: { name: RoleType.MERCHANT } });
-            if (role) {
-                const newUserRole = this.userRoleRepo.create({
-                    userId: merchantId,
-                    roleId: role.id,
-                    status: RoleStatus.APPROVED
-                });
-                await this.userRoleRepo.save(newUserRole);
-            }
-        }
-
-        // Set active role
         const user = await this.userRepo.findOne({ where: { id: merchantId } });
-        if (user) {
-            user.activeRole = RoleType.MERCHANT;
-            await this.userRepo.save(user);
-        }
-
-        // Initialize Stats if not present
-        let stats = await this.merchantStatsRepo.findOne({ where: { merchantId } });
-        if (!stats) {
-            stats = this.merchantStatsRepo.create({
-                merchantId,
-                totalOrders: 0,
-                totalRevenue: 0
-            });
-            await this.merchantStatsRepo.save(stats);
-        }
+        await this.walletService.createWallet(merchantId, user?.country || "GH");
 
         log.info("Admin approved service provider", { merchantId, adminId });
         return profile;

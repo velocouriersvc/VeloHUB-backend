@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { AuthController } from "../controllers/AuthController";
 import { apiKeyMiddleware } from "../middleware/api-key-middleware";
-import { requireRole } from "../middleware/role-middleware";
+import { requireAuth } from "../middleware/role-middleware";
 
 const router = Router();
 const authController = new AuthController();
@@ -161,6 +161,6 @@ router.post("/sync", authController.syncUser);
  *       403:
  *         description: Invalid API key or role not approved
  */
-router.get("/me", requireRole(["admin", "buyer", "driver", "merchant"]), authController.getMe);
+router.get("/me", requireAuth, authController.getMe);
 
 export default router;

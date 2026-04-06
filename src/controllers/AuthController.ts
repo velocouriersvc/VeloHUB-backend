@@ -2,8 +2,9 @@ import { Request, Response } from "express";
 import { AuthService } from "../services/auth-service";
 import { RequestOtpPayload, VerifyOtpPayload, AuthenticatedRequest } from "../types/auth";
 import { AppDataSource } from "../db/data-source";
-import { User } from "../models/user";
+import { UserRole, RoleStatus } from "../models/user-role";
 import { createServiceLogger } from "../utils/logger";
+import { User } from "../models/user";
 
 const log = createServiceLogger("AuthController");
 
@@ -110,7 +111,7 @@ export class AuthController {
                 phoneNumber: user.phoneNumber,
                 email: user.email,
                 status: user.status,
-                roles: user.userRoles.map(ur => ur.role.name),
+                roles: (user.userRoles as UserRole[]).filter((ur: UserRole) => ur.status === RoleStatus.APPROVED).map(ur => ur.role.name),
                 activeRole: user.activeRole || null,
                 full_name: (user.email && user.email.includes('@')) ? user.email.split('@')[0] : 'Velo Admin',
                 created_date: user.createdAt
