@@ -279,17 +279,27 @@ export class AdminController {
 
     /**
      * PATCH /admin/merchants/:id
+     * Updates merchant status and triggers side effects (roles, wallets, stats, notifications)
      */
     updateMerchantStatus = async (req: Request, res: Response) => {
         try {
             const userId = req.params.id;
             const { status } = req.body;
+            const adminId = (req as any).user?.id || "Admin";
 
-            const merchant = await this.merchantRepo.findOneBy({ userId });
-            if (!merchant) return res.status(404).json({ message: "Merchant not found" });
+            let result;
+            if (status === MerchantVerificationStatus.APPROVED) {
+                result = await this.adminService.approveMerchant(userId, adminId);
+            } else if (status === MerchantVerificationStatus.REJECTED) {
+                result = await this.adminService.suspendMerchant(userId, adminId, "Rejected by admin");
+            } else {
+                const merchant = await this.merchantRepo.findOneBy({ userId });
+                if (!merchant) return res.status(404).json({ message: "Merchant not found" });
 
-            merchant.status = status as MerchantVerificationStatus;
-            await this.merchantRepo.save(merchant);
+                merchant.status = status as MerchantVerificationStatus;
+                await this.merchantRepo.save(merchant);
+                result = merchant;
+            }
 
             await AuditLogController.record({
                 action: "Update Merchant Status",
@@ -297,12 +307,14 @@ export class AdminController {
                 entity_id: userId,
                 performed_by: (req as any).user?.email || "Admin",
                 details: `Status updated to ${status}`,
-                risk_level: AuditRiskLevel.LOW
+                risk_level: status === MerchantVerificationStatus.APPROVED ? AuditRiskLevel.MEDIUM : AuditRiskLevel.LOW
             });
 
-            return res.json({ message: "Merchant status updated", status: merchant.status });
+            return res.json({ message: "Merchant status updated", status: result.status });
         } catch (error) {
-            console.error("Error updating merchant status:", error);
+            log.error("Error updating merchant status:", error);
+            const msg = (error as Error).message;
+            if (msg.includes("not found")) return res.status(404).json({ message: msg });
             return res.status(500).json({ message: "Internal server error" });
         }
     };

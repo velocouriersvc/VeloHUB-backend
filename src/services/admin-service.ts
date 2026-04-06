@@ -1041,6 +1041,19 @@ export class AdminService {
             }
         }
 
+        // Un-suspend user if suspended
+        const user = await this.userRepo.findOne({ where: { id: merchantId } });
+        if (user && user.status === UserStatus.SUSPENDED) {
+            user.status = UserStatus.ACTIVE;
+            await this.userRepo.save(user);
+        }
+
+        // Set active role
+        if (user) {
+            user.activeRole = RoleType.MERCHANT;
+            await this.userRepo.save(user);
+        }
+
         // Initialize Stats if not present
         let stats = await this.merchantStatsRepo.findOne({ where: { merchantId } });
         if (!stats) {
@@ -1054,13 +1067,6 @@ export class AdminService {
                 totalProducts: 0
             });
             await this.merchantStatsRepo.save(stats);
-        }
-
-        // Un-suspend user if suspended
-        const user = await this.userRepo.findOne({ where: { id: merchantId } });
-        if (user && user.status === UserStatus.SUSPENDED) {
-            user.status = UserStatus.ACTIVE;
-            await this.userRepo.save(user);
         }
 
         // Ensure wallet exists
@@ -1362,6 +1368,13 @@ export class AdminService {
                 });
                 await this.userRoleRepo.save(newUserRole);
             }
+        }
+
+        // Set active role
+        const user = await this.userRepo.findOne({ where: { id: merchantId } });
+        if (user) {
+            user.activeRole = RoleType.MERCHANT;
+            await this.userRepo.save(user);
         }
 
         // Initialize Stats if not present
