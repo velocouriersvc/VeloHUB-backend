@@ -272,4 +272,34 @@ router.get("/history", requireRole(["buyer"]), rideController.getRideHistory);
  */
 router.get("/:id", requireRole(["buyer", "driver"]), rideController.getRide);
 
+/**
+ * @openapi
+ * /rides/nearby-drivers:
+ *   post:
+ *     tags: [Rides]
+ *     summary: Get nearby available drivers
+ *     description: Returns a list of nearby drivers for the map overlay.
+ *     security:
+ *       - ApiKeyAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [lat, lng]
+ *             properties:
+ *               lat:
+ *                 type: number
+ *               lng:
+ *                 type: number
+ *               radiusKm:
+ *                 type: number
+ *                 default: 10
+ *     responses:
+ *       200:
+ *         description: List of nearby drivers with coordinates
+ */
+router.post("/nearby-drivers", requireRole(["buyer"]), rideController.getNearbyDrivers);
+
 export default router;

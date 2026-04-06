@@ -14,6 +14,7 @@ import { createServiceLogger } from "../utils/logger";
 import { rideEventsTotal } from "../utils/metrics";
 import { PlatformSettings } from "../models/platform-settings";
 import { SettlementService } from "./settlement-service";
+import { emitRideEvent } from "../socket-gateway";
 
 const log = createServiceLogger("RideService");
 
@@ -227,6 +228,13 @@ export class RideService {
             );
         }
 
+        // Real-time: emit ride:searching event
+        emitRideEvent(savedRide.id, "ride:status", {
+            rideId: savedRide.id,
+            status: RideStatus.SEARCHING,
+            driversNotified: drivers.length,
+        });
+
         return savedRide;
     }
 
@@ -266,6 +274,14 @@ export class RideService {
             driverName,
             rideId
         );
+
+        // Real-time: emit ride:accepted
+        emitRideEvent(rideId, "ride:status", {
+            rideId,
+            status: RideStatus.ACCEPTED,
+            driverId: driverUserId,
+            driverName,
+        });
 
         return updatedRide;
     }
@@ -375,6 +391,8 @@ export class RideService {
         await this.redisLocation.setRideTracking(rideId, { status: RideStatus.DRIVER_ENROUTE });
         await this.notificationService.notifyDriverEnroute(ride.customerId, driverName, rideId);
 
+        emitRideEvent(rideId, "ride:status", { rideId, status: RideStatus.DRIVER_ENROUTE, driverName });
+
         return updated;
     }
 
@@ -394,6 +412,8 @@ export class RideService {
 
         await this.redisLocation.setRideTracking(rideId, { status: RideStatus.ARRIVED });
         await this.notificationService.notifyDriverArrived(ride.customerId, driverName, rideId);
+
+        emitRideEvent(rideId, "ride:status", { rideId, status: RideStatus.ARRIVED, driverName });
 
         return updated;
     }
@@ -415,6 +435,8 @@ export class RideService {
 
         await this.redisLocation.setRideTracking(rideId, { status: RideStatus.ONGOING });
         await this.notificationService.notifyRideStarted(ride.customerId, rideId);
+
+        emitRideEvent(rideId, "ride:status", { rideId, status: RideStatus.ONGOING });
 
         // Notify shared contacts that ride has started
         await this.notifySharedContacts(rideId, ride);
@@ -447,6 +469,8 @@ export class RideService {
         if (updated.driverId) {
             await this.redisLocation.setDriverStatus(updated.driverId, "online");
         }
+
+        emitRideEvent(rideId, "ride:status", { rideId, status: RideStatus.COMPLETED });
 
         return updated;
     }
@@ -493,6 +517,8 @@ export class RideService {
         if (ride.driverId) {
             await this.redisLocation.setDriverStatus(ride.driverId, "online");
         }
+
+        emitRideEvent(rideId, "ride:status", { rideId, status: RideStatus.CANCELLED, cancelledBy, reason });
 
         return updated;
     }

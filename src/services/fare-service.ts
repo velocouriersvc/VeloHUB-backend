@@ -14,6 +14,7 @@ export interface FareBreakdown {
     discountPercent: number;
     discountAmount: number;
     finalFare: number;
+    currency: string;
     vehicleType: VehicleType;
     distanceKm: number;
     durationMin: number;
@@ -94,6 +95,7 @@ export class FareService {
             discountPercent,
             discountAmount: Math.round(discountAmount * 100) / 100,
             finalFare: Math.max(finalFare, 0),
+            currency: country === "GH" ? "GHS" : "GHS",
             vehicleType,
             distanceKm,
             durationMin,

@@ -264,27 +264,27 @@ export class NotificationService {
     // ── Convenience methods for common ride notifications ──
 
     async notifyRideAccepted(customerId: string, driverName: string, rideId: string) {
-        return this.notify(customerId, NotificationType.RIDE_ACCEPTED, "Ride Accepted! 🚗", `${driverName} is on the way`, { rideId });
+        return this.notify(customerId, NotificationType.RIDE_ACCEPTED, "Ride Accepted! 🚗", `${driverName} is on the way`, { rideId, screen: "rides", deepLink: `velohub://rides?rideId=${rideId}` });
     }
 
     async notifyDriverEnroute(customerId: string, driverName: string, rideId: string) {
-        return this.notify(customerId, NotificationType.DRIVER_ENROUTE, "Driver En Route 🛣️", `${driverName} is heading to your pickup`, { rideId });
+        return this.notify(customerId, NotificationType.DRIVER_ENROUTE, "Driver En Route 🛣️", `${driverName} is heading to your pickup`, { rideId, screen: "rides", deepLink: `velohub://rides?rideId=${rideId}` });
     }
 
     async notifyDriverArrived(customerId: string, driverName: string, rideId: string) {
-        return this.notify(customerId, NotificationType.DRIVER_ARRIVED, "Driver Arrived! 📍", `${driverName} has arrived at your pickup location`, { rideId });
+        return this.notify(customerId, NotificationType.DRIVER_ARRIVED, "Driver Arrived! 📍", `${driverName} has arrived at your pickup location`, { rideId, screen: "rides", deepLink: `velohub://rides?rideId=${rideId}` });
     }
 
     async notifyRideStarted(customerId: string, rideId: string) {
-        return this.notify(customerId, NotificationType.RIDE_STARTED, "Ride Started 🚀", "Your ride is now in progress", { rideId });
+        return this.notify(customerId, NotificationType.RIDE_STARTED, "Ride Started 🚀", "Your ride is now in progress", { rideId, screen: "rides", deepLink: `velohub://rides?rideId=${rideId}` });
     }
 
     async notifyRideCompleted(customerId: string, fare: number, rideId: string, currency: string = "GHS") {
-        return this.notify(customerId, NotificationType.RIDE_COMPLETED, "Ride Completed ✅", `Your ride is complete. Fare: ${formatCurrency(fare, currency)}`, { rideId, fare });
+        return this.notify(customerId, NotificationType.RIDE_COMPLETED, "Ride Completed ✅", `Your ride is complete. Fare: ${formatCurrency(fare, currency)}`, { rideId, fare, screen: "rides", deepLink: `velohub://rides?rideId=${rideId}` });
     }
 
     async notifyRideCancelled(userId: string, reason: string, rideId: string) {
-        return this.notify(userId, NotificationType.RIDE_CANCELLED, "Ride Cancelled ❌", reason, { rideId });
+        return this.notify(userId, NotificationType.RIDE_CANCELLED, "Ride Cancelled ❌", reason, { rideId, screen: "rides", deepLink: `velohub://rides?rideId=${rideId}` });
     }
 
     async notifyPaymentReceived(userId: string, amount: number, rideId: string, currency: string = "GHS") {
@@ -300,6 +300,6 @@ export class NotificationService {
     }
 
     async notifyNewRideRequest(driverId: string, pickupAddress: string, rideId: string) {
-        return this.notify(driverId, NotificationType.RIDE_REQUESTED, "New Ride Request! 🔔", `Pickup: ${pickupAddress}`, { rideId });
+        return this.notify(driverId, NotificationType.RIDE_REQUESTED, "New Ride Request! 🔔", `Pickup: ${pickupAddress}`, { rideId, screen: "rides", deepLink: `velohub://rides?rideId=${rideId}` });
     }
 }

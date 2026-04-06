@@ -54,26 +54,44 @@ const SETTINGS = [
     },
 ];
 
-async function seedPlatformSettings() {
-    await AppDataSource.initialize();
-    console.log("Database initialized");
+/**
+ * Seed platform_settings rows. Safe to call multiple times — existing
+ * rows are skipped thanks to the country unique check.
+ *
+ * @param alreadyInitialised  pass `true` when called from index.ts
+ *                            (AppDataSource is already connected).
+ */
+export async function seedPlatformSettings(alreadyInitialised = false) {
+    if (!alreadyInitialised) {
+        await AppDataSource.initialize();
+    }
 
     const repo = AppDataSource.getRepository(PlatformSettings);
 
+    let created = 0;
     for (const data of SETTINGS) {
         const exists = await repo.findOne({ where: { country: data.country } });
         if (exists) {
-            console.log(`⏭  ${data.country} already exists — skipping`);
-            continue;
+            continue; // already seeded — skip silently
         }
 
         const entry = repo.create(data);
         await repo.save(entry);
-        console.log(`✅ Seeded ${data.country} (${data.currency})`);
+        created++;
     }
 
-    console.log("\nDone — platform_settings seeded.");
-    await AppDataSource.destroy();
+    if (created > 0) {
+        console.log(`✅ platform_settings: seeded ${created} new rows`);
+    }
+
+    if (!alreadyInitialised) {
+        await AppDataSource.destroy();
+    }
 }
 
-seedPlatformSettings().catch(console.error);
+// Allow standalone execution
+if (require.main === module) {
+    seedPlatformSettings(false)
+        .then(() => console.log("Done — platform_settings seeded."))
+        .catch(console.error);
+}

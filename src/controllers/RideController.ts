@@ -7,6 +7,23 @@ import { createServiceLogger } from "../utils/logger";
 
 const log = createServiceLogger("RideController");
 
+/**
+ * Map frontend vehicle type names to backend enum values.
+ * Frontend sends: motorbike | car | van
+ * Backend enum:   bike     | car | suv | truck
+ */
+function mapVehicleType(input: string): VehicleType {
+    const map: Record<string, VehicleType> = {
+        motorbike: VehicleType.BIKE,
+        bike: VehicleType.BIKE,
+        car: VehicleType.CAR,
+        suv: VehicleType.SUV,
+        van: VehicleType.TRUCK,
+        truck: VehicleType.TRUCK,
+    };
+    return map[input?.toLowerCase()] || VehicleType.CAR;
+}
+
 export class RideController {
     private rideService = new RideService();
 
@@ -43,7 +60,7 @@ export class RideController {
      */
     getEstimate = async (req: AuthRequest, res: Response) => {
         try {
-            const vehicleType = req.params.vehicleType as VehicleType;
+            const vehicleType = mapVehicleType(req.params.vehicleType);
             const { distanceKm, durationMin, pickupLat, pickupLng, promoCode } = req.body;
 
             if (!distanceKm || !durationMin || !pickupLat || !pickupLng) {
@@ -95,7 +112,7 @@ export class RideController {
                 dropoffAddress,
                 dropoffLat: Number(dropoffLat),
                 dropoffLng: Number(dropoffLng),
-                vehicleType,
+                vehicleType: mapVehicleType(vehicleType),
                 distanceKm: Number(distanceKm),
                 durationMin: Number(durationMin),
                 passengerCount,
@@ -214,6 +231,30 @@ export class RideController {
             return res.json(result);
         } catch (error) {
             log.error("Error getting ride history", { error: (error as Error).message });
+            return res.status(500).json({ message: "Internal server error" });
+        }
+    };
+
+    /**
+     * POST /rides/nearby-drivers
+     * Get nearby drivers for the map overlay
+     */
+    getNearbyDrivers = async (req: AuthRequest, res: Response) => {
+        try {
+            const { lat, lng, radiusKm } = req.body;
+            if (!lat || !lng) {
+                return res.status(400).json({ message: "lat and lng are required" });
+            }
+
+            const locationService = new (await import("../services/redis-location-service")).RedisLocationService();
+            const nearby = await locationService.findNearbyDrivers(
+                Number(lat),
+                Number(lng),
+                Number(radiusKm) || 10,
+            );
+            return res.json({ drivers: nearby });
+        } catch (error) {
+            log.error("Error getting nearby drivers", { error: (error as Error).message });
             return res.status(500).json({ message: "Internal server error" });
         }
     };

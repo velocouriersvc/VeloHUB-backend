@@ -8,15 +8,32 @@
     "build": "tsc",
     "start": "node dist/index.js",
     "typeorm": "typeorm-ts-node-commonjs",
-    "test": "jest --runInBand"
+    "test": "jest --runInBand",
+    "seed:pricing": "ts-node src/scripts/seed-vehicle-pricing.ts"
   },
   "jest": {
     "preset": "ts-jest",
     "testEnvironment": "node",
-    "testMatch": ["**/tests/**/*.test.ts"],
-    "moduleFileExtensions": ["ts", "js", "json"],
+    "testMatch": [
+      "**/tests/**/*.test.ts"
+    ],
+    "moduleFileExtensions": [
+      "ts",
+      "js",
+      "json"
+    ],
     "transform": {
-      "^.+\\.ts$": ["ts-jest", { "tsconfig": { "rootDir": ".", "experimentalDecorators": true, "emitDecoratorMetadata": true, "strict": false } }]
+      "^.+\\.ts$": [
+        "ts-jest",
+        {
+          "tsconfig": {
+            "rootDir": ".",
+            "experimentalDecorators": true,
+            "emitDecoratorMetadata": true,
+            "strict": false
+          }
+        }
+      ]
     },
     "transformIgnorePatterns": [
       "/node_modules/(?!(uuid)/)"
@@ -44,6 +61,7 @@
     "pg": "^8.11.3",
     "prom-client": "^15.1.3",
     "reflect-metadata": "^0.1.13",
+    "socket.io": "^4.8.3",
     "stripe": "^21.0.1",
     "swagger-jsdoc": "^6.2.8",
     "swagger-ui-express": "^5.0.1",

@@ -1,6 +1,7 @@
 import "dotenv/config";
 import express, { Request, Response } from "express";
 import cors from "cors";
+import { createServer } from "http";
 import swaggerUi from "swagger-ui-express";
 import { AppDataSource } from "./db/data-source";
 import { swaggerSpec } from "./swagger";
@@ -8,6 +9,8 @@ import { ensureBucket } from "./utils/minio-client";
 import logger from "./utils/logger";
 import { metricsMiddleware, register } from "./utils/metrics";
 import path from "path";
+import { initSocketGateway } from "./socket-gateway";
+import { runSeeds } from "./scripts/run-seeds";
 
 
 import orderRoutes from "./routes/orderRoutes";
@@ -38,6 +41,7 @@ import subscriptionRoutes from "./routes/subscription-routes";
 import identityRoutes from "./routes/identityRoutes";
 
 const app = express();
+const httpServer = createServer(app);
 const PORT = process.env.PORT || 3000;
 
 // Middleware
@@ -241,10 +245,16 @@ AppDataSource.initialize()
       logger.warn("MinIO bucket init failed (uploads may not work)", { error: (err as Error).message });
     }
 
-    // Start server
-    app.listen(PORT,  async () => {
-      logger.info(`Server is running on port ${PORT}.`);
+    // Seed essential lookup tables (idempotent — skips existing rows)
+    await runSeeds();
 
+    // Initialise Socket.IO on the same HTTP server
+    initSocketGateway(httpServer);
+
+    // Start server
+    httpServer.listen(PORT,  async () => {
+      logger.info(`Server is running on port ${PORT}.`);
+      logger.info(`WebSocket ready on ws://localhost:${PORT} (/drivers, /rides)`);
       logger.info(`API Docs: http://localhost:${PORT}/docs`);
       logger.info(`Health: http://localhost:${PORT}/health`);
       logger.info(`Metrics: http://localhost:${PORT}/metrics`);
