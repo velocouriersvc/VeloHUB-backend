@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { ProfileController } from "../controllers/ProfileController";
 import { apiKeyMiddleware } from "../middleware/api-key-middleware";
-import { requireRole } from "../middleware/role-middleware";
+import { requireRole, requireAuth } from "../middleware/role-middleware";
 
 const router = Router();
 const profileController = new ProfileController();
@@ -15,7 +15,7 @@ router.use(apiKeyMiddleware);
  *   post:
  *     tags: [Profile]
  *     summary: Setup buyer profile
- *     description: Creates or updates a buyer profile for the authenticated user. Requires **buyer** role.
+ *     description: Creates or updates a buyer profile for the authenticated user.
  *     security:
  *       - ApiKeyAuth: []
  *     requestBody:
@@ -39,11 +39,11 @@ router.use(apiKeyMiddleware);
  *       401:
  *         description: User ID required or not authenticated
  *       403:
- *         description: Invalid API key or role not approved
+ *         description: Invalid API key
  *       500:
  *         description: Server error
  */
-router.post("/buyer", requireRole(["buyer"]), profileController.setupBuyer);
+router.post("/buyer", requireAuth, profileController.setupBuyer);
 
 /**
  * @openapi
@@ -52,7 +52,7 @@ router.post("/buyer", requireRole(["buyer"]), profileController.setupBuyer);
  *     tags: [Profile]
  *     summary: Setup driver profile
  *     description: |
- *       Creates or updates a driver profile with vehicle info. Requires **driver** role.
+ *       Creates or updates a driver profile with vehicle info.
  *       Upload ID and license photos first via `POST /uploads`, then pass the URLs here.
  *     security:
  *       - ApiKeyAuth: []
@@ -84,11 +84,11 @@ router.post("/buyer", requireRole(["buyer"]), profileController.setupBuyer);
  *       401:
  *         description: User ID required or not authenticated
  *       403:
- *         description: Invalid API key or role not approved
+ *         description: Invalid API key
  *       500:
  *         description: Server error
  */
-router.post("/driver", requireRole(["driver"]), profileController.setupDriver);
+router.post("/driver", requireAuth, profileController.setupDriver);
 
 /**
  * @openapi
@@ -97,7 +97,7 @@ router.post("/driver", requireRole(["driver"]), profileController.setupDriver);
  *     tags: [Profile]
  *     summary: Setup merchant profile
  *     description: |
- *       Creates or updates a merchant profile with business info. Requires **merchant** role.
+ *       Creates or updates a merchant profile with business info.
  *       Upload ID and registration docs first via `POST /uploads`, then pass the URLs here.
  *     security:
  *       - ApiKeyAuth: []
@@ -125,10 +125,10 @@ router.post("/driver", requireRole(["driver"]), profileController.setupDriver);
  *       401:
  *         description: User ID required or not authenticated
  *       403:
- *         description: Invalid API key or role not approved
+ *         description: Invalid API key
  *       500:
  *         description: Server error
  */
-router.post("/merchant", requireRole(["merchant"]), profileController.setupMerchant);
+router.post("/merchant", requireAuth, profileController.setupMerchant);
 
 export default router;
