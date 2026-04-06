@@ -940,6 +940,69 @@ export class AdminService {
         return profile;
     }
 
+    async syncMerchants(adminId: string) {
+        const profiles = await this.merchantProfileRepo.find({
+            where: { status: MerchantVerificationStatus.APPROVED },
+        });
+
+        const merchantRole = await this.roleRepo.findOne({ where: { name: RoleType.MERCHANT } });
+        if (!merchantRole) throw new Error("MERCHANT role not found");
+
+        const results = {
+            total: profiles.length,
+            fixedRoles: 0,
+            fixedStats: 0,
+            fixedVisibility: 0,
+        };
+
+        for (const p of profiles) {
+            // 1. Ensure store is open
+            if (!p.isOpen) {
+                p.isOpen = true;
+                await this.merchantProfileRepo.save(p);
+                results.fixedVisibility++;
+            }
+
+            // 2. Ensure role exists and is approved
+            let userRole = await this.userRoleRepo.findOne({
+                where: { userId: p.userId, roleId: merchantRole.id },
+            });
+
+            if (!userRole) {
+                userRole = this.userRoleRepo.create({
+                    userId: p.userId,
+                    roleId: merchantRole.id,
+                    status: RoleStatus.APPROVED,
+                });
+                await this.userRoleRepo.save(userRole);
+                results.fixedRoles++;
+            } else if (userRole.status !== RoleStatus.APPROVED) {
+                userRole.status = RoleStatus.APPROVED;
+                await this.userRoleRepo.save(userRole);
+                results.fixedRoles++;
+            }
+
+            // 3. Ensure stats are initialized
+            let stats = await this.merchantStatsRepo.findOne({ where: { merchantId: p.userId } });
+            if (!stats) {
+                stats = this.merchantStatsRepo.create({
+                    merchantId: p.userId,
+                    totalOrders: 0,
+                    totalRevenue: 0,
+                    viewCount: 0,
+                    averageRating: 0,
+                    ratingCount: 0,
+                    totalProducts: 0,
+                });
+                await this.merchantStatsRepo.save(stats);
+                results.fixedStats++;
+            }
+        }
+
+        log.info("Admin triggered merchant sync", { adminId, results });
+        return results;
+    }
+
     async approveMerchant(merchantId: string, adminId: string) {
         const profile = await this.merchantProfileRepo.findOne({
             where: { userId: merchantId },

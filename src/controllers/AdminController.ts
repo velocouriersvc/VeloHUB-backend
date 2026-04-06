@@ -361,6 +361,17 @@ export class AdminController {
         }
     };
 
+    syncMerchants = async (req: Request, res: Response) => {
+        try {
+            const adminId = (req as any).user.id;
+            const results = await this.adminService.syncMerchants(adminId);
+            return res.json({ message: "Sync complete", ...results });
+        } catch (error) {
+            log.error("Error syncing merchants", { error: (error as Error).message });
+            return res.status(500).json({ message: "Internal server error" });
+        }
+    };
+
     overrideOrderStatus = async (req: AuthRequest, res: Response) => {
         try {
             const adminId = req.user?.id;

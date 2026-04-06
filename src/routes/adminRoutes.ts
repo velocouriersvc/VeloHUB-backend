@@ -787,6 +787,8 @@ router.get("/merchants/:id/details", adminRole, adminController.getMerchantDetai
  */
 router.patch("/merchants/:id/rates", adminRole, adminController.updateMerchantRates);
 
+router.post("/merchants/sync", adminRole, adminController.syncMerchants);
+
 /**
  * @openapi
  * /admin/merchants/{id}/suspend:
