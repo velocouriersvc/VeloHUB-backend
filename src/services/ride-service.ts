@@ -235,6 +235,27 @@ export class RideService {
             driversNotified: drivers.length,
         });
 
+        // Auto-cancel ride after 3 minutes if no driver accepts
+        setTimeout(async () => {
+            try {
+                const ride = await this.rideRepo.findOne({ where: { id: savedRide.id } });
+                if (ride && ride.status === RideStatus.SEARCHING) {
+                    log.info("Auto-cancelling ride due to no driver acceptance", { rideId: savedRide.id });
+                    await this.cancelRide(savedRide.id, CancelledBy.SYSTEM, "No driver available");
+                    
+                    // Emit cancellation event
+                    emitRideEvent(savedRide.id, "ride:status", {
+                        rideId: savedRide.id,
+                        status: RideStatus.CANCELLED,
+                        cancelledBy: CancelledBy.SYSTEM,
+                        reason: "No driver available",
+                    });
+                }
+            } catch (error) {
+                log.error("Error auto-cancelling ride", { rideId: savedRide.id, error: (error as Error).message });
+            }
+        }, 180000); // 3 minutes
+
         return savedRide;
     }
 
@@ -499,12 +520,16 @@ export class RideService {
         rideEventsTotal.inc({ event: "cancelled" });
 
         // Notify the other party
-        const cancelledByLabel = cancelledBy === CancelledBy.CUSTOMER ? "Customer" : "Driver";
+        const cancelledByLabel = cancelledBy === CancelledBy.CUSTOMER ? "Customer" : 
+                                cancelledBy === CancelledBy.DRIVER ? "Driver" : "System";
         const cancelMessage = reason || `Ride cancelled by ${cancelledByLabel}`;
 
         if (cancelledBy === CancelledBy.CUSTOMER && ride.driverId) {
             await this.notificationService.notifyRideCancelled(ride.driverId, cancelMessage, rideId);
         } else if (cancelledBy === CancelledBy.DRIVER) {
+            await this.notificationService.notifyRideCancelled(ride.customerId, cancelMessage, rideId);
+        } else if (cancelledBy === CancelledBy.SYSTEM) {
+            // Notify customer about system cancellation
             await this.notificationService.notifyRideCancelled(ride.customerId, cancelMessage, rideId);
         }
 
