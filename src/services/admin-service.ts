@@ -2352,6 +2352,54 @@ export class AdminService {
         }));
     }
 
+    async updateUserRoles(userId: string, targetRoles: RoleType[], adminId: string) {
+        const user = await this.userRepo.findOne({
+            where: { id: userId },
+            relations: ["userRoles", "userRoles.role"]
+        });
+
+        if (!user) throw new Error("User not found");
+
+        await AppDataSource.transaction(async manager => {
+            const currentRoles = await manager.find(UserRole, {
+                where: { userId },
+                relations: ["role"]
+            });
+
+            const currentRoleNames = currentRoles.map(ur => ur.role.name);
+
+            const rolesToAdd = targetRoles.filter(r => !currentRoleNames.includes(r));
+            const rolesToRemove = currentRoles.filter(ur => !targetRoles.includes(ur.role.name as RoleType));
+
+            for (const roleName of rolesToAdd) {
+                let role = await manager.findOne(Role, { where: { name: roleName } });
+                if (!role) {
+                    role = manager.create(Role, { name: roleName, description: `${roleName} role` });
+                    await manager.save(role);
+                }
+                const newUserRole = manager.create(UserRole, {
+                    userId,
+                    roleId: role.id,
+                    status: RoleStatus.APPROVED
+                });
+                await manager.save(newUserRole);
+            }
+
+            if (rolesToRemove.length > 0) {
+                await manager.remove(rolesToRemove);
+            }
+
+            const updatedUser = await manager.findOne(User, { where: { id: userId } });
+            if (updatedUser && updatedUser.activeRole && !targetRoles.includes(updatedUser.activeRole as RoleType)) {
+                updatedUser.activeRole = targetRoles.length > 0 ? targetRoles[0] : RoleType.BUYER;
+                await manager.save(updatedUser);
+            }
+        });
+
+        log.info("Admin updated user roles", { userId, targetRoles, adminId });
+        return { success: true, roles: targetRoles };
+    }
+
     async createStaffMember(data: {
         email?: string;
         phoneNumber?: string;

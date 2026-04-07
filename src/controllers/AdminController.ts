@@ -1564,4 +1564,36 @@ export class AdminController {
             return res.status(500).json({ message: "Internal server error" });
         }
     }
+
+    updateUserRoles = async (req: AuthRequest, res: Response) => {
+        try {
+            const adminId = req.user?.id;
+            if (!adminId) return res.status(401).json({ message: "User ID required" });
+
+            const { id } = req.params;
+            const { roles } = req.body;
+
+            if (!Array.isArray(roles)) {
+                return res.status(400).json({ message: "roles must be an array" });
+            }
+
+            const result = await this.adminService.updateUserRoles(id, roles as RoleType[], adminId);
+
+            await AuditLogController.record({
+                action: "Update User Roles",
+                entity_type: "user",
+                entity_id: id,
+                performed_by: req.user?.email || "Admin",
+                details: `Updated roles to: ${roles.join(", ")}`,
+                risk_level: AuditRiskLevel.HIGH
+            });
+
+            return res.json(result);
+        } catch (error) {
+            log.error("Error updating user roles:", error);
+            const msg = (error as Error).message;
+            if (msg.includes("not found")) return res.status(404).json({ message: msg });
+            return res.status(500).json({ message: "Internal server error" });
+        }
+    }
 }

@@ -84,19 +84,39 @@ router.get("/merchants", adminRole, adminController.getMerchants);
  */
 router.get("/rides", adminRole, adminController.getRides);
 
+router.get("/users", adminRole, adminController.getUsers);
+
 /**
  * @openapi
- * /admin/users:
- *   get:
+ * /admin/users/{id}/roles:
+ *   put:
  *     tags: [Admin]
- *     summary: List all users
+ *     summary: Update user roles
  *     security:
  *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [roles]
+ *             properties:
+ *               roles:
+ *                 type: array
+ *                 items:
+ *                   type: string
  *     responses:
  *       200:
- *         description: List of users
+ *         description: Roles updated
  */
-router.get("/users", adminRole, adminController.getUsers);
+router.put("/users/:id/roles", adminRole, adminController.updateUserRoles);
 
 /**
  * @openapi
