@@ -21,6 +21,9 @@ data:
   MINIO_PORT: "9000"
   MINIO_USE_SSL: "false"
   MINIO_BUCKET: "velo-uploads"
+  # Public base URL used for object links returned to mobile/web clients.
+  # Should point to the HTTPS domain fronting /velo-uploads via Nginx/Ingress.
+  MINIO_PUBLIC_URL: "https://api.velocouriersvc.com"
 
   # SMTP (Postfix on VPS host — see docs/K8S_EMAIL_SETUP.md)
   SMTP_HOST: "10.42.0.1"                    # pod gateway → host Postfix

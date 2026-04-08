@@ -6,7 +6,7 @@ import { createServiceLogger } from "../utils/logger";
 import { uploadEventsTotal } from "../utils/metrics";
 
 const log = createServiceLogger("UploadService");
-const DEFAULT_PUBLIC_ASSETS_URL = "https://api.velocourier.com";
+const DEFAULT_PUBLIC_ASSETS_URL = "https://api.velocouriersvc.com";
 
 function normalizePublicBaseUrl(raw?: string | null): string | null {
   if (!raw) return null;
