@@ -43,9 +43,9 @@ export class Product {
     @Column({ type: "text", nullable: true })
     description: string | null;
 
-    @Column({ type: "enum", enum: ProductCategory, nullable: true })
+    @Column({ type: "varchar", length: 100, nullable: true })
     @Index()
-    category: ProductCategory | null;
+    category: string | null;
 
     @Column({ type: "decimal", precision: 10, scale: 2 })
     price: number;

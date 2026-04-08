@@ -141,12 +141,26 @@ export class ProductService {
             const optRepo = manager.getRepository(CustomizationOption);
             const statsRepo = manager.getRepository(MerchantStats);
 
+            // Ensure category exists in product_categories table
+            const catRepo = manager.getRepository(ProductCategoryEntity);
+            const existingCat = await catRepo.findOne({ where: { slug: input.category.toLowerCase().replace(/\s+/g, '-') } });
+            if (!existingCat) {
+                const newCat = catRepo.create({
+                    name: input.category,
+                    slug: input.category.toLowerCase().replace(/\s+/g, '-'),
+                    type: "product",
+                    isActive: true
+                });
+                await catRepo.save(newCat);
+                log.info("Auto-created new category", { category: input.category });
+            }
+
             // Create product
             const newProduct = productRepo.create({
                 merchantId,
                 name: input.name,
                 description: input.description || null,
-                category: input.category as ProductCategory,
+                category: input.category,
                 price: input.price,
                 compareAtPrice: input.compareAtPrice || null,
                 stockQuantity: input.stock_level ?? input.stockQuantity ?? 0,

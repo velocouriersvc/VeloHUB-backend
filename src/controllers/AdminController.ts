@@ -500,7 +500,14 @@ export class AdminController {
     createProduct = async (req: AuthRequest, res: Response) => {
         try {
             const { merchantId, ...productData } = req.body;
+            
+            // Basic validation
             if (!merchantId) return res.status(400).json({ message: "merchantId is required" });
+            if (!productData.name) return res.status(400).json({ message: "Product name is required" });
+            if (productData.price === undefined || productData.price === null) {
+                return res.status(400).json({ message: "Product price is required" });
+            }
+            if (!productData.category) return res.status(400).json({ message: "Product category is required" });
 
             const product = await this.adminService.createProduct(merchantId, productData);
 
@@ -516,8 +523,8 @@ export class AdminController {
             return res.status(201).json(product);
         } catch (error) {
             log.error("Error creating product:", error);
-            const msg = (error as Error).message;
-            return res.status(500).json({ message: msg || "Internal server error" });
+            const msg = (error as Error).message || "Internal server error";
+            return res.status(500).json({ message: msg });
         }
     };
 
