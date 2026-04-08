@@ -77,7 +77,13 @@ export class CartController {
             if (message.includes("not found") || message.includes("inactive")) {
                 return res.status(404).json({ message });
             }
-            if (message.includes("Insufficient stock") || message.includes("Required customization")) {
+            if (
+                message.includes("Insufficient stock") ||
+                message.includes("Required customization") ||
+                message.includes("Option") ||
+                message.includes("quantity") ||
+                message.includes("empty")
+            ) {
                 return res.status(400).json({ message });
             }
 

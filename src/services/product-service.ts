@@ -1,5 +1,6 @@
 import { AppDataSource } from "../db/data-source";
 import { Product, ProductCategory } from "../models/product";
+import { ProductCategory as ProductCategoryEntity } from "../models/product-category";
 import { ProductCustomization } from "../models/product-customization";
 import { CustomizationOption } from "../models/customization-option";
 import { MerchantStats } from "../models/merchant-stats";
@@ -80,6 +81,7 @@ export interface CreateOptionInput {
 
 export class ProductService {
     private productRepo = AppDataSource.getRepository(Product);
+    private productCategoryRepo = AppDataSource.getRepository(ProductCategoryEntity);
     private customizationRepo = AppDataSource.getRepository(ProductCustomization);
     private optionRepo = AppDataSource.getRepository(CustomizationOption);
     private statsRepo = AppDataSource.getRepository(MerchantStats);
@@ -87,6 +89,44 @@ export class ProductService {
 
     constructor() {
         this.notificationService = new NotificationService();
+    }
+
+    /**
+     * Return active product categories from DB as source of truth.
+     * Falls back to enum values when DB categories are empty.
+     */
+    async getAvailableCategories(): Promise<Array<{
+        id: string;
+        slug: string;
+        name: string;
+        icon: string | null;
+        type: string;
+        isActive: boolean;
+    }>> {
+        const rows = await this.productCategoryRepo.find({
+            where: { isActive: true },
+            order: { name: "ASC" },
+        });
+
+        if (rows.length > 0) {
+            return rows.map((c) => ({
+                id: c.id,
+                slug: c.slug,
+                name: c.name,
+                icon: c.icon || null,
+                type: c.type || "product",
+                isActive: c.isActive,
+            }));
+        }
+
+        return Object.values(ProductCategory).map((slug) => ({
+            id: slug,
+            slug,
+            name: slug.charAt(0).toUpperCase() + slug.slice(1),
+            icon: null,
+            type: "product",
+            isActive: true,
+        }));
     }
 
     // ── Create ──────────────────────────────────────────────────────

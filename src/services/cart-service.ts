@@ -136,9 +136,11 @@ export class CartService {
             cart = await this.cartRepo.save(cart);
             cart.items = [];
         }
+        const cartItems = cart.items || [];
+        cart.items = cartItems;
 
         // 4. Single-merchant enforcement
-        if (cart.merchantId && cart.merchantId !== product.merchantId && cart.items.length > 0) {
+        if (cart.merchantId && cart.merchantId !== product.merchantId && cartItems.length > 0) {
             const currentMerchant = await this.merchantRepo.findOne({
                 where: { userId: cart.merchantId },
             });
@@ -188,7 +190,7 @@ export class CartService {
         const itemTotal = Math.round((unitPrice + optionsTotal) * input.quantity * 100) / 100;
 
         // 8. Check if this exact product+options combo already exists in cart → update qty
-        const existingItem = this.findExistingCartItem(cart.items, input.productId, resolvedOptions);
+        const existingItem = this.findExistingCartItem(cartItems, input.productId, resolvedOptions);
 
         if (existingItem) {
             existingItem.quantity += input.quantity;

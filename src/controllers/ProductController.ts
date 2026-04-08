@@ -1,6 +1,5 @@
 import { Response } from "express";
 import { AuthRequest } from "../middleware/role-middleware";
-import { ProductCategory } from "../models/product";
 import { ProductService, CreateProductInput, UpdateProductInput, CreateCustomizationInput, CreateOptionInput } from "../services/product-service";
 import { UploadService } from "../services/upload-service";
 import { SearchService } from "../services/search-service";
@@ -20,7 +19,7 @@ export class ProductController {
      */
     getCategories = async (req: AuthRequest, res: Response) => {
         try {
-            const categories = Object.values(ProductCategory);
+            const categories = await this.productService.getAvailableCategories();
             return res.status(200).json({ categories });
         } catch (error) {
             log.error("Error fetching categories", { error: (error as Error).message });
