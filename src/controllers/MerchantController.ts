@@ -511,6 +511,12 @@ export class MerchantController {
                     relations: { user: true },
                 });
             }
+            if (!profile) {
+                profile = await AppDataSource.getRepository(MerchantProfile).findOne({
+                    where: { userId: slugOrId },
+                    relations: { user: true },
+                });
+            }
 
             if (!profile) return res.status(404).json({ message: "Merchant not found" });
 

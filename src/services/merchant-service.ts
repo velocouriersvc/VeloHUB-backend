@@ -752,6 +752,9 @@ export class MerchantService {
         if (!profile) {
             profile = await this.profileRepo.findOne({ where: { id: slugOrId } });
         }
+        if (!profile) {
+            profile = await this.profileRepo.findOne({ where: { userId: slugOrId } });
+        }
         if (!profile) return;
 
         const merchantId = profile.userId;

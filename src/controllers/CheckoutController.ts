@@ -14,9 +14,9 @@ export class CheckoutController {
             if (!userId) return res.status(401).json({ message: "User ID required" });
 
             const { kind } = req.body || {};
-            if (!kind || (kind !== "product_order" && kind !== "package_ride")) {
+            if (!kind || (kind !== "product_order" && kind !== "product_order_with_delivery" && kind !== "package_ride")) {
                 return res.status(400).json({
-                    message: "kind is required and must be one of: product_order, package_ride",
+                    message: "kind is required and must be one of: product_order, product_order_with_delivery, package_ride",
                 });
             }
 

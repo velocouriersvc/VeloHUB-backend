@@ -145,8 +145,14 @@ export class Order {
     @Column({ type: "varchar", length: 6, nullable: true })
     pickupCode: string | null;
 
+    @Column({ type: "varchar", length: 6, nullable: true })
+    deliveryCode: string | null;
+
     @Column({ type: "timestamp", nullable: true })
     pickupCodeVerifiedAt: Date | null;
+
+    @Column({ type: "timestamp", nullable: true })
+    deliveryCodeVerifiedAt: Date | null;
 
     // ── Status ──
     @Column({ type: "enum", enum: OrderStatus, default: OrderStatus.PENDING })

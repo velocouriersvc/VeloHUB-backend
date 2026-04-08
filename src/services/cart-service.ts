@@ -34,6 +34,11 @@ export interface CartResponse {
         businessName: string;
         category: string;
     } | null;
+    merchantLocation?: {
+        address: string;
+        latitude: number | null;
+        longitude: number | null;
+    } | null;
     items: CartItemResponse[];
     subtotal: number;
     itemCount: number;
@@ -363,6 +368,7 @@ export class CartService {
 
         // Load merchant info
         let merchant: { businessName: string; category: string } | null = null;
+        let merchantLocation: { address: string; latitude: number | null; longitude: number | null } | null = null;
         if (cart.merchantId) {
             const profile = await this.merchantRepo.findOne({
                 where: { userId: cart.merchantId },
@@ -371,6 +377,11 @@ export class CartService {
                 merchant = {
                     businessName: profile.businessName,
                     category: profile.category,
+                };
+                merchantLocation = {
+                    address: profile.address,
+                    latitude: profile.latitude,
+                    longitude: profile.longitude,
                 };
             }
         }
@@ -392,6 +403,7 @@ export class CartService {
             id: cart.id,
             merchantId: cart.merchantId,
             merchant,
+            merchantLocation,
             items: cartItems,
             subtotal: Number(cart.subtotal),
             itemCount,

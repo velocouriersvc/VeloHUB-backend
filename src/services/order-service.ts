@@ -284,10 +284,14 @@ export class OrderService {
             const settings = await this.getSettings(country);
             const currency = settings?.currency || "GHS";
 
-            // 8. Generate pickup code for pickup orders
+            // 8. Generate pickup and delivery codes for delivery orders
             let pickupCode: string | null = null;
-            if (input.deliveryType === DeliveryType.PICKUP) {
+            let deliveryCode: string | null = null;
+            if (input.deliveryType === DeliveryType.PICKUP || input.deliveryType === DeliveryType.DELIVERY) {
                 pickupCode = this.pickupCodeService.generate();
+            }
+            if (input.deliveryType === DeliveryType.DELIVERY) {
+                deliveryCode = this.pickupCodeService.generate();
             }
 
             // 9. Create order
@@ -313,7 +317,9 @@ export class OrderService {
                 deliveryLat: input.deliveryLat || null,
                 deliveryLng: input.deliveryLng || null,
                 pickupCode,
+                deliveryCode,
                 pickupCodeVerifiedAt: null,
+                deliveryCodeVerifiedAt: null,
                 status: OrderStatus.PENDING,
                 cancelledBy: null,
                 cancellationReason: null,
@@ -400,17 +406,22 @@ export class OrderService {
                 }
             );
 
-            // 15. Notify customer with pickup code (if pickup order)
+            // 15. Notify customer with pickup or delivery codes
             if (pickupCode) {
+                const codeMessage = input.deliveryType === DeliveryType.DELIVERY && deliveryCode
+                    ? `Order #${orderNumber} placed! Pickup code: ${pickupCode}. Delivery code: ${deliveryCode}. Show pickup code to the merchant and give the delivery code to your driver on arrival.`
+                    : `Order #${orderNumber} placed! Your pickup code is: ${pickupCode}`;
+
                 await this.notificationService.notify(
                     userId,
                     NotificationType.PICKUP_CODE_GENERATED,
-                    "Your Pickup Code 📦",
-                    `Order #${orderNumber} placed! Your pickup code is: ${pickupCode}`,
+                    input.deliveryType === DeliveryType.DELIVERY ? "Your Delivery Codes 🔐" : "Your Pickup Code 📦",
+                    codeMessage,
                     {
                         orderId: savedOrder.id,
                         orderNumber,
                         pickupCode,
+                        deliveryCode: deliveryCode || null,
                     }
                 );
             }
