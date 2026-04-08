@@ -6,6 +6,57 @@ import { createServiceLogger } from "../utils/logger";
 import { uploadEventsTotal } from "../utils/metrics";
 
 const log = createServiceLogger("UploadService");
+const DEFAULT_PUBLIC_ASSETS_URL = "https://api.velocourier.com";
+
+function normalizePublicBaseUrl(raw?: string | null): string | null {
+  if (!raw) return null;
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+  const withProtocol = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+  return withProtocol.replace(/\/+$/, "");
+}
+
+function getPublicAssetsBaseUrl(): string | null {
+  const candidates = [
+    process.env.MINIO_PUBLIC_URL,
+    process.env.PUBLIC_ASSETS_URL,
+    process.env.PUBLIC_BASE_URL,
+    process.env.API_PUBLIC_URL,
+    process.env.APP_PUBLIC_URL,
+    DEFAULT_PUBLIC_ASSETS_URL,
+  ];
+  for (const candidate of candidates) {
+    const normalized = normalizePublicBaseUrl(candidate);
+    if (normalized) {
+      return normalized.replace(/\/api\/v1$/i, "");
+    }
+  }
+  return null;
+}
+
+export function getPublicObjectUrl(key: string): string {
+  const publicBase = getPublicAssetsBaseUrl() || DEFAULT_PUBLIC_ASSETS_URL;
+  return `${publicBase}/${BUCKET_NAME}/${key}`;
+}
+
+export function rewriteToPublicAssetUrl(url?: string | null): string | null {
+  if (!url) return null;
+  const trimmed = url.trim();
+  if (!trimmed) return null;
+
+  const bucketPattern = new RegExp(`/${BUCKET_NAME}/(.+)$`, "i");
+  const bucketMatch = trimmed.match(bucketPattern);
+  if (bucketMatch?.[1]) {
+    return getPublicObjectUrl(bucketMatch[1]);
+  }
+
+  const uploadsMatch = trimmed.match(/\/uploads\/(.+)$/i);
+  if (uploadsMatch?.[1]) {
+    return getPublicObjectUrl(uploadsMatch[1]);
+  }
+
+  return trimmed;
+}
 
 // ─── Security Config ────────────────────────────────────────────────
 
@@ -218,9 +269,11 @@ export class UploadService {
     const useSSL = process.env.MINIO_USE_SSL === "true";
     const protocol = useSSL ? "https" : "http";
 
-    // In production behind a proxy, use the external URL if set
+    // In production behind a proxy, use external base URL if set.
+    // This avoids leaking internal hostnames like minio-service to mobile clients.
+    const externalBase = getPublicAssetsBaseUrl();
     const publicUrl =
-      process.env.MINIO_PUBLIC_URL ||
+      externalBase ||
       `${protocol}://${endpoint}:${port}`;
 
     const url = `${publicUrl}/${BUCKET_NAME}/${key}`;
@@ -229,7 +282,7 @@ export class UploadService {
     uploadEventsTotal.inc({ category, status: "success" });
 
     return {
-      url,
+      url: rewriteToPublicAssetUrl(url) || url,
       key,
       bucket: BUCKET_NAME,
       size: buffer.length,

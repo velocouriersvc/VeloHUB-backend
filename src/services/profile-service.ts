@@ -11,6 +11,7 @@ import { UserRole, RoleStatus } from "../models/user-role";
 import { BuyerSetupPayload, DriverSetupPayload, MerchantSetupPayload } from "../types/profile";
 import { createServiceLogger } from "../utils/logger";
 import { UserProfile } from "../models/user-profile";
+import { rewriteToPublicAssetUrl } from "./upload-service";
 
 const log = createServiceLogger("ProfileService");
 
@@ -270,6 +271,24 @@ export class ProfileService {
             userProfile = await this.userProfileRepository.save(userProfile);
         }
 
+        let resolvedFullName = userProfile.fullName;
+        if (!resolvedFullName) {
+            const buyerProfile = await AppDataSource.getRepository(BuyerProfile).findOne({ where: { userId } });
+            if (buyerProfile?.fullName) {
+                resolvedFullName = buyerProfile.fullName;
+            } else {
+                const driverProfile = await AppDataSource.getRepository(DriverProfile).findOne({ where: { userId } });
+                if (driverProfile?.fullName) {
+                    resolvedFullName = driverProfile.fullName;
+                } else {
+                    const merchantProfile = await AppDataSource.getRepository(MerchantProfile).findOne({ where: { userId } });
+                    if (merchantProfile?.businessName) {
+                        resolvedFullName = merchantProfile.businessName;
+                    }
+                }
+            }
+        }
+
         const roleDetails = (user.userRoles || []).map((userRole) => ({
             name: userRole.role?.name,
             status: userRole.status,
@@ -282,8 +301,8 @@ export class ProfileService {
             email: user.email,
             status: user.status,
             activeRole: user.activeRole,
-            fullName: userProfile.fullName,
-            profileImageUrl: userProfile.profileImageUrl,
+            fullName: resolvedFullName,
+            profileImageUrl: rewriteToPublicAssetUrl(userProfile.profileImageUrl),
             roles: roleDetails,
         };
     }

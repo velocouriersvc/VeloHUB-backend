@@ -9,6 +9,7 @@ import { BuyerProfile } from "../models/buyer-profile";
 import { DriverProfile } from "../models/driver-profile";
 import { MerchantProfile } from "../models/merchant-profile";
 import { UserProfile } from "../models/user-profile";
+import { rewriteToPublicAssetUrl } from "../services/upload-service";
 
 const log = createServiceLogger("AuthController");
 
@@ -118,7 +119,7 @@ export class AuthController {
                 fullName = userProfile.fullName;
             }
             if (userProfile?.profileImageUrl) {
-                profileImageUrl = userProfile.profileImageUrl;
+                profileImageUrl = rewriteToPublicAssetUrl(userProfile.profileImageUrl);
             }
 
             const buyerProfile = await AppDataSource.getRepository(BuyerProfile).findOne({ where: { userId: user.id } });
