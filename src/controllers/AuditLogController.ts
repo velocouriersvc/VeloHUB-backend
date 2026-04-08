@@ -31,6 +31,20 @@ export class AuditLogController {
     };
 
     /**
+     * DELETE /admin/audit-logs
+     */
+    clear = async (req: Request, res: Response) => {
+        try {
+            await this.auditLogRepo.clear();
+            log.info("Audit logs cleared", { performed_by: req.headers["x-user-phone"] });
+            return res.status(204).send();
+        } catch (error) {
+            log.error("Error clearing audit logs", { error: (error as Error).message });
+            return res.status(500).json({ message: "Internal server error" });
+        }
+    };
+
+    /**
      * Static helper to create a log entry from anywhere in the backend
      */
     static async record(data: {

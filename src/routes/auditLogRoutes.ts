@@ -24,4 +24,20 @@ const adminRole = requireRole(["admin"]);
  */
 router.get("/", adminRole, auditLogController.list);
 
+/**
+ * @openapi
+ * /admin/audit-logs:
+ *   delete:
+ *     tags: [Admin - Audit Logs]
+ *     summary: Clear all audit logs
+ *     security:
+ *       - ApiKeyAuth: []
+ *     responses:
+ *       204:
+ *         description: Audit logs cleared successfully
+ *       500:
+ *         description: Internal server error
+ */
+router.delete("/", adminRole, auditLogController.clear);
+
 export default router;
