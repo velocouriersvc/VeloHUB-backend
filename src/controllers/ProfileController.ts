@@ -9,6 +9,36 @@ const log = createServiceLogger("ProfileController");
 export class ProfileController {
     private profileService = new ProfileService();
 
+    getMyProfile = async (req: AuthRequest, res: Response) => {
+        try {
+            const userId = (req as any).user?.id;
+            if (!userId) return res.status(401).json({ message: "User ID required" });
+
+            const profile = await this.profileService.getUserProfile(userId);
+            return res.status(200).json(profile);
+        } catch (error) {
+            log.error("Error fetching user profile", { error: (error as Error).message });
+            return res.status(500).json({ message: "Internal server error" });
+        }
+    };
+
+    updateMyProfile = async (req: AuthRequest, res: Response) => {
+        try {
+            const userId = (req as any).user?.id;
+            if (!userId) return res.status(401).json({ message: "User ID required" });
+
+            const { fullName, profileImageUrl } = req.body || {};
+            const profile = await this.profileService.updateUserProfile(userId, {
+                fullName,
+                profileImageUrl,
+            });
+            return res.status(200).json(profile);
+        } catch (error) {
+            log.error("Error updating user profile", { error: (error as Error).message });
+            return res.status(500).json({ message: "Internal server error" });
+        }
+    };
+
     setupBuyer = async (req: AuthRequest, res: Response) => {
         try {
             // User verified by requireRole middleware

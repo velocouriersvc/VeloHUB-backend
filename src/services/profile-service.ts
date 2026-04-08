@@ -10,12 +10,14 @@ import { User, UserStatus } from "../models/user";
 import { UserRole, RoleStatus } from "../models/user-role";
 import { BuyerSetupPayload, DriverSetupPayload, MerchantSetupPayload } from "../types/profile";
 import { createServiceLogger } from "../utils/logger";
+import { UserProfile } from "../models/user-profile";
 
 const log = createServiceLogger("ProfileService");
 
 export class ProfileService {
     private userRepository = AppDataSource.getRepository(User);
     private roleRepository = AppDataSource.getRepository(Role);
+    private userProfileRepository = AppDataSource.getRepository(UserProfile);
 
     private async syncToSupabase(userId: string, data: Record<string, unknown>) {
         try {
@@ -250,5 +252,57 @@ export class ProfileService {
             });
             await queryRunner.manager.save(userRole);
         }
+    }
+
+    async getUserProfile(userId: string) {
+        const user = await this.userRepository.findOne({
+            where: { id: userId },
+            relations: ["userRoles", "userRoles.role"],
+        });
+
+        if (!user) {
+            throw new Error("User not found");
+        }
+
+        let userProfile = await this.userProfileRepository.findOne({ where: { userId } });
+        if (!userProfile) {
+            userProfile = this.userProfileRepository.create({ userId });
+            userProfile = await this.userProfileRepository.save(userProfile);
+        }
+
+        const roleDetails = (user.userRoles || []).map((userRole) => ({
+            name: userRole.role?.name,
+            status: userRole.status,
+            assignedAt: userRole.assignedAt,
+        }));
+
+        return {
+            id: user.id,
+            phoneNumber: user.phoneNumber,
+            email: user.email,
+            status: user.status,
+            activeRole: user.activeRole,
+            fullName: userProfile.fullName,
+            profileImageUrl: userProfile.profileImageUrl,
+            roles: roleDetails,
+        };
+    }
+
+    async updateUserProfile(userId: string, payload: { fullName?: string; profileImageUrl?: string | null }) {
+        let userProfile = await this.userProfileRepository.findOne({ where: { userId } });
+        if (!userProfile) {
+            userProfile = this.userProfileRepository.create({ userId });
+        }
+
+        if (payload.fullName !== undefined) {
+            userProfile.fullName = payload.fullName.trim() || null;
+        }
+
+        if (payload.profileImageUrl !== undefined) {
+            userProfile.profileImageUrl = payload.profileImageUrl || null;
+        }
+
+        await this.userProfileRepository.save(userProfile);
+        return this.getUserProfile(userId);
     }
 }

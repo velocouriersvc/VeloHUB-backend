@@ -3,6 +3,7 @@ import { UserRole } from "./user-role";
 import { BuyerProfile } from "./buyer-profile";
 import { DriverProfile } from "./driver-profile";
 import { MerchantProfile } from "./merchant-profile";
+import { UserProfile } from "./user-profile";
 
 export enum UserStatus {
     ACTIVE = "active",
@@ -58,4 +59,7 @@ export class User {
 
     @OneToOne(() => MerchantProfile, (profile: MerchantProfile) => profile.user)
     merchantProfile: MerchantProfile;
+
+    @OneToOne(() => UserProfile, (profile: UserProfile) => profile.user)
+    userProfile: UserProfile;
 }

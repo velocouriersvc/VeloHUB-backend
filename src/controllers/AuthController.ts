@@ -8,6 +8,7 @@ import { User } from "../models/user";
 import { BuyerProfile } from "../models/buyer-profile";
 import { DriverProfile } from "../models/driver-profile";
 import { MerchantProfile } from "../models/merchant-profile";
+import { UserProfile } from "../models/user-profile";
 
 const log = createServiceLogger("AuthController");
 
@@ -111,16 +112,25 @@ export class AuthController {
 
             // Resolve actual display name from profile tables
             let fullName: string | null = null;
+            let profileImageUrl: string | null = null;
+            const userProfile = await AppDataSource.getRepository(UserProfile).findOne({ where: { userId: user.id } });
+            if (userProfile?.fullName) {
+                fullName = userProfile.fullName;
+            }
+            if (userProfile?.profileImageUrl) {
+                profileImageUrl = userProfile.profileImageUrl;
+            }
+
             const buyerProfile = await AppDataSource.getRepository(BuyerProfile).findOne({ where: { userId: user.id } });
-            if (buyerProfile?.fullName) {
+            if (!fullName && buyerProfile?.fullName) {
                 fullName = buyerProfile.fullName;
             } else {
                 const driverProfile = await AppDataSource.getRepository(DriverProfile).findOne({ where: { userId: user.id } });
-                if (driverProfile?.fullName) {
+                if (!fullName && driverProfile?.fullName) {
                     fullName = driverProfile.fullName;
                 } else {
                     const merchantProfile = await AppDataSource.getRepository(MerchantProfile).findOne({ where: { userId: user.id } });
-                    if (merchantProfile?.businessName) {
+                    if (!fullName && merchantProfile?.businessName) {
                         fullName = merchantProfile.businessName;
                     }
                 }
@@ -134,6 +144,7 @@ export class AuthController {
                 roles: (user.userRoles as UserRole[]).filter((ur: UserRole) => ur.status === RoleStatus.APPROVED).map(ur => ur.role.name),
                 activeRole: user.activeRole || null,
                 full_name: fullName || user.email || user.phoneNumber,
+                profile_image_url: profileImageUrl,
                 created_date: user.createdAt
             });
         } catch (error) {

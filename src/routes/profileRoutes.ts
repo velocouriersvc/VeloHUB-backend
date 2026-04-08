@@ -8,6 +8,8 @@ const profileController = new ProfileController();
 
 // Apply API Key Middleware to all profile routes
 router.use(apiKeyMiddleware);
+router.get("/me", requireAuth, profileController.getMyProfile);
+router.patch("/me", requireAuth, profileController.updateMyProfile);
 
 /**
  * @openapi
