@@ -2009,6 +2009,16 @@ export class AdminService {
         });
     }
 
+    async createSupportTicket(data: { userId: string; subject: string; description: string; category?: string; priority?: SupportTicketPriority }) {
+        const ticket = this.supportTicketRepo.create({
+            ...data,
+            ticket_number: `TKT-${Math.random().toString(36).substring(2, 8).toUpperCase()}`,
+        });
+        await this.supportTicketRepo.save(ticket);
+        log.info("Created support ticket", { ticketId: ticket.id, userId: data.userId });
+        return ticket;
+    }
+
     async updateSupportTicket(id: string, data: any, adminId: string) {
         const ticket = await this.supportTicketRepo.findOne({ where: { id }, relations: ["user"] });
         if (!ticket) throw new Error("Ticket not found");

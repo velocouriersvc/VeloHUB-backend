@@ -1312,6 +1312,29 @@ export class AdminController {
         }
     }
 
+    createSupportTicket = async (req: AuthRequest, res: Response) => {
+        try {
+            const userId = req.user?.id;
+            if (!userId) return res.status(401).json({ message: "User ID required" });
+
+            const { subject, description, category, priority } = req.body;
+            if (!subject || !description) return res.status(400).json({ message: "Subject and description required" });
+
+            const ticket = await this.adminService.createSupportTicket({
+                userId,
+                subject,
+                description,
+                category,
+                priority
+            });
+
+            return res.status(201).json({ message: "Support ticket created", ticket });
+        } catch (error) {
+            log.error("Error creating support ticket", { error: (error as Error).message });
+            return res.status(500).json({ message: "Internal server error" });
+        }
+    }
+
     // ════════════════════════════════════════════════════════════════
     //  FINANCE & SETTINGS
     // ════════════════════════════════════════════════════════════════

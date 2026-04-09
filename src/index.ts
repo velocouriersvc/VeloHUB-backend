@@ -15,6 +15,7 @@ import { runSeeds } from "./scripts/run-seeds";
 
 import orderRoutes from "./routes/orderRoutes";
 import profileRoutes from "./routes/profileRoutes";
+import supportRoutes from "./routes/supportRoutes";
 import authRoutes from "./routes/authRoutes";
 import devRoutes from "./routes/devRoutes";
 import rideRoutes from "./routes/rideRoutes";
@@ -88,6 +89,7 @@ app.use(healthRoutes);
 
 app.use("/api/v1/auth", authRoutes);
 app.use("/api/v1/profile", profileRoutes);
+app.use("/api/v1/support", supportRoutes);
 app.use("/api/v1/dev", devRoutes);
 app.use("/api/v1/rides", rideRoutes);
 app.use("/api/v1/driver", driverRoutes);
