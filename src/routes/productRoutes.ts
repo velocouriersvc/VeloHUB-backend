@@ -91,6 +91,36 @@ router.get("/categories", anyRole, productController.getCategories);
  */
 router.get("/", anyRole, productController.getProducts);
 
+/**
+ * @openapi
+ * /products/popular:
+ *   get:
+ *     tags: [Products]
+ *     summary: Get popular products for a category
+ *     description: Returns the highest-ordered products for a specified category. Public — any authenticated role.
+ *     security:
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - name: category
+ *         in: query
+ *         description: Product category to filter by
+ *         schema:
+ *           type: string
+ *           default: food
+ *       - name: limit
+ *         in: query
+ *         description: Maximum number of popular products to return
+ *         schema:
+ *           type: integer
+ *           default: 5
+ *     responses:
+ *       200:
+ *         description: Popular product list
+ *       403:
+ *         description: Invalid API key or role not approved
+ */
+router.get("/popular", anyRole, productController.getPopularProducts);
+
 // ════════════════════════════════════════════════════════════════════
 //  MERCHANT ENDPOINTS (static paths BEFORE :id param routes)
 // ════════════════════════════════════════════════════════════════════

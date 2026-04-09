@@ -9,6 +9,7 @@ import { NotificationService } from "./notification-service";
 import { createServiceLogger } from "../utils/logger";
 import { productViewsTotal } from "../utils/metrics";
 import { In } from "typeorm";
+import { Order, OrderStatus } from "../models/order";
 
 const log = createServiceLogger("ProductService");
 
@@ -322,6 +323,91 @@ export class ProductService {
         limit: number = 20
     ): Promise<{ products: Product[]; total: number; page: number; limit: number }> {
         return this.getProducts({ merchantId, isActive: undefined, page, limit });
+    }
+
+    /**
+     * Get popular products for a specific merchant based on order frequency (merchant dashboard).
+     */
+    async getMerchantPopularProducts(
+        merchantId: string,
+        page: number = 1,
+        limit: number = 10
+    ): Promise<{ products: Product[]; total: number; page: number; limit: number }> {
+        const subquery = AppDataSource.getRepository(Order)
+            .createQueryBuilder("order")
+            .select("oi.productId")
+            .addSelect("COUNT(*)", "orderCount")
+            .innerJoin("order.orderItems", "oi")
+            .where("order.merchantId = :merchantId", { merchantId })
+            .andWhere("order.status IN (:...statuses)", { statuses: [OrderStatus.COMPLETED, OrderStatus.DELIVERED] })
+            .groupBy("oi.productId");
+
+        const qb = this.productRepo
+            .createQueryBuilder("product")
+            .leftJoinAndSelect("product.customizations", "customization")
+            .leftJoinAndSelect("customization.options", "option")
+            .leftJoinAndSelect("product.merchant", "merchant")
+            .leftJoinAndSelect("merchant.merchantProfile", "merchantProfile")
+            .where("product.deletedAt IS NULL")
+            .andWhere("product.id IN (" + subquery.getQuery() + ")")
+            .setParameters(subquery.getParameters())
+            .orderBy("orderCount", "DESC")
+            .addOrderBy("product.createdAt", "DESC");
+
+        const [products, total] = await qb.skip((page - 1) * limit).take(limit).getManyAndCount();
+
+        return { products, total, page, limit };
+    }
+
+    /**
+     * Get popular products for a given category based on historical orders.
+     */
+    async getPopularProducts(category: string = "food", limit: number = 5): Promise<Product[]> {
+        const safeLimit = Math.min(Math.max(limit || 1, 1), 20);
+        const rows = await AppDataSource.query(
+            `
+            SELECT
+                p.id,
+                p.name,
+                p.description,
+                p.category,
+                p.price,
+                p.images,
+                p.merchant_id AS "merchantId",
+                p.stock_quantity AS "stockQuantity",
+                p.min_stock_alert AS "minStockAlert",
+                p.is_active AS "isActive",
+                p.preparation_time_min AS "preparationTimeMin",
+                p.expiration_date AS "expirationDate",
+                p.dosage_info AS "dosageInfo",
+                p.prescription_required AS "prescriptionRequired",
+                p.service_duration_min AS "serviceDurationMin",
+                p.rental_duration AS "rentalDuration",
+                p.deposit AS "deposit",
+                p.created_at AS "createdAt",
+                p.updated_at AS "updatedAt"
+            FROM products p
+            INNER JOIN LATERAL (
+                SELECT SUM((item->>'quantity')::int) AS popularity
+                FROM orders o,
+                     jsonb_array_elements(o.items) AS item
+                WHERE (item->>'productId')::uuid = p.id
+                  AND o.status NOT IN ($2, $3)
+            ) pop ON pop.popularity IS NOT NULL
+            WHERE p.deleted_at IS NULL
+              AND p.is_active = true
+              AND p.category = $1
+            ORDER BY pop.popularity DESC
+            LIMIT $4
+            `,
+            [category, OrderStatus.CANCELLED, OrderStatus.REFUNDED, safeLimit]
+        );
+
+        return rows.map((row: any) => ({
+            ...row,
+            price: typeof row.price === 'string' ? Number(row.price) : row.price,
+            images: row.images || [],
+        }));
     }
 
     // ── Update ──────────────────────────────────────────────────────

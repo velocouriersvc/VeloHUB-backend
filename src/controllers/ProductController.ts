@@ -68,6 +68,22 @@ export class ProductController {
         }
     };
 
+    /**
+     * GET /products/popular — Get popular products for a category.
+     */
+    getPopularProducts = async (req: AuthRequest, res: Response) => {
+        try {
+            const category = (req.query.category as string) || "food";
+            const limit = req.query.limit ? Number(req.query.limit) : 5;
+            const products = await this.productService.getPopularProducts(category, limit);
+
+            return res.status(200).json({ products });
+        } catch (error) {
+            log.error("Error fetching popular products", { error: (error as Error).message });
+            return res.status(500).json({ message: "Internal server error" });
+        }
+    };
+
     // ── Merchant Endpoints ──────────────────────────────────────────
 
     /**
