@@ -29,10 +29,12 @@ import { ReferralCode } from "../models/referral-code";
 import { ReferralLink, ReferralStatus } from "../models/referral-link";
 import { Broadcast } from "../models/broadcast";
 import { BuyerProfile } from "../models/buyer-profile";
+import { DriverProfile } from "../models/driver-profile";
 import { createServiceLogger } from "../utils/logger";
 import { formatCurrency } from "../utils/currency";
 import { orderEventsTotal } from "../utils/metrics";
 import { getCountryName } from "../utils/country";
+import { inferCountryFromPhone } from "../utils/phone";
 
 const log = createServiceLogger("AdminService");
 
@@ -427,7 +429,7 @@ export class AdminService {
 
     async getRiderStats() {
         const users = await this.userRepo.find({
-            relations: ["buyerProfile", "userRoles", "userRoles.role"],
+            relations: ["buyerProfile", "merchantProfile", "driverProfile", "userRoles", "userRoles.role"],
             order: { createdAt: "DESC" }
         });
 
@@ -462,22 +464,36 @@ export class AdminService {
             statsMap[s.userId].spent += Number(s.totalSpent || 0);
         });
 
-        return users.map(u => ({
-            id: u.id,
-            first_name: u.buyerProfile?.fullName?.split(" ")[0] || "",
-            last_name: u.buyerProfile?.fullName?.split(" ").slice(1).join(" ") || "",
-            full_name: u.buyerProfile?.fullName || u.email || "Unknown",
-            email: u.email,
-            phone: u.phoneNumber,
-            status: u.status,
-            country: getCountryName(u.country),
-            created_date: u.createdAt,
-            total_spent: statsMap[u.id]?.spent || 0,
-            total_orders: statsMap[u.id]?.orders || 0,
-            total_rides: statsMap[u.id]?.rides || 0,
-            wallet_balance: walletMap.get(u.id) || 0,
-            roles: u.userRoles?.filter(ur => ur.status === RoleStatus.APPROVED).map(ur => ur.role.name) || []
-        }));
+        return users.map(u => {
+            const fullName = u.buyerProfile?.fullName || u.merchantProfile?.businessName || u.driverProfile?.fullName || u.email?.split("@")[0] || "Unknown";
+            const names = fullName.split(" ");
+            const firstName = names[0] || "";
+            const lastName = names.slice(1).join(" ") || "";
+
+            // Country inference logic
+            let countryCode = u.country;
+            if ((!countryCode || countryCode === "GH") && u.phoneNumber) {
+                const inferred = inferCountryFromPhone(u.phoneNumber);
+                if (inferred) countryCode = inferred;
+            }
+
+            return {
+                id: u.id,
+                first_name: firstName,
+                last_name: lastName,
+                full_name: fullName,
+                email: u.email,
+                phone: u.phoneNumber,
+                status: u.status,
+                country: getCountryName(countryCode),
+                created_date: u.createdAt,
+                total_spent: statsMap[u.id]?.spent || 0,
+                total_orders: statsMap[u.id]?.orders || 0,
+                total_rides: statsMap[u.id]?.rides || 0,
+                wallet_balance: walletMap.get(u.id) || 0,
+                roles: u.userRoles?.filter(ur => ur.status === RoleStatus.APPROVED).map(ur => ur.role.name) || []
+            };
+        });
     }
 
     // ════════════════════════════════════════════════════════════════
