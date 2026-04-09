@@ -30,6 +30,7 @@ import { ReferralLink, ReferralStatus } from "../models/referral-link";
 import { Broadcast } from "../models/broadcast";
 import { BuyerProfile } from "../models/buyer-profile";
 import { DriverProfile } from "../models/driver-profile";
+import { UserProfile } from "../models/user-profile";
 import { createServiceLogger } from "../utils/logger";
 import { formatCurrency } from "../utils/currency";
 import { orderEventsTotal } from "../utils/metrics";
@@ -429,7 +430,7 @@ export class AdminService {
 
     async getRiderStats() {
         const users = await this.userRepo.find({
-            relations: ["buyerProfile", "merchantProfile", "driverProfile", "userRoles", "userRoles.role"],
+            relations: ["buyerProfile", "merchantProfile", "driverProfile", "userProfile", "userRoles", "userRoles.role"],
             order: { createdAt: "DESC" }
         });
 
@@ -465,7 +466,7 @@ export class AdminService {
         });
 
         return users.map(u => {
-            const fullName = u.buyerProfile?.fullName || u.merchantProfile?.businessName || u.driverProfile?.fullName || u.email?.split("@")[0] || "Unknown";
+            const fullName = u.buyerProfile?.fullName || u.merchantProfile?.businessName || u.driverProfile?.fullName || u.userProfile?.fullName || u.email?.split("@")[0] || u.phoneNumber || "Unknown";
             const names = fullName.split(" ");
             const firstName = names[0] || "";
             const lastName = names.slice(1).join(" ") || "";
