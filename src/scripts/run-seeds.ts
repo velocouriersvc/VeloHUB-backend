@@ -1,6 +1,7 @@
 import logger from "../utils/logger";
 import { seedPlatformSettings } from "./seed-platform-settings";
 import { seedVehiclePricing } from "./seed-vehicle-pricing";
+import { seedProductCategories } from "./seed-product-categories";
 
 /**
  * Run all essential seed scripts once on server boot.
@@ -16,6 +17,7 @@ export async function runSeeds(): Promise<void> {
         // Platform settings first (vehicle pricing references the same countries)
         await seedPlatformSettings(true);
         await seedVehiclePricing(true);
+        await seedProductCategories(true);
 
         logger.info("All seed scripts completed");
     } catch (err) {

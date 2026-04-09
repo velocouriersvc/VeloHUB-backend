@@ -115,7 +115,7 @@ export class ProductService {
                 slug: c.slug,
                 name: c.name,
                 icon: c.icon || null,
-                type: c.type || "product",
+                type: c.type || (c.slug === ProductCategory.SERVICES ? "service" : "marketplace"),
                 isActive: c.isActive,
             }));
         }
@@ -125,7 +125,7 @@ export class ProductService {
             slug,
             name: slug.charAt(0).toUpperCase() + slug.slice(1),
             icon: null,
-            type: "product",
+            type: slug === ProductCategory.SERVICES ? "service" : "marketplace",
             isActive: true,
         }));
     }
@@ -146,14 +146,16 @@ export class ProductService {
             const catRepo = manager.getRepository(ProductCategoryEntity);
             const existingCat = await catRepo.findOne({ where: { slug: input.category.toLowerCase().replace(/\s+/g, '-') } });
             if (!existingCat) {
+                const slug = input.category.toLowerCase().replace(/\s+/g, '-');
+                const categoryType = slug === ProductCategory.SERVICES ? 'service' : 'marketplace';
                 const newCat = catRepo.create({
                     name: input.category,
-                    slug: input.category.toLowerCase().replace(/\s+/g, '-'),
-                    type: "product",
+                    slug,
+                    type: categoryType,
                     isActive: true
                 });
                 await catRepo.save(newCat);
-                log.info("Auto-created new category", { category: input.category });
+                log.info("Auto-created new category", { category: input.category, type: categoryType });
             }
 
             // Create product
