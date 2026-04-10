@@ -19,7 +19,7 @@ export interface CreateBookingInput {
     price: number;
     preferredDate: string;
     preferredTimeSlot?: string;
-    serviceAddress: string;
+    serviceAddress?: string;
     customerNotes?: string;
     paymentMethod: ServicePaymentMethod;
     phoneNumber?: string;
@@ -60,7 +60,7 @@ export class ServiceBookingService {
             currency,
             preferredDate: new Date(input.preferredDate),
             preferredTimeSlot: input.preferredTimeSlot || null,
-            serviceAddress: input.serviceAddress,
+            serviceAddress: input.serviceAddress || null,
             latitude: input.latitude || null,
             longitude: input.longitude || null,
             customerNotes: input.customerNotes || null,
@@ -88,7 +88,7 @@ export class ServiceBookingService {
             input.merchantId,
             NotificationType.SERVICE_REQUESTED,
             "New Service Booking! 🛠️",
-            `New request for "${input.serviceTitle}" at ${input.serviceAddress}.`,
+            `New request for "${input.serviceTitle}"${input.serviceAddress ? ` at ${input.serviceAddress}` : ''}.`,
             { bookingId: savedBooking.id, bookingNumber }
         );
 
