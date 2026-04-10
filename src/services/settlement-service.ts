@@ -19,6 +19,7 @@ import { NotificationType } from "../models/notification";
 import { createServiceLogger } from "../utils/logger";
 import { formatCurrency } from "../utils/currency";
 import { settlementEventsTotal, orderEventsTotal, rideEventsTotal } from "../utils/metrics";
+import { emitOrderEvent } from "../socket-gateway";
 
 const log = createServiceLogger("SettlementService");
 
@@ -189,6 +190,13 @@ export class SettlementService {
             completedByRole,
             `Order settled (${settlementType})`
         );
+
+        // 2b. Emit WebSocket event for real-time tracking
+        emitOrderEvent(orderId, "order:status", {
+            orderId,
+            status: OrderStatus.COMPLETED,
+            updatedAt: new Date().toISOString(),
+        });
 
         // 3. Update merchant stats
         await this.merchantService.recordOrderCompletion(order.merchantId, merchantEarnings);

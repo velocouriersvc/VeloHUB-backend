@@ -8,6 +8,7 @@ import { NotificationType } from "../models/notification";
 import { redis } from "../utils/redis";
 import { createServiceLogger } from "../utils/logger";
 import { orderEventsTotal } from "../utils/metrics";
+import { emitOrderEvent } from "../socket-gateway";
 
 const log = createServiceLogger("DeliveryService");
 
@@ -163,6 +164,13 @@ export class DeliveryService {
             await this.orderRepo.save(order);
             await this.recordStatusChange(orderId, fromStatus, OrderStatus.DRIVER_ASSIGNED, driverId, "driver", "Driver accepted delivery");
 
+            // Emit WebSocket event for real-time tracking
+            emitOrderEvent(orderId, "order:status", {
+                orderId,
+                status: OrderStatus.DRIVER_ASSIGNED,
+                updatedAt: new Date().toISOString(),
+            });
+
             // Notify customer
             await this.notificationService.notify(
                 order.customerId,
@@ -215,6 +223,13 @@ export class DeliveryService {
 
         await this.orderRepo.save(order);
         await this.recordStatusChange(orderId, fromStatus, OrderStatus.READY_FOR_DELIVERY, driverId, "driver", reason || "Driver cancelled assignment");
+
+        // Emit WebSocket event for real-time tracking
+        emitOrderEvent(orderId, "order:status", {
+            orderId,
+            status: OrderStatus.READY_FOR_DELIVERY,
+            updatedAt: new Date().toISOString(),
+        });
 
         // Notify merchant
         await this.notificationService.notify(
@@ -273,6 +288,13 @@ export class DeliveryService {
 
         await this.orderRepo.save(order);
         await this.recordStatusChange(orderId, fromStatus, newStatus, driverId, "driver");
+
+        // Emit WebSocket event for real-time tracking
+        emitOrderEvent(orderId, "order:status", {
+            orderId,
+            status: newStatus,
+            updatedAt: new Date().toISOString(),
+        });
 
         // Notify customer on key transitions
         const statusMessages: Record<string, { title: string; body: string; type: NotificationType }> = {
@@ -349,6 +371,13 @@ export class DeliveryService {
             order.deliveredAt = new Date();
             await this.orderRepo.save(order);
             await this.recordStatusChange(orderId, OrderStatus.IN_TRANSIT, OrderStatus.DELIVERED, driverId, "driver", "Driver confirmed delivery");
+
+            // Emit WebSocket event for real-time tracking
+            emitOrderEvent(orderId, "order:status", {
+                orderId,
+                status: OrderStatus.DELIVERED,
+                updatedAt: new Date().toISOString(),
+            });
         }
 
         // Trigger settlement

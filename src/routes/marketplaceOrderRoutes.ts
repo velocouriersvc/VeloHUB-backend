@@ -264,6 +264,29 @@ router.post("/checkout", buyerRole, validate([
 router.get("/", buyerRole, orderController.getMyOrders);
 
 // ════════════════════════════════════════════════════════════════════
+//  ACTIVE ORDER
+// ════════════════════════════════════════════════════════════════════
+
+/**
+ * @openapi
+ * /marketplace/orders/active:
+ *   get:
+ *     tags: [Orders]
+ *     summary: Get customer's active/ongoing order
+ *     description: |
+ *       Returns the most recent order that is not completed or cancelled.
+ *       Useful for "Track your order" feature.
+ *     security:
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - $ref: '#/components/parameters/PhoneNumber'
+ *     responses:
+ *       200:
+ *         description: Active order or null
+ */
+router.get("/active", buyerRole, orderController.getActiveOrder);
+
+// ════════════════════════════════════════════════════════════════════
 //  ORDER DETAIL & ACTIONS — parameterized routes last
 // ════════════════════════════════════════════════════════════════════
 

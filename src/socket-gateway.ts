@@ -111,6 +111,16 @@ export function initSocketGateway(httpServer: HttpServer): Server {
             socket.leave(`ride:${data.rideId}`);
         });
 
+        // Customer subscribes to a specific order's status updates
+        socket.on("order:subscribe", (data: { orderId: string }) => {
+            socket.join(`order:${data.orderId}`);
+            log.info("Customer subscribed to order", { userId, orderId: data.orderId });
+        });
+
+        socket.on("order:unsubscribe", (data: { orderId: string }) => {
+            socket.leave(`order:${data.orderId}`);
+        });
+
         socket.on("disconnect", () => {
             log.info("Rider disconnected", { userId, socketId: socket.id });
         });
@@ -130,4 +140,21 @@ export function emitRideEvent(rideId: string, event: string, payload: Record<str
 export function emitToUser(userId: string, event: string, payload: Record<string, any>) {
     if (!io) return;
     io.of("/rides").emit(event, { ...payload, targetUserId: userId });
+}
+
+// ── Helper to emit order status events from anywhere in the backend ──
+
+export function emitOrderEvent(orderId: string, event: string, payload: Record<string, any>) {
+    if (!io) return;
+    io.of("/rides").to(`order:${orderId}`).emit(event, payload);
+}
+
+export function emitOrderStatusToUser(userId: string, orderId: string, status: string, extraPayload?: Record<string, any>) {
+    if (!io) return;
+    io.of("/rides").emit("order:status", {
+        targetUserId: userId,
+        orderId,
+        status,
+        ...extraPayload,
+    });
 }

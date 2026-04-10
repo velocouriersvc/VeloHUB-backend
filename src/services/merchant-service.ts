@@ -9,6 +9,7 @@ import { NotificationService } from "./notification-service";
 import { NotificationType } from "../models/notification";
 import { createServiceLogger } from "../utils/logger";
 import { formatCurrency } from "../utils/currency";
+import { emitOrderEvent } from "../socket-gateway";
 import { Between, In, FindOptionsWhere } from "typeorm";
 import { SettlementResult } from "./settlement-service";
 import { WalletTransactionResponse } from "../types/merchant";
@@ -359,6 +360,13 @@ export class MerchantService {
         await this.orderRepo.save(order);
         await this.recordStatusChange(orderId, fromStatus, OrderStatus.ACCEPTED, merchantId, "merchant");
 
+        // Emit WebSocket event for real-time tracking
+        emitOrderEvent(orderId, "order:status", {
+            orderId,
+            status: OrderStatus.ACCEPTED,
+            updatedAt: new Date().toISOString(),
+        });
+
         // Notify customer
         await this.notificationService.notify(
             order.customerId,
@@ -397,6 +405,13 @@ export class MerchantService {
 
         await this.orderRepo.save(order);
         await this.recordStatusChange(orderId, fromStatus, OrderStatus.CANCELLED, merchantId, "merchant", reason);
+
+        // Emit WebSocket event for real-time tracking
+        emitOrderEvent(orderId, "order:status", {
+            orderId,
+            status: OrderStatus.CANCELLED,
+            updatedAt: new Date().toISOString(),
+        });
 
         // Notify customer
         await this.notificationService.notify(
@@ -456,6 +471,13 @@ export class MerchantService {
 
         await this.orderRepo.save(order);
         await this.recordStatusChange(orderId, fromStatus, newStatus, merchantId, "merchant");
+
+        // Emit WebSocket event for real-time tracking
+        emitOrderEvent(orderId, "order:status", {
+            orderId,
+            status: newStatus,
+            updatedAt: new Date().toISOString(),
+        });
 
         // Notify customer on key transitions
         const statusMessages: Record<string, { title: string; body: string; type: NotificationType }> = {
@@ -522,6 +544,13 @@ export class MerchantService {
 
         await this.orderRepo.save(order);
         await this.recordStatusChange(orderId, fromStatus, OrderStatus.PICKED_UP, merchantId, "merchant", "Pickup code verified");
+
+        // Emit WebSocket event for real-time tracking
+        emitOrderEvent(orderId, "order:status", {
+            orderId,
+            status: OrderStatus.PICKED_UP,
+            updatedAt: new Date().toISOString(),
+        });
 
         // Notify customer
         await this.notificationService.notify(

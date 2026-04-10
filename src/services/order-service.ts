@@ -21,6 +21,7 @@ import { redis } from "../utils/redis";
 import { createServiceLogger } from "../utils/logger";
 import { orderEventsTotal, cartEventsTotal } from "../utils/metrics";
 import { formatCurrency } from "../utils/currency";
+import { emitOrderEvent } from "../socket-gateway";
 import { v4 as uuidv4 } from "uuid";
 import { In } from "typeorm";
 
@@ -340,6 +341,13 @@ export class OrderService {
                 "Order placed"
             );
 
+            // 10b. Emit WebSocket event for real-time tracking
+            emitOrderEvent(savedOrder.id, "order:status", {
+                orderId: savedOrder.id,
+                status: OrderStatus.PENDING,
+                updatedAt: new Date().toISOString(),
+            });
+
             // 11. Increment promo usage
             if (quote.promoCodeId) {
                 await this.promoRepo.increment(
@@ -458,6 +466,32 @@ export class OrderService {
     // ── Customer Order Queries ───────────────────────────────────────
 
     /**
+     * Get customer's active/ongoing order (not completed or cancelled).
+     */
+    async getActiveOrder(customerId: string): Promise<Order | null> {
+        const activeStatuses = [
+            OrderStatus.PENDING,
+            OrderStatus.ACCEPTED,
+            OrderStatus.PREPARING,
+            OrderStatus.READY_FOR_PICKUP,
+            OrderStatus.READY_FOR_DELIVERY,
+            OrderStatus.DRIVER_ASSIGNED,
+            OrderStatus.PICKED_UP,
+            OrderStatus.IN_TRANSIT,
+        ];
+
+        return this.orderRepo.findOne({
+            where: activeStatuses.map((status) => ({ customerId, status })),
+            relations: {
+                merchant: { merchantProfile: true },
+                driver: { driverProfile: true },
+                statusHistory: true,
+            },
+            order: { createdAt: "DESC" },
+        });
+    }
+
+    /**
      * Get customer's orders with pagination.
      */
     async getCustomerOrders(
@@ -552,6 +586,13 @@ export class OrderService {
             "customer",
             reason
         );
+
+        // Emit WebSocket event for real-time tracking
+        emitOrderEvent(orderId, "order:status", {
+            orderId,
+            status: OrderStatus.CANCELLED,
+            updatedAt: new Date().toISOString(),
+        });
 
         // Restore stock
         const stockItems = order.items.map((item) => ({
