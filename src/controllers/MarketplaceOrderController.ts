@@ -195,6 +195,22 @@ export class MarketplaceOrderController {
     // ── My Orders ───────────────────────────────────────────────────
 
     /**
+     * GET /orders/active — Get customer's active/ongoing order.
+     */
+    getActiveOrder = async (req: AuthRequest, res: Response) => {
+        try {
+            const userId = req.user?.id;
+            if (!userId) return res.status(401).json({ message: "User ID required" });
+
+            const order = await this.orderService.getActiveOrder(userId);
+            return res.status(200).json({ order: order || null });
+        } catch (error) {
+            log.error("Error getting active order", { error: (error as Error).message });
+            return res.status(500).json({ message: "Internal server error" });
+        }
+    };
+
+    /**
      * GET /orders — Get customer's orders.
      */
     getMyOrders = async (req: AuthRequest, res: Response) => {
