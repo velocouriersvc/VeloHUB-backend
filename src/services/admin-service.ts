@@ -786,6 +786,15 @@ export class AdminService {
         product.isActive = false;
         await this.productRepo.save(product);
 
+        // Notify merchant about product suspension
+        await this.notificationService.notify(
+            product.merchantId,
+            NotificationType.PRODUCT_SUSPENDED,
+            "Product Suspended",
+            `Your product "${product.name}" has been suspended by an admin. Please contact support for details.`,
+            { productId: product.id, productName: product.name }
+        );
+
         log.info("Admin suspended product", { productId, adminId });
         return product;
     }
@@ -801,6 +810,15 @@ export class AdminService {
         product.deletedAt = null; // un-soft-delete if needed
         await this.productRepo.save(product);
 
+        // Notify merchant about product reactivation
+        await this.notificationService.notify(
+            product.merchantId,
+            NotificationType.PRODUCT_REACTIVATED,
+            "Product Reactivated ✅",
+            `Your product "${product.name}" has been reactivated and is now live again.`,
+            { productId: product.id, productName: product.name }
+        );
+
         log.info("Admin reactivated product", { productId, adminId });
         return product;
     }
@@ -808,6 +826,15 @@ export class AdminService {
     async deleteProduct(productId: string, adminId: string) {
         const product = await this.productRepo.findOne({ where: { id: productId } });
         if (!product) throw new Error("Product not found");
+
+        // Notify merchant before deletion
+        await this.notificationService.notify(
+            product.merchantId,
+            NotificationType.PRODUCT_DELETED,
+            "Product Removed",
+            `Your product "${product.name}" has been removed by an admin. Please contact support if you believe this was a mistake.`,
+            { productId: product.id, productName: product.name }
+        );
 
         await this.productRepo.softDelete(productId);
         log.info("Admin deleted product", { productId, adminId });
@@ -1399,6 +1426,15 @@ export class AdminService {
 
         const user = await this.userRepo.findOne({ where: { id: merchantId } });
         await this.walletService.createWallet(merchantId, user?.country || "GH");
+
+        // Notify service provider
+        await this.notificationService.notify(
+            merchantId,
+            NotificationType.MERCHANT_APPROVED,
+            "Service Provider Approved! 🎉",
+            "Congratulations! Your service provider account has been approved. You can now start listing your services.",
+            {}
+        );
 
         log.info("Admin approved service provider", { merchantId, adminId });
         return profile;

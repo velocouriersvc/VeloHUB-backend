@@ -414,7 +414,21 @@ export class OrderService {
                 }
             );
 
-            // 15. Notify customer with pickup or delivery codes
+            // 15. Notify customer — order placed confirmation
+            await this.notificationService.notify(
+                userId,
+                NotificationType.ORDER_PLACED,
+                "Order Placed! 🛍️",
+                `Your order #${orderNumber} has been placed and is awaiting confirmation from the merchant.`,
+                {
+                    orderId: savedOrder.id,
+                    orderNumber,
+                    totalAmount: quote.totalAmount,
+                    deliveryType: input.deliveryType,
+                }
+            );
+
+            // 16. Notify customer with pickup or delivery codes
             if (pickupCode) {
                 const codeMessage = input.deliveryType === DeliveryType.DELIVERY && deliveryCode
                     ? `Order #${orderNumber} placed! Pickup code: ${pickupCode}. Delivery code: ${deliveryCode}. Show pickup code to the merchant and give the delivery code to your driver on arrival.`

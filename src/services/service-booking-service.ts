@@ -92,6 +92,15 @@ export class ServiceBookingService {
             { bookingId: savedBooking.id, bookingNumber }
         );
 
+        // 6. Notify customer — booking confirmation
+        await this.notificationService.notify(
+            input.customerId,
+            NotificationType.SERVICE_REQUESTED,
+            "Booking Submitted! 📋",
+            `Your booking #${bookingNumber} for "${input.serviceTitle}" has been submitted. The provider will respond shortly.`,
+            { bookingId: savedBooking.id, bookingNumber, jobId: savedBooking.id }
+        );
+
         log.info("Service booking created", { bookingId: savedBooking.id, bookingNumber });
 
         return {

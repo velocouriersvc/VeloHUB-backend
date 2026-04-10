@@ -12,6 +12,8 @@ import { BuyerSetupPayload, DriverSetupPayload, MerchantSetupPayload } from "../
 import { createServiceLogger } from "../utils/logger";
 import { UserProfile } from "../models/user-profile";
 import { rewriteToPublicAssetUrl } from "./upload-service";
+import { NotificationService } from "./notification-service";
+import { NotificationType } from "../models/notification";
 
 const log = createServiceLogger("ProfileService");
 
@@ -19,6 +21,7 @@ export class ProfileService {
     private userRepository = AppDataSource.getRepository(User);
     private roleRepository = AppDataSource.getRepository(Role);
     private userProfileRepository = AppDataSource.getRepository(UserProfile);
+    private notificationService = new NotificationService();
 
     private async syncToSupabase(userId: string, data: Record<string, unknown>) {
         try {
@@ -85,6 +88,16 @@ export class ProfileService {
             await this.ensureRole(queryRunner, userId, RoleType.BUYER);
 
             await queryRunner.commitTransaction();
+
+            // Notify user — profile created successfully
+            await this.notificationService.notify(
+                userId,
+                NotificationType.WELCOME,
+                "Welcome to VeloHub! 🎉",
+                "Your profile has been set up. Start ordering from local stores and restaurants!",
+                { role: RoleType.BUYER }
+            );
+
             log.info("Buyer profile setup completed", { userId });
             return savedProfile;
         } catch (error) {
@@ -154,6 +167,16 @@ export class ProfileService {
             await this.ensureRole(queryRunner, userId, RoleType.DRIVER);
 
             await queryRunner.commitTransaction();
+
+            // Notify user — driver profile submitted for review
+            await this.notificationService.notify(
+                userId,
+                NotificationType.PROFILE_CREATED,
+                "Driver Application Submitted! 🚗",
+                "Your driver profile is under review. We'll notify you once it's approved.",
+                { role: RoleType.DRIVER }
+            );
+
             log.info("Driver profile setup completed", { userId });
             return savedProfile;
         } catch (error) {
@@ -221,6 +244,16 @@ export class ProfileService {
             await this.ensureRole(queryRunner, userId, RoleType.MERCHANT);
 
             await queryRunner.commitTransaction();
+
+            // Notify user — merchant profile submitted for review
+            await this.notificationService.notify(
+                userId,
+                NotificationType.PROFILE_CREATED,
+                "Merchant Application Submitted! 🏪",
+                "Your merchant profile is under review. We'll notify you once it's approved and you can start listing products.",
+                { role: RoleType.MERCHANT }
+            );
+
             log.info("Merchant profile setup completed", { userId });
             return savedProfile;
         } catch (error) {

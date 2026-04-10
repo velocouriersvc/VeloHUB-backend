@@ -4,9 +4,12 @@ import { PlatformSettings } from "../../models/platform-settings";
 import { PaymentProvider } from "./payment-provider.interface";
 import { paymentProviderRegistry } from "./payment-provider-registry";
 import { WalletService } from "../wallet-service";
+import { NotificationService } from "../notification-service";
+import { NotificationType } from "../../models/notification";
 import { v4 as uuidv4 } from "uuid";
 import { createServiceLogger } from "../../utils/logger";
 import { paymentEventsTotal } from "../../utils/metrics";
+import { formatCurrency } from "../../utils/currency";
 import { ServiceSubscription, ServiceSubscriptionStatus } from "../../models/service-subscription";
 import { BuyerProfile } from "../../models/buyer-profile";
 
@@ -29,9 +32,11 @@ export class PaymentService {
     private paymentRepo = AppDataSource.getRepository(Payment);
     private settingsRepo = AppDataSource.getRepository(PlatformSettings);
     private walletService: WalletService;
+    private notificationService: NotificationService;
 
     constructor() {
         this.walletService = new WalletService();
+        this.notificationService = new NotificationService();
     }
 
     // ── Helpers ──────────────────────────────────────────────────────
@@ -473,6 +478,16 @@ export class PaymentService {
         } else {
             payment.status = PaymentRecordStatus.FAILED;
             payment.providerStatus = verification.providerStatus;
+
+            // Notify user about payment failure
+            await this.notificationService.notify(
+                payment.userId,
+                NotificationType.PAYMENT_FAILED,
+                "Payment Failed",
+                `Your payment of ${formatCurrency(Number(payment.amount), payment.currency || "GHS")} could not be processed. Please try again.`,
+                { paymentId: payment.id, reference }
+            );
+
             log.warn("Payment verification failed", { paymentId: payment.id, reference });
         }
 
@@ -569,6 +584,15 @@ export class PaymentService {
                     { hasServicesAccess: true }
                 );
             });
+
+            // 3. Notify user about subscription activation
+            await this.notificationService.notify(
+                userId,
+                NotificationType.SUBSCRIPTION_ACTIVATED,
+                "Subscription Activated! 🎉",
+                "Your Velo Services subscription is now active. You can browse and book services for the next 30 days.",
+                { subscriptionId }
+            );
 
             log.info("Subscription activated and access granted", { subscriptionId, userId });
         } catch (error) {

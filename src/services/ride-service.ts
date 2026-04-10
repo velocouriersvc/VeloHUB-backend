@@ -8,6 +8,7 @@ import { FareService, FareBreakdown } from "./fare-service";
 import { DriverMatchService, MatchedDriver } from "./driver-match-service";
 import { PaymentService } from "./payment/payment-service";
 import { NotificationService } from "./notification-service";
+import { NotificationType } from "../models/notification";
 import { RedisLocationService } from "./redis-location-service";
 import { PreludeService } from "./prelude-service";
 import { createServiceLogger } from "../utils/logger";
@@ -234,6 +235,17 @@ export class RideService {
             status: RideStatus.SEARCHING,
             driversNotified: drivers.length,
         });
+
+        // Notify customer — ride request confirmed, searching for drivers
+        await this.notificationService.notify(
+            request.customerId,
+            NotificationType.RIDE_REQUESTED,
+            "Ride Requested! 🔍",
+            drivers.length > 0
+                ? `Looking for a driver near you. ${drivers.length} driver${drivers.length > 1 ? "s" : ""} notified.`
+                : "Looking for available drivers in your area...",
+            { rideId: savedRide.id, screen: "rides", deepLink: `velohub://rides?rideId=${savedRide.id}` }
+        );
 
         // Auto-cancel ride after 3 minutes if no driver accepts
         setTimeout(async () => {

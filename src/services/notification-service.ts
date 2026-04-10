@@ -250,6 +250,14 @@ export class NotificationService {
 
         if (tokens.length === 0) return;
 
+        // Determine the Android notification channel based on data context
+        let channelId = "default";
+        if (data?.rideId || data?.screen === "rides") {
+            channelId = "rides";
+        } else if (data?.orderId || data?.orderNumber) {
+            channelId = "orders";
+        }
+
         // Build messages — only for valid Expo push tokens
         const messages: ExpoPushMessage[] = [];
         for (const t of tokens) {
@@ -264,7 +272,7 @@ export class NotificationService {
                 body,
                 data: data || {},
                 priority: "high",
-                channelId: "default",
+                channelId,
             });
         }
 

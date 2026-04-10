@@ -25,6 +25,8 @@ export enum NotificationType {
     ROLE_APPROVED = "role_approved",
     ROLE_REJECTED = "role_rejected",
     PROMO_CODE = "promo_code",
+    PROFILE_CREATED = "profile_created",
+    WELCOME = "welcome",
 
     // Order notifications
     ORDER_PLACED = "order_placed",
@@ -49,10 +51,17 @@ export enum NotificationType {
     MERCHANT_APPROVED = "merchant_approved",
     MERCHANT_SUSPENDED = "merchant_suspended",
 
+    // Subscription
+    SUBSCRIPTION_ACTIVATED = "subscription_activated",
+    SUBSCRIPTION_PAYMENT_FAILED = "subscription_payment_failed",
+
     // General
     SYSTEM = "system",
     LOW_STOCK_ALERT = "low_stock_alert",
     GENERAL_ANNOUNCEMENT = "general_announcement",
+    PRODUCT_SUSPENDED = "product_suspended",
+    PRODUCT_REACTIVATED = "product_reactivated",
+    PRODUCT_DELETED = "product_deleted",
 
     // Services
     SERVICE_REQUESTED = "service_requested",
