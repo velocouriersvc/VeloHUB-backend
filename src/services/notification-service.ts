@@ -5,6 +5,7 @@ import { PreludeService } from "./prelude-service";
 import { createServiceLogger } from "../utils/logger";
 import { notificationEventsTotal } from "../utils/metrics";
 import { formatCurrency } from "../utils/currency";
+import { Expo, ExpoPushMessage, ExpoPushTicket } from "expo-server-sdk";
 
 const log = createServiceLogger("NotificationService");
 
@@ -12,9 +13,11 @@ export class NotificationService {
     private notifRepo = AppDataSource.getRepository(Notification);
     private pushTokenRepo = AppDataSource.getRepository(PushToken);
     private preludeService: PreludeService;
+    private expo: Expo;
 
     constructor() {
         this.preludeService = new PreludeService();
+        this.expo = new Expo();
     }
 
     /**
@@ -231,8 +234,7 @@ export class NotificationService {
     }
 
     /**
-     * Send push notification via FCM (placeholder — wire up Firebase Admin SDK)
-     * TODO: Add firebase-admin dependency and initialize when ready for push
+     * Send push notification via Expo Push API
      */
     private async sendPushNotification(
         userId: string,
@@ -246,19 +248,62 @@ export class NotificationService {
 
         if (tokens.length === 0) return;
 
-        // TODO: Replace with actual FCM send when firebase-admin is added
-        // For now, just log that we would send a push
-        log.info("Push notification queued", { userId, title, deviceCount: tokens.length });
-        notificationEventsTotal.inc({ channel: "push", status: "success" });
+        // Build messages — only for valid Expo push tokens
+        const messages: ExpoPushMessage[] = [];
+        for (const t of tokens) {
+            if (!Expo.isExpoPushToken(t.token)) {
+                log.warn("Invalid Expo push token, skipping", { userId, token: t.token });
+                continue;
+            }
+            messages.push({
+                to: t.token,
+                sound: "default",
+                title,
+                body,
+                data: data || {},
+                priority: "high",
+                channelId: "default",
+            });
+        }
 
-        // When ready, implement like this:
-        // import admin from "firebase-admin";
-        // const message = {
-        //     notification: { title, body },
-        //     data: data ? Object.fromEntries(Object.entries(data).map(([k, v]) => [k, String(v)])) : {},
-        //     tokens: tokens.map(t => t.token),
-        // };
-        // await admin.messaging().sendEachForMulticast(message);
+        if (messages.length === 0) return;
+
+        // Chunk and send via Expo Push API
+        const chunks = this.expo.chunkPushNotifications(messages);
+        for (const chunk of chunks) {
+            try {
+                const ticketChunk: ExpoPushTicket[] = await this.expo.sendPushNotificationsAsync(chunk);
+
+                // Handle ticket errors — deactivate invalid tokens
+                for (let i = 0; i < ticketChunk.length; i++) {
+                    const ticket = ticketChunk[i];
+                    if (ticket.status === "error") {
+                        log.error("Push ticket error", {
+                            userId,
+                            error: ticket.message,
+                            details: ticket.details,
+                        });
+
+                        // If the token is invalid, deactivate it
+                        if (
+                            ticket.details?.error === "DeviceNotRegistered" ||
+                            ticket.details?.error === "InvalidCredentials"
+                        ) {
+                            const badToken = (chunk[i] as any).to as string;
+                            await this.pushTokenRepo.update({ token: badToken }, { isActive: false });
+                            log.info("Deactivated invalid push token", { token: badToken });
+                        }
+                    }
+                }
+
+                notificationEventsTotal.inc({ channel: "push", status: "success" });
+            } catch (err) {
+                log.error("Expo Push API error", { userId, error: (err as Error).message });
+                notificationEventsTotal.inc({ channel: "push", status: "failed" });
+            }
+        }
+
+        log.info("Push notification sent", { userId, title, deviceCount: messages.length });
     }
 
     // ── Convenience methods for common ride notifications ──
