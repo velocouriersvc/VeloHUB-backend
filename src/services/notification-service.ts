@@ -17,7 +17,9 @@ export class NotificationService {
 
     constructor() {
         this.preludeService = new PreludeService();
-        this.expo = new Expo();
+        this.expo = new Expo({
+            accessToken: process.env.EXPO_ACCESS_TOKEN,
+        });
     }
 
     /**
