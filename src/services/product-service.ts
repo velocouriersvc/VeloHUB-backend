@@ -263,6 +263,32 @@ export class ProductService {
     }
 
     /**
+     * Resolve a category param: if it matches a category type (food, grocery, pharmacy, etc.)
+     * return all sub-category slugs under that type. Otherwise return the slug as-is.
+     */
+    private async resolveCategorySlugs(category: string): Promise<{ slugs: string[]; isType: boolean }> {
+        // Known category types — check if the param is a type rather than a slug
+        const CATEGORY_TYPES = ["food", "grocery", "pharmacy", "marketplace", "service", "product"];
+        const lower = category.toLowerCase();
+
+        if (CATEGORY_TYPES.includes(lower)) {
+            const rows = await this.productCategoryRepo.find({
+                where: { type: lower, isActive: true },
+                select: ["slug"],
+            });
+            const slugs = rows.map((r) => r.slug);
+            log.info(`[resolveCategorySlugs] type="${lower}" resolved to ${slugs.length} slugs: [${slugs.join(", ")}]`);
+            if (slugs.length > 0) {
+                return { slugs, isType: true };
+            }
+            // If no sub-categories found for this type, fall through to exact match
+            log.warn(`[resolveCategorySlugs] type="${lower}" has 0 sub-categories, falling back to exact match`);
+        }
+
+        return { slugs: [category], isType: false };
+    }
+
+    /**
      * List products with filtering, pagination, and optional merchant scope.
      */
     async getProducts(params: {
@@ -297,7 +323,13 @@ export class ProductService {
         }
 
         if (params.category) {
-            qb.andWhere("product.category = :category", { category: params.category });
+            const { slugs, isType } = await this.resolveCategorySlugs(params.category);
+            if (slugs.length === 1) {
+                qb.andWhere("product.category = :category", { category: slugs[0] });
+            } else {
+                qb.andWhere("product.category IN (:...categorySlugs)", { categorySlugs: slugs });
+            }
+            log.info(`[getProducts] category="${params.category}" isType=${isType} → filtering by slugs: [${slugs.join(", ")}]`);
         }
 
         if (params.search) {
@@ -312,6 +344,8 @@ export class ProductService {
             .addOrderBy("option.sortOrder", "ASC");
 
         const [products, total] = await qb.skip(offset).take(limit).getManyAndCount();
+
+        log.info(`[getProducts] category="${params.category || 'ALL'}" search="${params.search || ''}" → ${total} total, returning ${products.length}`);
 
         return { products, total, page, limit };
     }
@@ -366,6 +400,17 @@ export class ProductService {
      */
     async getPopularProducts(category: string = "food", limit: number = 5): Promise<Product[]> {
         const safeLimit = Math.min(Math.max(limit || 1, 1), 20);
+
+        // Resolve category type to slugs (e.g. "food" → ["burgers", "pizza", ...])
+        const { slugs } = await this.resolveCategorySlugs(category);
+        log.info(`[getPopularProducts] category="${category}" resolved to slugs: [${slugs.join(", ")}]`);
+
+        // Build the category filter: single slug = $1 exact match, multiple = ANY($1)
+        const categoryFilter = slugs.length === 1
+            ? "AND p.category = $1"
+            : "AND p.category = ANY($1)";
+        const categoryParam = slugs.length === 1 ? slugs[0] : slugs;
+
         const rows = await AppDataSource.query(
             `
             SELECT
@@ -398,12 +443,14 @@ export class ProductService {
             ) pop ON pop.popularity IS NOT NULL
             WHERE p.deleted_at IS NULL
               AND p.is_active = true
-              AND p.category = $1
+              ${categoryFilter}
             ORDER BY pop.popularity DESC
             LIMIT $4
             `,
-            [category, OrderStatus.CANCELLED, OrderStatus.REFUNDED, safeLimit]
+            [categoryParam, OrderStatus.CANCELLED, OrderStatus.REFUNDED, safeLimit]
         );
+
+        log.info(`[getPopularProducts] category="${category}" → ${rows.length} popular products found`);
 
         return rows.map((row: any) => ({
             ...row,

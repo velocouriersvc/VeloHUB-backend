@@ -34,6 +34,8 @@ export class ProductController {
         try {
             const { merchantId, category, search, page, limit } = req.query;
 
+            log.info(`[getProducts] incoming request → category="${category || ''}" search="${search || ''}" merchantId="${merchantId || ''}" page=${page || 1} limit=${limit || 20}`);
+
             const result = await this.productService.getProducts({
                 merchantId: merchantId as string,
                 category: category as string,
@@ -41,6 +43,8 @@ export class ProductController {
                 page: page ? Number(page) : undefined,
                 limit: limit ? Number(limit) : undefined,
             });
+
+            log.info(`[getProducts] returning ${result.products.length}/${result.total} products for category="${category || 'ALL'}"`);
 
             return res.status(200).json(result);
         } catch (error) {
@@ -75,7 +79,12 @@ export class ProductController {
         try {
             const category = (req.query.category as string) || "food";
             const limit = req.query.limit ? Number(req.query.limit) : 5;
+
+            log.info(`[getPopularProducts] incoming request → category="${category}" limit=${limit}`);
+
             const products = await this.productService.getPopularProducts(category, limit);
+
+            log.info(`[getPopularProducts] returning ${products.length} popular products for category="${category}"`);
 
             return res.status(200).json({ products });
         } catch (error) {
