@@ -73,15 +73,33 @@ export class SearchService {
 
     constructor() {
         try {
-            this.redis = new Redis({
-                host: process.env.REDIS_HOST || "localhost",
-                port: Number(process.env.REDIS_PORT) || 6379,
-                password: process.env.REDIS_PASSWORD || undefined,
-                maxRetriesPerRequest: 1,
-                lazyConnect: true,
+            // Parse REDIS_URL if available, otherwise fall back to individual vars
+            const redisUrl = process.env.REDIS_URL;
+            if (redisUrl) {
+                this.redis = new Redis(redisUrl, {
+                    maxRetriesPerRequest: 1,
+                    lazyConnect: true,
+                    enableOfflineQueue: false,
+                });
+            } else {
+                this.redis = new Redis({
+                    host: process.env.REDIS_HOST || "localhost",
+                    port: Number(process.env.REDIS_PORT) || 6379,
+                    password: process.env.REDIS_PASSWORD || undefined,
+                    maxRetriesPerRequest: 1,
+                    lazyConnect: true,
+                    enableOfflineQueue: false,
+                });
+            }
+
+            // Attach error listener BEFORE connect to prevent unhandled error events
+            this.redis.on("error", () => {
+                // Silently handled — we null out redis below on connect failure
             });
+
             this.redis.connect().catch(() => {
                 log.warn("Redis not available — search cache disabled");
+                this.redis?.disconnect();
                 this.redis = null;
             });
         } catch {
