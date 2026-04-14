@@ -25,6 +25,7 @@ export interface PaymentResult {
     reference: string;
     status: PaymentRecordStatus;
     authorizationUrl?: string; // For momo redirect flows
+    clientSecret?: string;     // For Stripe Payment Sheet
     message?: string;
 }
 
@@ -37,6 +38,93 @@ export class PaymentService {
     constructor() {
         this.walletService = new WalletService();
         this.notificationService = new NotificationService();
+    }
+
+    // ── Stripe PaymentIntent ────────────────────────────────────────
+
+    /**
+     * Create a Stripe PaymentIntent for card payments.
+     * Called by the frontend BEFORE showing the Stripe Payment Sheet.
+     * Returns the clientSecret the mobile app needs to confirm payment.
+     */
+    async createPaymentIntent(params: {
+        userId: string;
+        amount: number;
+        currency: string;
+        metadata?: Record<string, any>;
+    }): Promise<{
+        success: boolean;
+        clientSecret: string;
+        paymentIntentId: string;
+        paymentId: string;
+    }> {
+        const stripe = paymentProviderRegistry.getStripeProvider();
+        const reference = `CARD-${uuidv4().slice(0, 12)}`;
+
+        // Create a pending payment record
+        const payment = this.paymentRepo.create({
+            userId: params.userId,
+            amount: params.amount,
+            currency: params.currency,
+            method: PaymentMethodType.CARD,
+            provider: "stripe",
+            providerRef: null,
+            providerStatus: null,
+            platformFee: 0,
+            driverAmount: 0,
+            status: PaymentRecordStatus.PENDING,
+            metadata: {
+                reference,
+                ...params.metadata,
+            },
+            rideId: params.metadata?.rideId || null,
+            orderId: params.metadata?.orderId || null,
+            serviceBookingId: params.metadata?.serviceBookingId || null,
+            subscriptionId: params.metadata?.subscriptionId || null,
+        });
+        const saved = await this.paymentRepo.save(payment);
+
+        const result = await stripe.createPaymentIntent({
+            amount: params.amount,
+            currency: params.currency,
+            metadata: {
+                paymentId: saved.id,
+                userId: params.userId,
+                reference,
+                ...params.metadata,
+            },
+        });
+
+        if (!result.success) {
+            saved.status = PaymentRecordStatus.FAILED;
+            saved.providerStatus = "intent_creation_failed";
+            await this.paymentRepo.save(saved);
+            log.error("Failed to create PaymentIntent", { paymentId: saved.id });
+
+            return {
+                success: false,
+                clientSecret: "",
+                paymentIntentId: "",
+                paymentId: saved.id,
+            };
+        }
+
+        // Update payment with Stripe's PaymentIntent ID
+        saved.providerRef = result.paymentIntentId;
+        saved.providerStatus = "requires_payment_method";
+        await this.paymentRepo.save(saved);
+
+        log.info("PaymentIntent created for card payment", {
+            paymentId: saved.id,
+            paymentIntentId: result.paymentIntentId,
+        });
+
+        return {
+            success: true,
+            clientSecret: result.clientSecret,
+            paymentIntentId: result.paymentIntentId,
+            paymentId: saved.id,
+        };
     }
 
     // ── Helpers ──────────────────────────────────────────────────────
@@ -108,6 +196,9 @@ export class PaymentService {
             case PaymentMethodType.MOMO:
                 return this.processMomoPayment(saved, reference, params, provider, currency);
 
+            case PaymentMethodType.CARD:
+                return this.processCardPayment(saved, reference, params, currency);
+
             case PaymentMethodType.WALLET:
                 return this.processWalletPayment(saved, reference, userId, amount);
 
@@ -163,8 +254,7 @@ export class PaymentService {
                 return this.processMomoPayment(saved, reference, params, provider, currency);
 
             case PaymentMethodType.CARD:
-                // Card payments go through same Momo flow on Paystack (charge endpoint)
-                return this.processMomoPayment(saved, reference, params, provider, currency);
+                return this.processCardPayment(saved, reference, params, currency);
 
             case PaymentMethodType.WALLET:
                 return this.processWalletPayment(saved, reference, userId, amount);
@@ -226,8 +316,10 @@ export class PaymentService {
 
         switch (method) {
             case PaymentMethodType.MOMO:
-            case PaymentMethodType.CARD:
                 return this.processMomoPayment(saved, reference, params, provider, currency);
+
+            case PaymentMethodType.CARD:
+                return this.processCardPayment(saved, reference, params, currency);
 
             case PaymentMethodType.WALLET:
                 return this.processWalletPayment(saved, reference, userId, amount);
@@ -280,8 +372,10 @@ export class PaymentService {
 
         switch (method) {
             case PaymentMethodType.MOMO:
-            case PaymentMethodType.CARD:
                 return this.processMomoPayment(saved, reference, params, provider, currency);
+
+            case PaymentMethodType.CARD:
+                return this.processCardPayment(saved, reference, params, currency);
 
             case PaymentMethodType.WALLET:
                 return this.processWalletPayment(saved, reference, userId, amount);
@@ -343,6 +437,58 @@ export class PaymentService {
             message: result.success
                 ? "Momo payment initiated. Approve on your phone."
                 : "Payment initiation failed. Please try again.",
+        };
+    }
+
+    /**
+     * Card payment via Stripe PaymentIntent.
+     * Creates a PaymentIntent and returns the clientSecret so the frontend
+     * can confirm via the Stripe Payment Sheet.
+     */
+    private async processCardPayment(
+        payment: Payment,
+        reference: string,
+        params: { amount: number; email?: string },
+        currency: string
+    ): Promise<PaymentResult> {
+        const stripe = paymentProviderRegistry.getStripeProvider();
+
+        const result = await stripe.createPaymentIntent({
+            amount: params.amount,
+            currency,
+            metadata: {
+                paymentId: payment.id,
+                rideId: payment.rideId || undefined,
+                orderId: payment.orderId || undefined,
+                serviceBookingId: payment.serviceBookingId || undefined,
+                subscriptionId: payment.subscriptionId || undefined,
+                reference,
+            },
+        });
+
+        payment.provider = "stripe";
+        payment.providerRef = result.paymentIntentId || null;
+        payment.providerStatus = result.success ? "requires_payment_method" : "failed";
+
+        if (!result.success) {
+            payment.status = PaymentRecordStatus.FAILED;
+            log.warn("Card payment initiation failed", { paymentId: payment.id });
+            paymentEventsTotal.inc({ method: "card", status: "failed" });
+        } else {
+            log.info("Card PaymentIntent created", { paymentId: payment.id, reference });
+            paymentEventsTotal.inc({ method: "card", status: "pending" });
+        }
+        await this.paymentRepo.save(payment);
+
+        return {
+            success: result.success,
+            paymentId: payment.id,
+            reference,
+            status: payment.status,
+            clientSecret: result.clientSecret,
+            message: result.success
+                ? "Card payment ready. Complete payment on your device."
+                : "Card payment setup failed. Please try again.",
         };
     }
 
@@ -439,6 +585,71 @@ export class PaymentService {
         if (event.event === "charge.success") {
             const reference = event.data.reference;
             await this.confirmPayment(reference, country);
+        }
+    }
+
+    /**
+     * Handle Stripe webhook events (payment_intent.succeeded, etc.)
+     */
+    async handleStripeWebhook(payload: string, signature: string): Promise<void> {
+        const stripe = paymentProviderRegistry.getStripeProvider();
+        const isValid = stripe.verifyWebhookSignature(payload, signature);
+        if (!isValid) {
+            log.warn("Invalid Stripe webhook signature");
+            throw new Error("Invalid Stripe webhook signature");
+        }
+
+        const event = JSON.parse(payload);
+        log.info("Stripe webhook received", { type: event.type });
+
+        switch (event.type) {
+            case "payment_intent.succeeded": {
+                const pi = event.data.object;
+                const paymentId = pi.metadata?.paymentId;
+                if (paymentId) {
+                    const payment = await this.paymentRepo.findOne({ where: { id: paymentId } });
+                    if (payment && payment.status !== PaymentRecordStatus.SUCCESS) {
+                        payment.status = PaymentRecordStatus.SUCCESS;
+                        payment.providerStatus = "succeeded";
+                        payment.providerRef = pi.id;
+                        payment.completedAt = new Date();
+                        await this.paymentRepo.save(payment);
+
+                        // Side Effects: Subscriptions
+                        if (payment.subscriptionId) {
+                            await this.activateSubscription(payment.subscriptionId, payment.userId);
+                        }
+
+                        log.info("Stripe payment confirmed via webhook", { paymentId });
+                        paymentEventsTotal.inc({ method: "card", status: "success" });
+                    }
+                }
+                break;
+            }
+            case "payment_intent.payment_failed": {
+                const pi = event.data.object;
+                const paymentId = pi.metadata?.paymentId;
+                if (paymentId) {
+                    const payment = await this.paymentRepo.findOne({ where: { id: paymentId } });
+                    if (payment) {
+                        payment.status = PaymentRecordStatus.FAILED;
+                        payment.providerStatus = pi.last_payment_error?.message || "failed";
+                        await this.paymentRepo.save(payment);
+
+                        await this.notificationService.notify(
+                            payment.userId,
+                            NotificationType.PAYMENT_FAILED,
+                            "Payment Failed",
+                            `Your card payment of ${formatCurrency(Number(payment.amount), payment.currency || "USD")} could not be processed.`,
+                            { paymentId: payment.id }
+                        );
+
+                        log.warn("Stripe payment failed via webhook", { paymentId });
+                        paymentEventsTotal.inc({ method: "card", status: "failed" });
+                    }
+                }
+                break;
+            }
         }
     }
 
