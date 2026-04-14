@@ -5,16 +5,10 @@ import { Product } from "../models/product";
 import { CustomizationOption } from "../models/customization-option";
 import { ProductCustomization } from "../models/product-customization";
 import { MerchantProfile } from "../models/merchant-profile";
-import { redis } from "../utils/redis";
 import { createServiceLogger } from "../utils/logger";
 import { cartEventsTotal } from "../utils/metrics";
-import { In } from "typeorm";
 
 const log = createServiceLogger("CartService");
-
-// Redis
-const CART_CACHE_KEY = (userId: string) => `cart:${userId}`;
-const CART_CACHE_TTL = 86400; // 24 hours
 
 // ── Input Types ─────────────────────────────────────────────────────
 
@@ -130,19 +124,20 @@ export class CartService {
             );
         }
 
-        // 3. Get or create cart
+        // 3. Get or create cart (load items separately to avoid cascade issues)
         let cart = await this.cartRepo.findOne({
             where: { userId },
-            relations: { items: true },
         });
 
         if (!cart) {
             cart = this.cartRepo.create({ userId, merchantId: null, subtotal: 0 });
             cart = await this.cartRepo.save(cart);
-            cart.items = [];
         }
-        const cartItems = cart.items || [];
-        cart.items = cartItems;
+
+        // Load items separately (not on the cart entity)
+        const cartItems = await this.cartItemRepo.find({
+            where: { cartId: cart.id },
+        });
 
         // 4. Single-merchant enforcement
         if (cart.merchantId && cart.merchantId !== product.merchantId && cartItems.length > 0) {
@@ -242,14 +237,17 @@ export class CartService {
             throw new Error("Quantity must be at least 1. Use remove endpoint to delete.");
         }
 
+        // Load cart WITHOUT items to avoid cascade issues
         const cart = await this.cartRepo.findOne({
             where: { userId },
-            relations: { items: true },
         });
 
         if (!cart) throw new Error("Cart not found");
 
-        const item = cart.items.find((i) => i.id === itemId);
+        // Load item directly
+        const item = await this.cartItemRepo.findOne({
+            where: { id: itemId, cartId: cart.id },
+        });
         if (!item) throw new Error("Cart item not found");
 
         // Check stock
@@ -266,7 +264,7 @@ export class CartService {
         item.itemTotal = Math.round((Number(item.unitPrice) + optionsTotal) * quantity * 100) / 100;
         await this.cartItemRepo.save(item);
 
-        // Update subtotal
+        // Update subtotal (no items loaded on cart = no cascade)
         cart.subtotal = await this.calculateSubtotal(cart.id);
         await this.cartRepo.save(cart);
 
@@ -280,24 +278,31 @@ export class CartService {
      * Remove an item from the cart.
      */
     async removeItem(userId: string, itemId: string): Promise<CartResponse> {
+        // Load cart WITHOUT items relation to avoid cascade re-insert
         const cart = await this.cartRepo.findOne({
             where: { userId },
-            relations: { items: true },
         });
 
         if (!cart) throw new Error("Cart not found");
 
-        const item = cart.items.find((i) => i.id === itemId);
+        // Verify the item exists and belongs to this cart
+        const item = await this.cartItemRepo.findOne({
+            where: { id: itemId, cartId: cart.id },
+        });
         if (!item) throw new Error("Cart item not found");
 
+        // Delete the item
         await this.cartItemRepo.delete(itemId);
 
-        // If no items left, clear merchant
-        const remainingItems = cart.items.filter((i) => i.id !== itemId);
-        if (remainingItems.length === 0) {
+        // Check if any items remain
+        const remainingCount = await this.cartItemRepo.count({
+            where: { cartId: cart.id },
+        });
+        if (remainingCount === 0) {
             cart.merchantId = null;
         }
 
+        // Update subtotal and save cart (no items loaded = no cascade re-insert)
         cart.subtotal = await this.calculateSubtotal(cart.id);
         await this.cartRepo.save(cart);
 
@@ -356,9 +361,9 @@ export class CartService {
      * Build the rich cart response with product names/images from loaded relations.
      */
     private async buildCartResponse(cart: Cart): Promise<CartResponse> {
-        // Load items with product details if not already loaded
+        // Always load items with product details from DB
         let items = cart.items || [];
-        if (items.length > 0 && !items[0].product) {
+        if (items.length === 0 || (items.length > 0 && !items[0].product)) {
             items = await this.cartItemRepo.find({
                 where: { cartId: cart.id },
                 relations: { product: true },
@@ -477,13 +482,9 @@ export class CartService {
         }
     }
 
-    // ── Redis Cache (disabled — all reads go directly to Postgres) ──
+    // ── Cache (no-op — all reads go directly to Postgres) ──
 
-    async invalidateCache(userId: string): Promise<void> {
-        try {
-            await redis.del(CART_CACHE_KEY(userId));
-        } catch {
-            // Non-critical
-        }
+    async invalidateCache(_userId: string): Promise<void> {
+        // No-op: Redis cache removed, all reads go to Postgres directly
     }
 }
