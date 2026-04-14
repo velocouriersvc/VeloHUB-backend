@@ -85,6 +85,12 @@ export class CartService {
             cart.items = [];
         }
 
+        log.info("getCart from DB", {
+            cartId: cart.id,
+            itemCount: cart.items?.length,
+            itemIds: cart.items?.map((i) => i.id),
+        });
+
         return this.buildCartResponse(cart);
     }
 
@@ -278,6 +284,8 @@ export class CartService {
      * Remove an item from the cart.
      */
     async removeItem(userId: string, itemId: string): Promise<CartResponse> {
+        log.info("removeItem called", { userId, itemId });
+
         // Load cart WITHOUT items relation to avoid cascade re-insert
         const cart = await this.cartRepo.findOne({
             where: { userId },
@@ -289,15 +297,31 @@ export class CartService {
         const item = await this.cartItemRepo.findOne({
             where: { id: itemId, cartId: cart.id },
         });
-        if (!item) throw new Error("Cart item not found");
+        if (!item) {
+            log.warn("Cart item not found", { itemId, cartId: cart.id });
+            throw new Error("Cart item not found");
+        }
+
+        log.info("Deleting cart item", { itemId, productId: item.productId });
 
         // Delete the item
-        await this.cartItemRepo.delete(itemId);
+        const deleteResult = await this.cartItemRepo.delete(itemId);
+        log.info("Delete result", { affected: deleteResult.affected });
+
+        // Verify deletion
+        const stillExists = await this.cartItemRepo.findOne({ where: { id: itemId } });
+        if (stillExists) {
+            log.error("Item still exists after delete!", { itemId });
+        } else {
+            log.info("Item confirmed deleted from DB", { itemId });
+        }
 
         // Check if any items remain
         const remainingCount = await this.cartItemRepo.count({
             where: { cartId: cart.id },
         });
+        log.info("Remaining items after delete", { remainingCount });
+
         if (remainingCount === 0) {
             cart.merchantId = null;
         }
@@ -309,7 +333,14 @@ export class CartService {
         cartEventsTotal.inc({ action: "remove_item" });
 
         // Fresh query from Postgres
-        return this.getCart(userId);
+        const response = await this.getCart(userId);
+        log.info("removeItem response", {
+            itemCount: response.items.length,
+            itemIds: response.items.map((i) => i.id),
+            subtotal: response.subtotal,
+            removedStillPresent: response.items.some((i) => i.id === itemId),
+        });
+        return response;
     }
 
     // ── Clear Cart ──────────────────────────────────────────────────
@@ -318,17 +349,15 @@ export class CartService {
      * Clear the entire cart (remove all items, reset merchantId).
      */
     async clearCart(userId: string): Promise<CartResponse> {
+        // Load cart WITHOUT items to avoid cascade re-insert
         const cart = await this.cartRepo.findOne({
             where: { userId },
-            relations: { items: true },
         });
 
         if (!cart) throw new Error("Cart not found");
 
-        // Delete all items
-        if (cart.items.length > 0) {
-            await this.cartItemRepo.delete({ cartId: cart.id });
-        }
+        // Delete all items by cartId
+        await this.cartItemRepo.delete({ cartId: cart.id });
 
         cart.merchantId = null;
         cart.subtotal = 0;
