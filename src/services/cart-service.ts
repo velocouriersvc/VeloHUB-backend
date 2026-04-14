@@ -80,6 +80,14 @@ export class CartService {
         const cached = await this.getCachedCart(userId);
         if (cached) return cached;
 
+        return this.getCartFresh(userId);
+    }
+
+    /**
+     * Get cart directly from DB, bypassing Redis cache.
+     * Use after mutations (add/remove/update/clear) to avoid stale data.
+     */
+    async getCartFresh(userId: string): Promise<CartResponse> {
         // Fetch from DB
         let cart = await this.cartRepo.findOne({
             where: { userId },
@@ -225,7 +233,7 @@ export class CartService {
         await this.invalidateCache(userId);
         cartEventsTotal.inc({ action: "add_item" });
 
-        const response = await this.getCart(userId);
+        const response = await this.getCartFresh(userId);
         return { cart: response };
     }
 
@@ -272,7 +280,7 @@ export class CartService {
         await this.cartRepo.save(cart);
 
         await this.invalidateCache(userId);
-        return this.getCart(userId);
+        return this.getCartFresh(userId);
     }
 
     // ── Remove Item ─────────────────────────────────────────────────
@@ -305,7 +313,7 @@ export class CartService {
         await this.invalidateCache(userId);
         cartEventsTotal.inc({ action: "remove_item" });
 
-        return this.getCart(userId);
+        return this.getCartFresh(userId);
     }
 
     // ── Clear Cart ──────────────────────────────────────────────────
@@ -333,7 +341,7 @@ export class CartService {
         await this.invalidateCache(userId);
         cartEventsTotal.inc({ action: "clear" });
 
-        return this.getCart(userId);
+        return this.getCartFresh(userId);
     }
 
     // ── Cart For Checkout ───────────────────────────────────────────
