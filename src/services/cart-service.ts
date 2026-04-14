@@ -233,7 +233,19 @@ export class CartService {
         await this.invalidateCache(userId);
         cartEventsTotal.inc({ action: "add_item" });
 
-        const response = await this.getCartFresh(userId);
+        // Build response from a completely fresh DB query
+        const freshCart = await this.cartRepo.findOne({
+            where: { userId },
+            relations: {
+                items: { product: true },
+                merchant: { merchantProfile: true },
+            },
+        });
+
+        if (!freshCart) throw new Error("Cart not found after add");
+
+        const response = await this.buildCartResponse(freshCart);
+        await this.cacheCart(userId, response);
         return { cart: response };
     }
 
@@ -280,7 +292,21 @@ export class CartService {
         await this.cartRepo.save(cart);
 
         await this.invalidateCache(userId);
-        return this.getCartFresh(userId);
+
+        // Build response from a completely fresh DB query
+        const freshCart = await this.cartRepo.findOne({
+            where: { userId },
+            relations: {
+                items: { product: true },
+                merchant: { merchantProfile: true },
+            },
+        });
+
+        if (!freshCart) throw new Error("Cart not found after update");
+
+        const response = await this.buildCartResponse(freshCart);
+        await this.cacheCart(userId, response);
+        return response;
     }
 
     // ── Remove Item ─────────────────────────────────────────────────
@@ -310,10 +336,24 @@ export class CartService {
         cart.subtotal = await this.calculateSubtotal(cart.id);
         await this.cartRepo.save(cart);
 
+        // Invalidate cache first
         await this.invalidateCache(userId);
         cartEventsTotal.inc({ action: "remove_item" });
 
-        return this.getCartFresh(userId);
+        // Build response from a completely fresh DB query (new findOne call)
+        const freshCart = await this.cartRepo.findOne({
+            where: { userId },
+            relations: {
+                items: { product: true },
+                merchant: { merchantProfile: true },
+            },
+        });
+
+        if (!freshCart) throw new Error("Cart not found after removal");
+
+        const response = await this.buildCartResponse(freshCart);
+        await this.cacheCart(userId, response);
+        return response;
     }
 
     // ── Clear Cart ──────────────────────────────────────────────────
@@ -341,7 +381,20 @@ export class CartService {
         await this.invalidateCache(userId);
         cartEventsTotal.inc({ action: "clear" });
 
-        return this.getCartFresh(userId);
+        // Build response from a completely fresh DB query
+        const freshCart = await this.cartRepo.findOne({
+            where: { userId },
+            relations: {
+                items: { product: true },
+                merchant: { merchantProfile: true },
+            },
+        });
+
+        if (!freshCart) throw new Error("Cart not found after clear");
+
+        const response = await this.buildCartResponse(freshCart);
+        await this.cacheCart(userId, response);
+        return response;
     }
 
     // ── Cart For Checkout ───────────────────────────────────────────
