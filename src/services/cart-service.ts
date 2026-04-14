@@ -74,21 +74,9 @@ export class CartService {
 
     /**
      * Get or create the user's cart, returned as a rich response with product details.
+     * Always fetches directly from Postgres — no Redis cache.
      */
     async getCart(userId: string): Promise<CartResponse> {
-        // Try Redis cache first
-        const cached = await this.getCachedCart(userId);
-        if (cached) return cached;
-
-        return this.getCartFresh(userId);
-    }
-
-    /**
-     * Get cart directly from DB, bypassing Redis cache.
-     * Use after mutations (add/remove/update/clear) to avoid stale data.
-     */
-    async getCartFresh(userId: string): Promise<CartResponse> {
-        // Fetch from DB
         let cart = await this.cartRepo.findOne({
             where: { userId },
             relations: {
@@ -98,15 +86,19 @@ export class CartService {
         });
 
         if (!cart) {
-            // Create empty cart
             cart = this.cartRepo.create({ userId, merchantId: null, subtotal: 0 });
             cart = await this.cartRepo.save(cart);
             cart.items = [];
         }
 
-        const response = await this.buildCartResponse(cart);
-        await this.cacheCart(userId, response);
-        return response;
+        return this.buildCartResponse(cart);
+    }
+
+    /**
+     * @deprecated Use getCart() — Redis cache has been removed.
+     */
+    async getCartFresh(userId: string): Promise<CartResponse> {
+        return this.getCart(userId);
     }
 
     // ── Add Item ────────────────────────────────────────────────────
@@ -229,23 +221,10 @@ export class CartService {
         cart.subtotal = await this.calculateSubtotal(cart.id);
         await this.cartRepo.save(cart);
 
-        // 10. Invalidate cache & return
-        await this.invalidateCache(userId);
+        // 10. Return fresh cart from Postgres
         cartEventsTotal.inc({ action: "add_item" });
 
-        // Build response from a completely fresh DB query
-        const freshCart = await this.cartRepo.findOne({
-            where: { userId },
-            relations: {
-                items: { product: true },
-                merchant: { merchantProfile: true },
-            },
-        });
-
-        if (!freshCart) throw new Error("Cart not found after add");
-
-        const response = await this.buildCartResponse(freshCart);
-        await this.cacheCart(userId, response);
+        const response = await this.getCart(userId);
         return { cart: response };
     }
 
@@ -291,22 +270,8 @@ export class CartService {
         cart.subtotal = await this.calculateSubtotal(cart.id);
         await this.cartRepo.save(cart);
 
-        await this.invalidateCache(userId);
-
-        // Build response from a completely fresh DB query
-        const freshCart = await this.cartRepo.findOne({
-            where: { userId },
-            relations: {
-                items: { product: true },
-                merchant: { merchantProfile: true },
-            },
-        });
-
-        if (!freshCart) throw new Error("Cart not found after update");
-
-        const response = await this.buildCartResponse(freshCart);
-        await this.cacheCart(userId, response);
-        return response;
+        // Fresh query from Postgres
+        return this.getCart(userId);
     }
 
     // ── Remove Item ─────────────────────────────────────────────────
@@ -336,24 +301,10 @@ export class CartService {
         cart.subtotal = await this.calculateSubtotal(cart.id);
         await this.cartRepo.save(cart);
 
-        // Invalidate cache first
-        await this.invalidateCache(userId);
         cartEventsTotal.inc({ action: "remove_item" });
 
-        // Build response from a completely fresh DB query (new findOne call)
-        const freshCart = await this.cartRepo.findOne({
-            where: { userId },
-            relations: {
-                items: { product: true },
-                merchant: { merchantProfile: true },
-            },
-        });
-
-        if (!freshCart) throw new Error("Cart not found after removal");
-
-        const response = await this.buildCartResponse(freshCart);
-        await this.cacheCart(userId, response);
-        return response;
+        // Fresh query from Postgres
+        return this.getCart(userId);
     }
 
     // ── Clear Cart ──────────────────────────────────────────────────
@@ -378,23 +329,10 @@ export class CartService {
         cart.subtotal = 0;
         await this.cartRepo.save(cart);
 
-        await this.invalidateCache(userId);
         cartEventsTotal.inc({ action: "clear" });
 
-        // Build response from a completely fresh DB query
-        const freshCart = await this.cartRepo.findOne({
-            where: { userId },
-            relations: {
-                items: { product: true },
-                merchant: { merchantProfile: true },
-            },
-        });
-
-        if (!freshCart) throw new Error("Cart not found after clear");
-
-        const response = await this.buildCartResponse(freshCart);
-        await this.cacheCart(userId, response);
-        return response;
+        // Fresh query from Postgres
+        return this.getCart(userId);
     }
 
     // ── Cart For Checkout ───────────────────────────────────────────
@@ -539,24 +477,7 @@ export class CartService {
         }
     }
 
-    // ── Redis Cache ─────────────────────────────────────────────────
-
-    private async getCachedCart(userId: string): Promise<CartResponse | null> {
-        try {
-            const data = await redis.get(CART_CACHE_KEY(userId));
-            return data ? JSON.parse(data) : null;
-        } catch {
-            return null;
-        }
-    }
-
-    private async cacheCart(userId: string, cart: CartResponse): Promise<void> {
-        try {
-            await redis.set(CART_CACHE_KEY(userId), JSON.stringify(cart), "EX", CART_CACHE_TTL);
-        } catch {
-            // Non-critical — cache miss is fine
-        }
-    }
+    // ── Redis Cache (disabled — all reads go directly to Postgres) ──
 
     async invalidateCache(userId: string): Promise<void> {
         try {
