@@ -853,6 +853,20 @@ export class AdminController {
     //  REPORTS
     // ════════════════════════════════════════════════════════════════
 
+    getFinancialOverview = async (req: AuthRequest, res: Response) => {
+        try {
+            const { from, to } = req.query;
+            const overview = await this.adminService.getFinancialOverview(
+                from as string | undefined,
+                to as string | undefined
+            );
+            return res.json(overview);
+        } catch (error) {
+            log.error("Error getting financial overview", { error: (error as Error).message });
+            return res.status(500).json({ message: "Internal server error" });
+        }
+    };
+
     getRevenueReport = async (req: AuthRequest, res: Response) => {
         try {
             const { from, to } = req.query;
@@ -1626,4 +1640,33 @@ export class AdminController {
             return res.status(500).json({ message: "Internal server error" });
         }
     }
+
+    // ════════════════════════════════════════════════════════════════
+    //  VEHICLE PRICING
+    // ════════════════════════════════════════════════════════════════
+
+    getVehiclePricing = async (req: AuthRequest, res: Response) => {
+        try {
+            const country = req.query.country as string | undefined;
+            const pricing = await this.adminService.getVehiclePricing(country);
+            return res.json(pricing);
+        } catch (error) {
+            log.error("Error getting vehicle pricing", { error: (error as Error).message });
+            return res.status(500).json({ message: "Internal server error" });
+        }
+    };
+
+    updateVehiclePricing = async (req: AuthRequest, res: Response) => {
+        try {
+            const adminId = req.user?.id;
+            if (!adminId) return res.status(401).json({ message: "User ID required" });
+            const updated = await this.adminService.updateVehiclePricing(req.params.id, req.body, adminId);
+            return res.json(updated);
+        } catch (error) {
+            log.error("Error updating vehicle pricing", { error: (error as Error).message });
+            const msg = (error as Error).message;
+            if (msg.includes("not found")) return res.status(404).json({ message: msg });
+            return res.status(500).json({ message: "Internal server error" });
+        }
+    };
 }

@@ -31,6 +31,8 @@ import { Broadcast } from "../models/broadcast";
 import { BuyerProfile } from "../models/buyer-profile";
 import { DriverProfile } from "../models/driver-profile";
 import { UserProfile } from "../models/user-profile";
+import { VehiclePricing } from "../models/vehicle-pricing";
+import { PlatformWithdrawal } from "../models/platform-withdrawal";
 import { createServiceLogger } from "../utils/logger";
 import { formatCurrency } from "../utils/currency";
 import { orderEventsTotal } from "../utils/metrics";
@@ -137,6 +139,7 @@ export class AdminService {
     private rideRepo = AppDataSource.getRepository(Ride);
     private serviceBookingRepo = AppDataSource.getRepository(ServiceBooking);
     private zoneRepo = AppDataSource.getRepository(Zone);
+    private vehiclePricingRepo = AppDataSource.getRepository(VehiclePricing);
 
     private walletService = new WalletService();
     private productService = new ProductService();
@@ -1601,14 +1604,28 @@ export class AdminService {
             minimumOrderValue: number;
             defaultCommissionRate: number;
             defaultServiceFeeRate: number;
+            serviceFeeMaxCap: number;
+            smallOrderFee: number;
+            smallOrderThreshold: number;
             defaultPickupFeeRate: number;
             deliveryBaseFee: number;
             deliveryPerKmFee: number;
+            driverDeliveryFeeShare: number;
             rideCommissionRate: number;
+            riderServiceFee: number;
+            maxSurgeMultiplier: number;
             deliveryTotalCommissionRate: number;
             deliveryRidePortionRate: number;
             deliveryServicePortionRate: number;
             serviceCommissionRate: number;
+            serviceBookingFee: number;
+            lateCancellationFee: number;
+            lateCancellationFeeMax: number;
+            cancellationWindowMinutes: number;
+            referralRewardAmount: number;
+            leaderboardLimit: number;
+            isGlobalSurgeActive: boolean;
+            globalSurgeMultiplier: number;
             isActive: boolean;
         }>,
         adminId: string
@@ -1700,6 +1717,266 @@ export class AdminService {
             platformRevenue: Math.round(platformRevenue * 100) / 100,
             currency: "GHS", // TODO: multi-currency
         } as RevenueReportResult;
+    }
+
+    /**
+     * Comprehensive financial overview — real data from orders + rides + payouts
+     * Used by admin Earnings/Revenue page to show actual platform earnings
+     */
+    async getFinancialOverview(from?: string, to?: string) {
+        const r = (n: number) => Math.round(n * 100) / 100;
+
+        // Default: last 90 days if no range given
+        const now = new Date();
+        const fromDate = from ? new Date(from) : new Date(now.getFullYear(), now.getMonth() - 3, 1);
+        const toDate = to ? new Date(to) : now;
+
+        // Today boundaries
+        const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
+        const todayEnd = new Date(); todayEnd.setHours(23, 59, 59, 999);
+
+        // This month boundaries
+        const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+        const monthEnd = now;
+
+        // ── ORDER data (completed / delivered) ──
+        const orderQb = this.orderRepo.createQueryBuilder("o")
+            .where("o.createdAt >= :from", { from: fromDate })
+            .andWhere("o.createdAt <= :to", { to: toDate })
+            .andWhere("o.status NOT IN (:...exclude)", {
+                exclude: [OrderStatus.CANCELLED, OrderStatus.REFUNDED],
+            });
+
+        const orders = await orderQb.getMany();
+
+        const orderTotals = {
+            count: orders.length,
+            gmv: orders.reduce((s, o) => s + Number(o.totalAmount || 0), 0),
+            subtotal: orders.reduce((s, o) => s + Number(o.subtotal || 0), 0),
+            commission: orders.reduce((s, o) => s + Number(o.commission || 0), 0),
+            serviceFee: orders.reduce((s, o) => s + Number(o.serviceFee || 0), 0),
+            smallOrderFee: orders.reduce((s, o) => s + Number(o.smallOrderFee || 0), 0),
+            deliveryFee: orders.reduce((s, o) => s + Number(o.deliveryFee || 0), 0),
+            discount: orders.reduce((s, o) => s + Number(o.discountAmount || 0), 0),
+            merchantEarnings: orders.reduce((s, o) => s + Number(o.merchantEarnings || 0), 0),
+        };
+
+        // ── RIDE data (completed) ──
+        const rideQb = this.rideRepo.createQueryBuilder("r")
+            .where("r.createdAt >= :from", { from: fromDate })
+            .andWhere("r.createdAt <= :to", { to: toDate })
+            .andWhere("r.status = :status", { status: RideStatus.COMPLETED });
+
+        const rides = await rideQb.getMany();
+
+        const rideTotals = {
+            count: rides.length,
+            totalFares: rides.reduce((s, r) => s + Number(r.finalFare || 0), 0),
+            commission: rides.reduce((s, r) => s + Number(r.commission || 0), 0),
+            riderServiceFee: rides.reduce((s, r) => s + Number(r.riderServiceFee || 0), 0),
+            driverPayout: rides.reduce((s, r) => s + Number(r.driverPayout || 0), 0),
+            surgeAmount: rides.reduce((s, r) => s + Number(r.surgeAmount || 0), 0),
+        };
+
+        // ── TODAY's slice ──
+        const todayOrders = orders.filter(o => new Date(o.createdAt) >= todayStart && new Date(o.createdAt) <= todayEnd);
+        const todayRides = rides.filter(r => new Date(r.createdAt) >= todayStart && new Date(r.createdAt) <= todayEnd);
+        const today = {
+            orderRevenue: todayOrders.reduce((s, o) => s + Number(o.totalAmount || 0), 0),
+            orderCommission: todayOrders.reduce((s, o) => s + Number(o.commission || 0) + Number(o.serviceFee || 0) + Number(o.smallOrderFee || 0), 0),
+            rideRevenue: todayRides.reduce((s, r) => s + Number(r.finalFare || 0), 0),
+            rideCommission: todayRides.reduce((s, r) => s + Number(r.commission || 0) + Number(r.riderServiceFee || 0), 0),
+            orderCount: todayOrders.length,
+            rideCount: todayRides.length,
+        };
+
+        // ── THIS MONTH's slice ──
+        const monthOrders = orders.filter(o => new Date(o.createdAt) >= monthStart && new Date(o.createdAt) <= monthEnd);
+        const monthRides = rides.filter(r => new Date(r.createdAt) >= monthStart && new Date(r.createdAt) <= monthEnd);
+        const thisMonth = {
+            orderRevenue: monthOrders.reduce((s, o) => s + Number(o.totalAmount || 0), 0),
+            orderCommission: monthOrders.reduce((s, o) => s + Number(o.commission || 0) + Number(o.serviceFee || 0) + Number(o.smallOrderFee || 0), 0),
+            rideRevenue: monthRides.reduce((s, r) => s + Number(r.finalFare || 0), 0),
+            rideCommission: monthRides.reduce((s, r) => s + Number(r.commission || 0) + Number(r.riderServiceFee || 0), 0),
+            orderCount: monthOrders.length,
+            rideCount: monthRides.length,
+        };
+
+        // ── PLATFORM take (what YOU keep) ──
+        const orderPlatformTake = orderTotals.commission + orderTotals.serviceFee + orderTotals.smallOrderFee;
+        const ridePlatformTake = rideTotals.commission + rideTotals.riderServiceFee;
+        const totalPlatformTake = orderPlatformTake + ridePlatformTake;
+
+        // ── PAYOUTS to drivers & merchants ──
+        const driverPayoutsOwed = rideTotals.driverPayout;
+        // Merchant payouts = merchantEarnings
+        const merchantPayoutsOwed = orderTotals.merchantEarnings;
+
+        // ── WITHDRAWAL history ──
+        const withdrawalRepo = AppDataSource.getRepository(PlatformWithdrawal);
+        const withdrawals = await withdrawalRepo.find({ order: { createdAt: "DESC" } });
+
+        const totalWithdrawn = withdrawals
+            .filter(w => w.status === "completed")
+            .reduce((s, w) => s + Number(w.amount || 0), 0);
+        const pendingWithdrawals = withdrawals
+            .filter(w => w.status === "pending")
+            .reduce((s, w) => s + Number(w.amount || 0), 0);
+
+        // Available to withdraw from Paystack = total platform take - already withdrawn - pending
+        const availableToWithdraw = totalPlatformTake - totalWithdrawn - pendingWithdrawals;
+
+        // ── PAYOUT REQUESTS from drivers/merchants (wallet debits tagged as "payout") ──
+        const pendingPayoutRequests = await this.walletTxRepo
+            .createQueryBuilder("tx")
+            .leftJoinAndSelect("tx.wallet", "w")
+            .leftJoinAndSelect("w.user", "u")
+            .where("tx.metadata->>'type' = :type", { type: "payout" })
+            .andWhere("tx.metadata->>'status' = :status", { status: "pending" })
+            .orderBy("tx.createdAt", "DESC")
+            .getMany();
+
+        // ── DAILY BREAKDOWN (last 30 days) ──
+        const thirtyDaysAgo = new Date();
+        thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+        const dailyOrderRevenue = await this.orderRepo.createQueryBuilder("o")
+            .select("DATE(o.\"createdAt\")", "date")
+            .addSelect("COUNT(o.id)", "count")
+            .addSelect("COALESCE(SUM(CAST(o.\"totalAmount\" AS DECIMAL)), 0)", "revenue")
+            .addSelect("COALESCE(SUM(CAST(o.commission AS DECIMAL) + CAST(o.\"serviceFee\" AS DECIMAL) + CAST(o.\"smallOrderFee\" AS DECIMAL)), 0)", "platformTake")
+            .where("o.\"createdAt\" >= :from", { from: thirtyDaysAgo })
+            .andWhere("o.status NOT IN (:...exclude)", { exclude: [OrderStatus.CANCELLED, OrderStatus.REFUNDED] })
+            .groupBy("DATE(o.\"createdAt\")")
+            .orderBy("date", "ASC")
+            .getRawMany();
+
+        const dailyRideRevenue = await this.rideRepo.createQueryBuilder("r")
+            .select("DATE(r.\"createdAt\")", "date")
+            .addSelect("COUNT(r.id)", "count")
+            .addSelect("COALESCE(SUM(CAST(r.\"finalFare\" AS DECIMAL)), 0)", "revenue")
+            .addSelect("COALESCE(SUM(CAST(r.commission AS DECIMAL) + CAST(r.\"riderServiceFee\" AS DECIMAL)), 0)", "platformTake")
+            .where("r.\"createdAt\" >= :from", { from: thirtyDaysAgo })
+            .andWhere("r.status = :status", { status: RideStatus.COMPLETED })
+            .groupBy("DATE(r.\"createdAt\")")
+            .orderBy("date", "ASC")
+            .getRawMany();
+
+        // Merge daily data
+        const dailyMap: Record<string, { date: string; orders: number; rides: number; orderRevenue: number; rideRevenue: number; platformTake: number }> = {};
+        for (const d of dailyOrderRevenue) {
+            const key = d.date;
+            if (!dailyMap[key]) dailyMap[key] = { date: key, orders: 0, rides: 0, orderRevenue: 0, rideRevenue: 0, platformTake: 0 };
+            dailyMap[key].orders = Number(d.count);
+            dailyMap[key].orderRevenue = Number(d.revenue);
+            dailyMap[key].platformTake += Number(d.platformTake);
+        }
+        for (const d of dailyRideRevenue) {
+            const key = d.date;
+            if (!dailyMap[key]) dailyMap[key] = { date: key, orders: 0, rides: 0, orderRevenue: 0, rideRevenue: 0, platformTake: 0 };
+            dailyMap[key].rides = Number(d.count);
+            dailyMap[key].rideRevenue = Number(d.revenue);
+            dailyMap[key].platformTake += Number(d.platformTake);
+        }
+        const dailyBreakdown = Object.values(dailyMap).sort((a, b) => a.date.localeCompare(b.date));
+
+        // ── BY CURRENCY breakdown ──
+        const byCurrency: Record<string, { orders: { count: number; gmv: number; platformTake: number }; rides: { count: number; totalFares: number; platformTake: number } }> = {};
+        for (const o of orders) {
+            const c = o.currency || "GHS";
+            if (!byCurrency[c]) byCurrency[c] = { orders: { count: 0, gmv: 0, platformTake: 0 }, rides: { count: 0, totalFares: 0, platformTake: 0 } };
+            byCurrency[c].orders.count++;
+            byCurrency[c].orders.gmv += Number(o.totalAmount || 0);
+            byCurrency[c].orders.platformTake += Number(o.commission || 0) + Number(o.serviceFee || 0) + Number(o.smallOrderFee || 0);
+        }
+        for (const r of rides) {
+            const c = r.currency || "GHS";
+            if (!byCurrency[c]) byCurrency[c] = { orders: { count: 0, gmv: 0, platformTake: 0 }, rides: { count: 0, totalFares: 0, platformTake: 0 } };
+            byCurrency[c].rides.count++;
+            byCurrency[c].rides.totalFares += Number(r.finalFare || 0);
+            byCurrency[c].rides.platformTake += Number(r.commission || 0) + Number(r.riderServiceFee || 0);
+        }
+
+        return {
+            period: { from: fromDate.toISOString(), to: toDate.toISOString() },
+            orders: {
+                count: orderTotals.count,
+                gmv: r(orderTotals.gmv),
+                subtotal: r(orderTotals.subtotal),
+                commission: r(orderTotals.commission),
+                serviceFees: r(orderTotals.serviceFee),
+                smallOrderFees: r(orderTotals.smallOrderFee),
+                deliveryFees: r(orderTotals.deliveryFee),
+                discounts: r(orderTotals.discount),
+                merchantEarnings: r(orderTotals.merchantEarnings),
+                platformTake: r(orderPlatformTake),
+            },
+            rides: {
+                count: rideTotals.count,
+                totalFares: r(rideTotals.totalFares),
+                commission: r(rideTotals.commission),
+                riderServiceFees: r(rideTotals.riderServiceFee),
+                driverPayouts: r(rideTotals.driverPayout),
+                surgeRevenue: r(rideTotals.surgeAmount),
+                platformTake: r(ridePlatformTake),
+            },
+            platform: {
+                totalGMV: r(orderTotals.gmv + rideTotals.totalFares),
+                totalPlatformTake: r(totalPlatformTake),
+                orderPlatformTake: r(orderPlatformTake),
+                ridePlatformTake: r(ridePlatformTake),
+                totalWithdrawn: r(totalWithdrawn),
+                pendingWithdrawals: r(pendingWithdrawals),
+                availableToWithdraw: r(availableToWithdraw),
+            },
+            payoutsOwed: {
+                toDrivers: r(driverPayoutsOwed),
+                toMerchants: r(merchantPayoutsOwed),
+            },
+            pendingPayoutRequests: pendingPayoutRequests.map(tx => ({
+                id: tx.id,
+                reference: tx.reference,
+                amount: Number(tx.amount),
+                userId: tx.wallet?.userId,
+                userName: tx.wallet?.user?.phoneNumber || tx.wallet?.user?.email || "Unknown",
+                currency: tx.wallet?.currency || "GHS",
+                method: tx.metadata?.payoutMethod || "unknown",
+                createdAt: tx.createdAt,
+            })),
+            today: {
+                orderRevenue: r(today.orderRevenue),
+                orderCommission: r(today.orderCommission),
+                rideRevenue: r(today.rideRevenue),
+                rideCommission: r(today.rideCommission),
+                totalRevenue: r(today.orderRevenue + today.rideRevenue),
+                totalPlatformTake: r(today.orderCommission + today.rideCommission),
+                orderCount: today.orderCount,
+                rideCount: today.rideCount,
+            },
+            thisMonth: {
+                orderRevenue: r(thisMonth.orderRevenue),
+                orderCommission: r(thisMonth.orderCommission),
+                rideRevenue: r(thisMonth.rideRevenue),
+                rideCommission: r(thisMonth.rideCommission),
+                totalRevenue: r(thisMonth.orderRevenue + thisMonth.rideRevenue),
+                totalPlatformTake: r(thisMonth.orderCommission + thisMonth.rideCommission),
+                orderCount: thisMonth.orderCount,
+                rideCount: thisMonth.rideCount,
+            },
+            dailyBreakdown,
+            byCurrency,
+            withdrawalHistory: withdrawals.map(w => ({
+                id: w.id,
+                amount: Number(w.amount),
+                method: w.withdrawal_method,
+                accountDetails: w.account_details,
+                status: w.status,
+                notes: w.notes,
+                periodStart: w.period_start,
+                periodEnd: w.period_end,
+                createdAt: w.createdAt,
+            })),
+        };
     }
 
     async getOrderReport(from: string, to: string) {
@@ -2670,5 +2947,36 @@ export class AdminService {
 
         log.info("Global surge updated", { ...data, adminId });
         return { success: true, ...data };
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    //  VEHICLE PRICING
+    // ════════════════════════════════════════════════════════════════
+
+    async getVehiclePricing(country?: string) {
+        const where: any = {};
+        if (country) where.country = country;
+        return this.vehiclePricingRepo.find({ where, order: { country: "ASC", vehicleType: "ASC" } });
+    }
+
+    async updateVehiclePricing(
+        id: string,
+        data: Partial<{
+            basePrice: number;
+            pricePerKm: number;
+            pricePerMin: number;
+            minimumFare: number;
+            maxPassengers: number;
+            isActive: boolean;
+        }>,
+        adminId: string
+    ) {
+        const pricing = await this.vehiclePricingRepo.findOneBy({ id });
+        if (!pricing) throw new Error("Vehicle pricing not found");
+
+        Object.assign(pricing, data);
+        await this.vehiclePricingRepo.save(pricing);
+        log.info("Admin updated vehicle pricing", { id, vehicleType: pricing.vehicleType, country: pricing.country, adminId });
+        return pricing;
     }
 }

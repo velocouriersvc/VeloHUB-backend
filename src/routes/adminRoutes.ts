@@ -1108,6 +1108,33 @@ router.put("/settings/:country", adminRole, adminController.updateSettings);
 
 /**
  * @openapi
+ * /admin/reports/financial-overview:
+ *   get:
+ *     tags: [Admin - Reports]
+ *     summary: Comprehensive financial overview (orders + rides + payouts + withdrawals)
+ *     security:
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: from
+ *         schema:
+ *           type: string
+ *           format: date
+ *         description: Start date (defaults to 90 days ago)
+ *       - in: query
+ *         name: to
+ *         schema:
+ *           type: string
+ *           format: date
+ *         description: End date (defaults to now)
+ *     responses:
+ *       200:
+ *         description: Full financial overview
+ */
+router.get("/reports/financial-overview", adminRole, adminController.getFinancialOverview);
+
+/**
+ * @openapi
  * /admin/reports/revenue:
  *   get:
  *     tags: [Admin - Reports]
@@ -1556,6 +1583,50 @@ router.patch("/support-tickets/:id", adminRole, adminController.updateSupportTic
 router.get("/export-orders", adminRole, adminController.exportOrdersCSV);
 router.get("/platform-settings", adminRole, adminController.getPlatformSettings);
 router.patch("/platform-settings/:id", adminRole, adminController.updatePlatformSetting);
+
+// ────────────────────────────────────────────────────────────────
+//  Vehicle Pricing
+// ────────────────────────────────────────────────────────────────
+
+/**
+ * @openapi
+ * /admin/vehicle-pricing:
+ *   get:
+ *     tags: [Admin - Settings]
+ *     summary: Get all vehicle pricing configs
+ *     security:
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: country
+ *         schema:
+ *           type: string
+ *         description: Filter by country code
+ *     responses:
+ *       200:
+ *         description: Vehicle pricing array
+ */
+router.get("/vehicle-pricing", adminRole, adminController.getVehiclePricing);
+
+/**
+ * @openapi
+ * /admin/vehicle-pricing/{id}:
+ *   patch:
+ *     tags: [Admin - Settings]
+ *     summary: Update a vehicle pricing entry
+ *     security:
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Updated vehicle pricing
+ */
+router.patch("/vehicle-pricing/:id", adminRole, adminController.updateVehiclePricing);
 
 router.get("/broadcasts", adminRole, adminController.getBroadcasts);
 router.get("/leaderboard", adminRole, adminController.getLeaderboard);
