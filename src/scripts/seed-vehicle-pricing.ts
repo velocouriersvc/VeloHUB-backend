@@ -2,20 +2,23 @@ import "dotenv/config";
 import { AppDataSource } from "../db/data-source";
 import { VehiclePricing, VehicleType } from "../models/vehicle-pricing";
 
-/*
- * Vehicle pricing for every country in platform_settings.
+/**
+ * Vehicle pricing per country — client-specified rates.
  *
- * Pricing is currency-proportional so the *real-world cost* feels
- * consistent across markets:
- *   GH (GHS)  – base market
- *   NG (NGN)  – ~100× GHS  (₦500 ≈ ₵5)
- *   US (USD)  – ~0.6× GHS  ($3 ≈ ₵5)
- *   CA (CAD)  – ~0.8× GHS  (C$4 ≈ ₵5)
- *   IN (INR)  – ~6× GHS    (₹30 ≈ ₵5)
+ * US (base market):
+ *   Base Fare $2.00, Per Mile $1.00 (→ per-km ÷1.609), Per Minute $0.20
+ *   Minimum Fare: ~$5.00
+ *   Rider Service Fee: $1.99 (stored in platform_settings, not here)
  *
- * Can be run standalone:  npx ts-node src/scripts/seed-vehicle-pricing.ts
- * Also called automatically on first server boot via runSeeds().
+ * Nigeria:
+ *   Base Fare ₦600, Per Km ₦120, Per Min ₦25
+ *   Minimum Fare: ₦1,200
+ *   Rider Service Fee: ₦300 (stored in platform_settings)
+ *
+ * Ghana / Canada / India: proportional to US base.
  */
+
+const MI_TO_KM = 1.60934;
 
 interface PricingRow {
     vehicleType: VehicleType;
@@ -27,36 +30,77 @@ interface PricingRow {
     maxPassengers: number;
 }
 
-// Helper — generate all 4 vehicle types for a country using a multiplier
-function countryPricing(country: string, m: number): PricingRow[] {
-    return [
-        { vehicleType: VehicleType.BIKE, country, basePrice: +(5 * m).toFixed(2), pricePerKm: +(2.5 * m).toFixed(2), pricePerMin: +(0.3 * m).toFixed(2), minimumFare: +(8 * m).toFixed(2), maxPassengers: 1 },
-        { vehicleType: VehicleType.CAR, country, basePrice: +(8 * m).toFixed(2), pricePerKm: +(3.5 * m).toFixed(2), pricePerMin: +(0.5 * m).toFixed(2), minimumFare: +(15 * m).toFixed(2), maxPassengers: 4 },
-        { vehicleType: VehicleType.SUV, country, basePrice: +(12 * m).toFixed(2), pricePerKm: +(5 * m).toFixed(2), pricePerMin: +(0.7 * m).toFixed(2), minimumFare: +(25 * m).toFixed(2), maxPassengers: 6 },
-        { vehicleType: VehicleType.TRUCK, country, basePrice: +(20 * m).toFixed(2), pricePerKm: +(7 * m).toFixed(2), pricePerMin: +(1 * m).toFixed(2), minimumFare: +(40 * m).toFixed(2), maxPassengers: 2 },
-    ];
+// ── US: client-specified rates (CAR is the reference) ───────────────
+// Client example: Base $2.00 + $1.00/mile + $0.20/min
+// We convert per-mile to per-km for internal calculations.
+const US_PER_KM = +(1.00 / MI_TO_KM).toFixed(4);
+
+const US_PRICING: PricingRow[] = [
+    { vehicleType: VehicleType.BIKE, country: "US", basePrice: 1.50, pricePerKm: +(0.75 / MI_TO_KM).toFixed(4) as any, pricePerMin: 0.15, minimumFare: 3.50, maxPassengers: 1 },
+    { vehicleType: VehicleType.CAR,  country: "US", basePrice: 2.00, pricePerKm: US_PER_KM,  pricePerMin: 0.20, minimumFare: 5.00, maxPassengers: 4 },
+    { vehicleType: VehicleType.SUV,  country: "US", basePrice: 3.00, pricePerKm: +(1.50 / MI_TO_KM).toFixed(4) as any, pricePerMin: 0.30, minimumFare: 8.00, maxPassengers: 6 },
+    { vehicleType: VehicleType.TRUCK,country: "US", basePrice: 5.00, pricePerKm: +(2.00 / MI_TO_KM).toFixed(4) as any, pricePerMin: 0.40, minimumFare: 12.00, maxPassengers: 2 },
+];
+
+// ── Nigeria: client-specified exact rates ────────────────────────────
+// Base ₦600, Per Km ₦120, Per Min ₦25, Min Fare ₦1,200
+const NG_PRICING: PricingRow[] = [
+    { vehicleType: VehicleType.BIKE, country: "NG", basePrice: 400,  pricePerKm: 80,   pricePerMin: 15, minimumFare: 800,  maxPassengers: 1 },
+    { vehicleType: VehicleType.CAR,  country: "NG", basePrice: 600,  pricePerKm: 120,  pricePerMin: 25, minimumFare: 1200, maxPassengers: 4 },
+    { vehicleType: VehicleType.SUV,  country: "NG", basePrice: 900,  pricePerKm: 180,  pricePerMin: 35, minimumFare: 1800, maxPassengers: 6 },
+    { vehicleType: VehicleType.TRUCK,country: "NG", basePrice: 1500, pricePerKm: 250,  pricePerMin: 50, minimumFare: 3000, maxPassengers: 2 },
+];
+
+// ── Ghana: proportional (~16× USD) ──────────────────────────────────
+function ghPricing(): PricingRow[] {
+    const m = 16;
+    return US_PRICING.map(r => ({
+        ...r,
+        country: "GH",
+        basePrice: +(r.basePrice * m).toFixed(2),
+        pricePerKm: +(Number(r.pricePerKm) * m).toFixed(2),
+        pricePerMin: +(r.pricePerMin * m).toFixed(2),
+        minimumFare: +(r.minimumFare * m).toFixed(2),
+    }));
 }
 
-// All countries matching platform_settings, with currency multiplier
-const PRICING_DATA: PricingRow[] = [
-    // GH — GHS (base market, multiplier 1×)
-    ...countryPricing("GH", 1),
-    // NG — NGN (~100× GHS)
-    ...countryPricing("NG", 100),
-    // US — USD (~0.6× GHS)
-    ...countryPricing("US", 0.6),
-    // CA — CAD (~0.8× GHS)
-    ...countryPricing("CA", 0.8),
-    // IN — INR (~6× GHS)
-    ...countryPricing("IN", 6),
+// ── Canada: ~1.35× USD ──────────────────────────────────────────────
+function caPricing(): PricingRow[] {
+    const m = 1.35;
+    return US_PRICING.map(r => ({
+        ...r,
+        country: "CA",
+        basePrice: +(r.basePrice * m).toFixed(2),
+        pricePerKm: +(Number(r.pricePerKm) * m).toFixed(4),
+        pricePerMin: +(r.pricePerMin * m).toFixed(2),
+        minimumFare: +(r.minimumFare * m).toFixed(2),
+    }));
+}
+
+// ── India: ~83× USD ─────────────────────────────────────────────────
+function inPricing(): PricingRow[] {
+    const m = 83;
+    return US_PRICING.map(r => ({
+        ...r,
+        country: "IN",
+        basePrice: +(r.basePrice * m).toFixed(2),
+        pricePerKm: +(Number(r.pricePerKm) * m).toFixed(2),
+        pricePerMin: +(r.pricePerMin * m).toFixed(2),
+        minimumFare: +(r.minimumFare * m).toFixed(2),
+    }));
+}
+
+const ALL_PRICING: PricingRow[] = [
+    ...US_PRICING,
+    ...NG_PRICING,
+    ...ghPricing(),
+    ...caPricing(),
+    ...inPricing(),
 ];
 
 /**
- * Seed vehicle_pricing rows. Safe to call multiple times — existing
- * rows are skipped thanks to the (vehicleType, country) unique check.
- *
- * @param alreadyInitialised  pass `true` when called from index.ts
- *                            (AppDataSource is already connected).
+ * Seed vehicle_pricing rows.
+ * UPSERTS — existing rows are UPDATED to match the latest config.
  */
 export async function seedVehiclePricing(alreadyInitialised = false) {
     if (!alreadyInitialised) {
@@ -65,30 +109,29 @@ export async function seedVehiclePricing(alreadyInitialised = false) {
 
     const repo = AppDataSource.getRepository(VehiclePricing);
 
-    let created = 0;
-    for (const data of PRICING_DATA) {
-        const exists = await repo.findOne({
+    let upserted = 0;
+    for (const data of ALL_PRICING) {
+        const existing = await repo.findOne({
             where: { vehicleType: data.vehicleType, country: data.country },
         });
 
-        if (exists) {
-            continue; // already seeded — skip silently
+        if (existing) {
+            Object.assign(existing, data);
+            existing.isActive = true;
+            await repo.save(existing);
+        } else {
+            await repo.save(repo.create({ ...data, isActive: true }));
         }
-
-        await repo.save(repo.create({ ...data, isActive: true }));
-        created++;
+        upserted++;
     }
 
-    if (created > 0) {
-        console.log(`✅ vehicle_pricing: seeded ${created} new rows`);
-    }
+    console.log(`✅ vehicle_pricing: upserted ${upserted} rows`);
 
     if (!alreadyInitialised) {
         await AppDataSource.destroy();
     }
 }
 
-// Allow standalone execution
 if (require.main === module) {
     seedVehiclePricing(false)
         .then(() => console.log("Done — vehicle_pricing seeded."))

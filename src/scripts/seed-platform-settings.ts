@@ -1,65 +1,218 @@
 import { AppDataSource } from "../db/data-source";
 import { PlatformSettings } from "../models/platform-settings";
 
-const SETTINGS = [
-    {
-        country: "GH",
-        currency: "GHS",
-        minimumOrderValue: 10.0,
-        defaultCommissionRate: 15.0,
-        defaultServiceFeeRate: 8.0,
-        defaultPickupFeeRate: 10.0,
-        deliveryBaseFee: 5.0,
-        deliveryPerKmFee: 1.5,
-    },
-    {
-        country: "NG",
-        currency: "NGN",
-        minimumOrderValue: 1500.0,
-        defaultCommissionRate: 15.0,
-        defaultServiceFeeRate: 8.0,
-        defaultPickupFeeRate: 10.0,
-        deliveryBaseFee: 500.0,
-        deliveryPerKmFee: 150.0,
-    },
+/**
+ * VeloHUB Platform Settings — exact client-specified rates.
+ *
+ * IMPORTANT: Delivery rates use PER-MILE values converted to per-km internally.
+ * Client quotes "$0.60/mile" → stored as ~$0.3728/km (÷ 1.60934).
+ * The delivery-fee-service calculates in km (Haversine) so we store km values.
+ *
+ * All percentages stored as whole numbers (15 = 15%).
+ * All absolute fee values stored in local currency.
+ */
+
+const MI_TO_KM = 1.60934;
+
+const SETTINGS: Partial<PlatformSettings>[] = [
+    // ── United States (USD) ─────────────────────────────────────────
     {
         country: "US",
         currency: "USD",
-        minimumOrderValue: 5.0,
-        defaultCommissionRate: 20.0,
-        defaultServiceFeeRate: 10.0,
-        defaultPickupFeeRate: 10.0,
-        deliveryBaseFee: 3.0,
-        deliveryPerKmFee: 1.0,
+        minimumOrderValue: 0,
+
+        // Delivery / Orders
+        defaultCommissionRate: 15.00,       // Merchant keeps 85%
+        defaultServiceFeeRate: 5.00,        // 5% of subtotal
+        serviceFeeMaxCap: 4.99,             // capped at $4.99
+        smallOrderFee: 2.99,                // if subtotal < $15
+        smallOrderThreshold: 15.00,
+        defaultPickupFeeRate: 10.00,
+        deliveryBaseFee: 3.49,              // $3.49 base
+        deliveryPerKmFee: +(0.60 / MI_TO_KM).toFixed(4) as any, // $0.60/mile → per km
+        driverDeliveryFeeShare: 75.00,      // Driver gets 75% of delivery fee
+
+        // Rides
+        rideCommissionRate: 15.00,          // VeloHUB takes 15%, driver keeps 85%
+        riderServiceFee: 1.99,              // flat $1.99 on top of ride fare
+        maxSurgeMultiplier: 2.50,
+
+        // Delivery rides (order+driver combined)
+        deliveryTotalCommissionRate: 40.00,
+        deliveryRidePortionRate: 50.00,
+        deliveryServicePortionRate: 50.00,
+
+        // Services / Bookings
+        serviceCommissionRate: 15.00,       // Provider keeps 85%
+        serviceBookingFee: 0.00,            // $0 — free to book
+        lateCancellationFee: 5.00,
+        lateCancellationFeeMax: 10.00,
+        cancellationWindowMinutes: 60,      // 1hr before scheduled service
+
+        // General
+        referralRewardAmount: 5.00,
+        leaderboardLimit: 10,
+        isGlobalSurgeActive: false,
+        globalSurgeMultiplier: 1.00,
+        isActive: true,
     },
+
+    // ── Ghana (GHS) ─────────────────────────────────────────────────
+    // Mirror US structure in GHS. Approximate rate: 16 GHS/USD.
+    {
+        country: "GH",
+        currency: "GHS",
+        minimumOrderValue: 0,
+
+        defaultCommissionRate: 15.00,
+        defaultServiceFeeRate: 5.00,
+        serviceFeeMaxCap: 79.84,            // ~$4.99 × 16
+        smallOrderFee: 47.84,               // ~$2.99 × 16
+        smallOrderThreshold: 240.00,        // ~$15 × 16
+        defaultPickupFeeRate: 10.00,
+        deliveryBaseFee: 55.84,             // ~$3.49 × 16
+        deliveryPerKmFee: +(9.60 / MI_TO_KM).toFixed(4) as any, // ~$0.60×16/mile → per km
+        driverDeliveryFeeShare: 75.00,
+
+        rideCommissionRate: 15.00,
+        riderServiceFee: 31.84,             // ~$1.99 × 16
+        maxSurgeMultiplier: 2.50,
+
+        deliveryTotalCommissionRate: 40.00,
+        deliveryRidePortionRate: 50.00,
+        deliveryServicePortionRate: 50.00,
+
+        serviceCommissionRate: 15.00,
+        serviceBookingFee: 0.00,
+        lateCancellationFee: 80.00,
+        lateCancellationFeeMax: 160.00,
+        cancellationWindowMinutes: 60,
+
+        referralRewardAmount: 80.00,
+        leaderboardLimit: 10,
+        isGlobalSurgeActive: false,
+        globalSurgeMultiplier: 1.00,
+        isActive: true,
+    },
+
+    // ── Nigeria (NGN) — client-specified custom rates ───────────────
+    {
+        country: "NG",
+        currency: "NGN",
+        minimumOrderValue: 0,
+
+        // Delivery / Orders
+        defaultCommissionRate: 15.00,
+        defaultServiceFeeRate: 4.00,        // 4% of subtotal (not 5%)
+        serviceFeeMaxCap: 1500.00,          // capped at ₦1,500
+        smallOrderFee: 800.00,              // ₦800 if subtotal < ₦12,000
+        smallOrderThreshold: 12000.00,
+        defaultPickupFeeRate: 10.00,
+        deliveryBaseFee: 500.00,            // ₦500 base
+        deliveryPerKmFee: 120.00,           // ₦120/km (client specified per-km directly)
+        driverDeliveryFeeShare: 75.00,
+
+        // Rides — client-specified Nigeria rates
+        rideCommissionRate: 15.00,
+        riderServiceFee: 300.00,            // ₦300 flat
+        maxSurgeMultiplier: 1.80,           // 1.0× – 1.8× max (client specified)
+
+        deliveryTotalCommissionRate: 40.00,
+        deliveryRidePortionRate: 50.00,
+        deliveryServicePortionRate: 50.00,
+
+        // Services
+        serviceCommissionRate: 15.00,
+        serviceBookingFee: 0.00,
+        lateCancellationFee: 2000.00,
+        lateCancellationFeeMax: 5000.00,
+        cancellationWindowMinutes: 60,
+
+        referralRewardAmount: 2000.00,
+        leaderboardLimit: 10,
+        isGlobalSurgeActive: false,
+        globalSurgeMultiplier: 1.00,
+        isActive: true,
+    },
+
+    // ── Canada (CAD) ────────────────────────────────────────────────
     {
         country: "CA",
         currency: "CAD",
-        minimumOrderValue: 7.0,
-        defaultCommissionRate: 20.0,
-        defaultServiceFeeRate: 10.0,
-        defaultPickupFeeRate: 10.0,
-        deliveryBaseFee: 4.0,
-        deliveryPerKmFee: 1.25,
+        minimumOrderValue: 0,
+
+        defaultCommissionRate: 15.00,
+        defaultServiceFeeRate: 5.00,
+        serviceFeeMaxCap: 6.99,
+        smallOrderFee: 3.99,
+        smallOrderThreshold: 20.00,
+        defaultPickupFeeRate: 10.00,
+        deliveryBaseFee: 4.49,
+        deliveryPerKmFee: +(0.80 / MI_TO_KM).toFixed(4) as any,
+        driverDeliveryFeeShare: 75.00,
+
+        rideCommissionRate: 15.00,
+        riderServiceFee: 2.49,
+        maxSurgeMultiplier: 2.50,
+
+        deliveryTotalCommissionRate: 40.00,
+        deliveryRidePortionRate: 50.00,
+        deliveryServicePortionRate: 50.00,
+
+        serviceCommissionRate: 15.00,
+        serviceBookingFee: 0.00,
+        lateCancellationFee: 7.00,
+        lateCancellationFeeMax: 14.00,
+        cancellationWindowMinutes: 60,
+
+        referralRewardAmount: 7.00,
+        leaderboardLimit: 10,
+        isGlobalSurgeActive: false,
+        globalSurgeMultiplier: 1.00,
+        isActive: true,
     },
+
+    // ── India (INR) ─────────────────────────────────────────────────
     {
         country: "IN",
         currency: "INR",
-        minimumOrderValue: 100.0,
-        defaultCommissionRate: 12.0,
-        defaultServiceFeeRate: 5.0,
-        defaultPickupFeeRate: 8.0,
-        deliveryBaseFee: 30.0,
-        deliveryPerKmFee: 10.0,
+        minimumOrderValue: 0,
+
+        defaultCommissionRate: 15.00,
+        defaultServiceFeeRate: 5.00,
+        serviceFeeMaxCap: 399.00,
+        smallOrderFee: 249.00,
+        smallOrderThreshold: 1200.00,
+        defaultPickupFeeRate: 8.00,
+        deliveryBaseFee: 29.00,
+        deliveryPerKmFee: 10.00,
+        driverDeliveryFeeShare: 75.00,
+
+        rideCommissionRate: 15.00,
+        riderServiceFee: 49.00,
+        maxSurgeMultiplier: 2.50,
+
+        deliveryTotalCommissionRate: 40.00,
+        deliveryRidePortionRate: 50.00,
+        deliveryServicePortionRate: 50.00,
+
+        serviceCommissionRate: 15.00,
+        serviceBookingFee: 0.00,
+        lateCancellationFee: 200.00,
+        lateCancellationFeeMax: 500.00,
+        cancellationWindowMinutes: 60,
+
+        referralRewardAmount: 200.00,
+        leaderboardLimit: 10,
+        isGlobalSurgeActive: false,
+        globalSurgeMultiplier: 1.00,
+        isActive: true,
     },
 ];
 
 /**
- * Seed platform_settings rows. Safe to call multiple times — existing
- * rows are skipped thanks to the country unique check.
- *
- * @param alreadyInitialised  pass `true` when called from index.ts
- *                            (AppDataSource is already connected).
+ * Seed platform_settings rows.
+ * UPSERTS — existing rows are UPDATED to match the latest config.
  */
 export async function seedPlatformSettings(alreadyInitialised = false) {
     if (!alreadyInitialised) {
@@ -68,28 +221,25 @@ export async function seedPlatformSettings(alreadyInitialised = false) {
 
     const repo = AppDataSource.getRepository(PlatformSettings);
 
-    let created = 0;
+    let upserted = 0;
     for (const data of SETTINGS) {
-        const exists = await repo.findOne({ where: { country: data.country } });
-        if (exists) {
-            continue; // already seeded — skip silently
+        const existing = await repo.findOne({ where: { country: data.country! } });
+        if (existing) {
+            Object.assign(existing, data);
+            await repo.save(existing);
+        } else {
+            await repo.save(repo.create(data));
         }
-
-        const entry = repo.create(data);
-        await repo.save(entry);
-        created++;
+        upserted++;
     }
 
-    if (created > 0) {
-        console.log(`✅ platform_settings: seeded ${created} new rows`);
-    }
+    console.log(`✅ platform_settings: upserted ${upserted} rows`);
 
     if (!alreadyInitialised) {
         await AppDataSource.destroy();
     }
 }
 
-// Allow standalone execution
 if (require.main === module) {
     seedPlatformSettings(false)
         .then(() => console.log("Done — platform_settings seeded."))

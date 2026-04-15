@@ -33,6 +33,7 @@ export interface RideRequest {
     durationMin: number;
     passengerCount?: number;
     promoCode?: string;
+    country?: string;
     stops?: Array<{ address: string; lat: number; lng: number; stopOrder: number }>;
     sharedContacts?: Array<{ name: string; phone: string }>;
 }
@@ -77,13 +78,15 @@ export class RideService {
         durationMin: number,
         pickupLat: number,
         pickupLng: number,
-        promoCode?: string
+        promoCode?: string,
+        country?: string
     ): Promise<RideEstimate> {
         const fareBreakdown = await this.fareService.calculateFare(
             vehicleType,
             distanceKm,
             durationMin,
-            promoCode
+            promoCode,
+            country || "GH"
         );
 
         // Check how many drivers are nearby
@@ -113,7 +116,8 @@ export class RideService {
         durationMin: number,
         pickupLat: number,
         pickupLng: number,
-        promoCode?: string
+        promoCode?: string,
+        country?: string
     ): Promise<RideEstimate[]> {
         const vehicleTypes = Object.values(VehicleType);
         const estimates: RideEstimate[] = [];
@@ -126,7 +130,8 @@ export class RideService {
                     durationMin,
                     pickupLat,
                     pickupLng,
-                    promoCode
+                    promoCode,
+                    country
                 );
                 estimates.push(estimate);
             } catch {
@@ -143,12 +148,16 @@ export class RideService {
      * Step 1: Customer requests a ride
      */
     async requestRide(request: RideRequest): Promise<Ride> {
+        // Resolve country
+        const country = request.country || "GH";
+
         // Calculate fare
         const fareBreakdown = await this.fareService.calculateFare(
             request.vehicleType,
             request.distanceKm,
             request.durationMin,
-            request.promoCode
+            request.promoCode,
+            country
         );
 
         // Create ride record
@@ -162,15 +171,19 @@ export class RideService {
             dropoffLat: request.dropoffLat,
             dropoffLng: request.dropoffLng,
             vehicleType: request.vehicleType,
+            currency: fareBreakdown.currency,
             distanceKm: request.distanceKm,
             durationMin: request.durationMin,
             baseFare: fareBreakdown.baseFare,
             subtotal: fareBreakdown.subtotal,
             surgeMultiplier: fareBreakdown.surgeMultiplier,
             surgeAmount: fareBreakdown.surgeAmount,
+            riderServiceFee: fareBreakdown.riderServiceFee,
             discountPercent: fareBreakdown.discountPercent,
             discountAmount: fareBreakdown.discountAmount,
             finalFare: fareBreakdown.finalFare,
+            commission: fareBreakdown.platformCommission,
+            driverPayout: fareBreakdown.driverPayout,
             passengerCount: request.passengerCount || 1,
             status: RideStatus.SEARCHING,
         });
@@ -350,6 +363,7 @@ export class RideService {
                 rideId,
                 userId: ride.customerId,
                 amount: Number(ride.finalFare),
+                riderServiceFee: Number(ride.riderServiceFee || 0),
                 method: methodMap[paymentMethod],
                 phoneNumber,
                 email,

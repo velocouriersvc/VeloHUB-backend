@@ -103,6 +103,9 @@ export class Order {
     @Column({ type: "decimal", precision: 10, scale: 2 })
     serviceFee: number;
 
+    @Column({ type: "decimal", precision: 10, scale: 2, default: 0 })
+    smallOrderFee: number;
+
     @Column({ type: "decimal", precision: 10, scale: 2 })
     commission: number;
 

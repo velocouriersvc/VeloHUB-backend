@@ -136,9 +136,10 @@ export class SettlementService {
         const subtotal = Number(order.subtotal);
         const commission = Number(order.commission);
         const serviceFee = Number(order.serviceFee);
+        const smallOrderFee = Number(order.smallOrderFee || 0);
         const deliveryFee = Number(order.deliveryFee);
         const merchantEarnings = Number(order.merchantEarnings);
-        const platformFee = commission + serviceFee;
+        const platformFee = commission + serviceFee + smallOrderFee;
 
         // Build metadata for all wallet transactions
         const txMetadata = {
@@ -262,15 +263,28 @@ export class SettlementService {
         const settlementType: SettlementType = isCash ? "cash_ride" : "online_ride";
 
         // Calculate amounts
+        // Prefer pre-computed values from fare-service (stored on ride at request time)
         const finalFare = Number(ride.finalFare);
-        
-        let commissionRate = settings?.rideCommissionRate || 20;
-        if (ride.type === RideType.DELIVERY) {
-            commissionRate = settings?.deliveryTotalCommissionRate || 40;
-        }
+        const riderServiceFee = Number(ride.riderServiceFee || 0);
+        const farePortionAfterSurge = finalFare - riderServiceFee;
 
-        const platformFee = Math.round(finalFare * (Number(commissionRate) / 100) * 100) / 100;
-        const driverEarnings = finalFare - platformFee;
+        let platformFee: number;
+        let driverEarnings: number;
+
+        if (Number(ride.commission) > 0) {
+            // Use pre-computed values from fare calculation
+            platformFee = Number(ride.commission) + riderServiceFee;
+            driverEarnings = Number(ride.driverPayout);
+        } else {
+            // Fallback: recalculate (legacy rides without pre-computed values)
+            let commissionRate = settings ? Number(settings.rideCommissionRate) : 15;
+            if (ride.type === RideType.DELIVERY) {
+                commissionRate = settings ? Number(settings.deliveryTotalCommissionRate) : 40;
+            }
+            const commissionAmount = Math.round(farePortionAfterSurge * (commissionRate / 100) * 100) / 100;
+            platformFee = commissionAmount + riderServiceFee;
+            driverEarnings = farePortionAfterSurge - commissionAmount;
+        }
 
         // Build metadata
         const txMetadata = {
@@ -280,9 +294,9 @@ export class SettlementService {
             settlementType,
             breakdown: {
                 finalFare,
+                riderServiceFee,
                 platformFee,
                 driverEarnings,
-                commissionRate
             },
         };
 
@@ -473,8 +487,10 @@ export class SettlementService {
         };
 
         const totalCashCollected = Number(order.totalAmount);
-        // Driver keeps deliveryFee as their earnings
-        const driverOwes = totalCashCollected - deliveryFee;
+        // Driver keeps their share of the delivery fee (default 75%)
+        const driverDeliveryShare = Number(settings?.driverDeliveryFeeShare || 75) / 100;
+        const driverDeliveryEarnings = Math.round(deliveryFee * driverDeliveryShare * 100) / 100;
+        const driverOwes = totalCashCollected - driverDeliveryEarnings;
 
         let driverDebited = false;
         let merchantCredited = false;
@@ -515,7 +531,7 @@ export class SettlementService {
             orderNumber: order.orderNumber,
             settlementType: "cash_delivery",
             merchantEarnings,
-            driverEarnings: deliveryFee,
+            driverEarnings: driverDeliveryEarnings,
             platformFee,
             currency,
             merchantWalletCredited: merchantCredited,
@@ -637,25 +653,29 @@ export class SettlementService {
             merchantCredited = true;
         }
 
-        // Credit driver (delivery fee)
-        if (order.driverId && deliveryFee > 0) {
+        // Credit driver (their share of delivery fee — default 75%)
+        const driverDeliveryShare = Number(settings?.driverDeliveryFeeShare || 75) / 100;
+        const driverDeliveryEarnings = Math.round(deliveryFee * driverDeliveryShare * 100) / 100;
+
+        if (order.driverId && driverDeliveryEarnings > 0) {
             await this.walletService.credit(
                 order.driverId,
-                deliveryFee,
+                driverDeliveryEarnings,
                 `Delivery earnings: Order #${order.orderNumber}`,
                 metadata
             );
             driverCredited = true;
         }
 
-        const platformFee = Number(order.commission) + Number(order.serviceFee);
+        const smallOrderFee = Number(order.smallOrderFee || 0);
+        const platformFee = Number(order.commission) + Number(order.serviceFee) + smallOrderFee;
 
         return {
             orderId: order.id,
             orderNumber: order.orderNumber,
             settlementType: "online_delivery",
             merchantEarnings,
-            driverEarnings: deliveryFee,
+            driverEarnings: driverDeliveryEarnings,
             platformFee,
             currency,
             merchantWalletCredited: merchantCredited,

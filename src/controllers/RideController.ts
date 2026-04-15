@@ -33,7 +33,7 @@ export class RideController {
      */
     getEstimates = async (req: AuthRequest, res: Response) => {
         try {
-            const { distanceKm, durationMin, pickupLat, pickupLng, promoCode } = req.body;
+            const { distanceKm, durationMin, pickupLat, pickupLng, promoCode, country } = req.body;
 
             if (!distanceKm || !durationMin || !pickupLat || !pickupLng) {
                 return res.status(400).json({ message: "distanceKm, durationMin, pickupLat, pickupLng are required" });
@@ -44,7 +44,8 @@ export class RideController {
                 Number(durationMin),
                 Number(pickupLat),
                 Number(pickupLng),
-                promoCode
+                promoCode,
+                country
             );
 
             return res.json({ estimates });
@@ -61,7 +62,7 @@ export class RideController {
     getEstimate = async (req: AuthRequest, res: Response) => {
         try {
             const vehicleType = mapVehicleType(req.params.vehicleType);
-            const { distanceKm, durationMin, pickupLat, pickupLng, promoCode } = req.body;
+            const { distanceKm, durationMin, pickupLat, pickupLng, promoCode, country } = req.body;
 
             if (!distanceKm || !durationMin || !pickupLat || !pickupLng) {
                 return res.status(400).json({ message: "distanceKm, durationMin, pickupLat, pickupLng are required" });
@@ -73,7 +74,8 @@ export class RideController {
                 Number(durationMin),
                 Number(pickupLat),
                 Number(pickupLng),
-                promoCode
+                promoCode,
+                country
             );
 
             return res.json({ estimate });
@@ -97,6 +99,7 @@ export class RideController {
                 dropoffAddress, dropoffLat, dropoffLng,
                 vehicleType, distanceKm, durationMin,
                 passengerCount, promoCode, stops, sharedContacts,
+                country,
             } = req.body;
 
             if (!pickupAddress || !pickupLat || !dropoffAddress || !dropoffLat || !vehicleType || !distanceKm || !durationMin) {
@@ -117,6 +120,7 @@ export class RideController {
                 durationMin: Number(durationMin),
                 passengerCount,
                 promoCode,
+                country,
                 stops,
                 sharedContacts,
             });

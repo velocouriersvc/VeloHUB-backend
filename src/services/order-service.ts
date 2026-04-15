@@ -44,6 +44,7 @@ export interface OrderQuoteInput {
 export interface OrderQuoteResult {
     subtotal: number;
     serviceFee: number;
+    smallOrderFee: number;
     commission: number;
     deliveryFee: number;
     discount: number;
@@ -140,11 +141,24 @@ export class OrderService {
             where: { userId: cart.merchantId },
         });
         const commissionRate = this.getRate(merchant?.commissionRate, settings?.serviceCommissionRate, 15) / 100;
-        const serviceFeeRate = this.getRate(merchant?.serviceFeeRate, settings?.defaultServiceFeeRate, 8) / 100;
+        const serviceFeeRate = this.getRate(merchant?.serviceFeeRate, settings?.defaultServiceFeeRate, 5) / 100;
 
         // 6. Calculate fees
         const commission = Math.round(subtotal * commissionRate * 100) / 100;
-        const serviceFee = Math.round(subtotal * serviceFeeRate * 100) / 100;
+        let serviceFee = Math.round(subtotal * serviceFeeRate * 100) / 100;
+
+        // Cap service fee
+        const serviceFeeMaxCap = settings ? Number(settings.serviceFeeMaxCap) : 4.99;
+        if (serviceFeeMaxCap > 0 && serviceFee > serviceFeeMaxCap) {
+            serviceFee = serviceFeeMaxCap;
+        }
+
+        // Small order fee
+        const smallOrderThreshold = settings ? Number(settings.smallOrderThreshold) : 15;
+        const smallOrderFeeAmount = settings ? Number(settings.smallOrderFee) : 2.99;
+        const smallOrderFee = subtotal < smallOrderThreshold
+            ? Math.round(smallOrderFeeAmount * 100) / 100
+            : 0;
 
         // 7. Delivery fee (only for delivery type)
         let deliveryFee = 0;
@@ -184,12 +198,13 @@ export class OrderService {
         }
 
         // 9. Total & merchant earnings
-        const totalAmount = Math.round((subtotal + serviceFee + deliveryFee - discount) * 100) / 100;
+        const totalAmount = Math.round((subtotal + serviceFee + smallOrderFee + deliveryFee - discount) * 100) / 100;
         const merchantEarnings = Math.round((subtotal - commission) * 100) / 100;
 
         return {
             subtotal: Math.round(subtotal * 100) / 100,
             serviceFee,
+            smallOrderFee,
             commission,
             deliveryFee,
             discount,
@@ -306,6 +321,7 @@ export class OrderService {
                 currency,
                 subtotal: quote.subtotal,
                 serviceFee: quote.serviceFee,
+                smallOrderFee: quote.smallOrderFee,
                 commission: quote.commission,
                 deliveryFee: quote.deliveryFee,
                 discountAmount: quote.discount,
@@ -366,6 +382,10 @@ export class OrderService {
                         orderId: savedOrder.id,
                         userId,
                         amount: quote.totalAmount,
+                        subtotal: quote.subtotal,
+                        serviceFee: quote.serviceFee,
+                        smallOrderFee: quote.smallOrderFee,
+                        deliveryFee: quote.deliveryFee,
                         method: input.paymentMethod as any,
                         country,
                         phoneNumber: input.phoneNumber || user?.phoneNumber || undefined,

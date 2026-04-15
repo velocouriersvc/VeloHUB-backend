@@ -161,18 +161,23 @@ export class PaymentService {
         rideId: string;
         userId: string;
         amount: number;
+        riderServiceFee?: number;
         method: PaymentMethodType;
         country?: string;
         email?: string;
         phoneNumber?: string;
     }): Promise<PaymentResult> {
         const { rideId, userId, amount, method } = params;
+        const riderServiceFee = params.riderServiceFee || 0;
         const country = params.country || "GH";
         const { provider, currency, commissionRate } = await this.resolveCountryContext(country);
 
         const reference = `RIDE-${uuidv4().slice(0, 12)}`;
-        const platformFee = Math.round(amount * commissionRate * 100) / 100;
-        const driverAmount = Math.round(amount * (1 - commissionRate) * 100) / 100;
+
+        // Commission applies to the fare portion only, NOT the rider service fee
+        const farePortionBeforeDiscount = amount - riderServiceFee;
+        const platformFee = Math.round((farePortionBeforeDiscount * commissionRate + riderServiceFee) * 100) / 100;
+        const driverAmount = Math.round(farePortionBeforeDiscount * (1 - commissionRate) * 100) / 100;
 
         // Create payment record
         const payment = this.paymentRepo.create({
@@ -219,6 +224,10 @@ export class PaymentService {
         orderId: string;
         userId: string;
         amount: number;
+        subtotal?: number;
+        serviceFee?: number;
+        smallOrderFee?: number;
+        deliveryFee?: number;
         method: PaymentMethodType;
         country?: string;
         email?: string;
@@ -229,8 +238,16 @@ export class PaymentService {
         const { provider, currency, commissionRate } = await this.resolveCountryContext(country);
 
         const reference = `ORD-${uuidv4().slice(0, 12)}`;
-        const platformFee = Math.round(amount * commissionRate * 100) / 100;
-        const merchantAmount = Math.round(amount * (1 - commissionRate) * 100) / 100;
+
+        // Merchant earns: subtotal minus commission (15% of subtotal)
+        // Platform keeps: commission + service fee + small order fee
+        // Delivery fee: split handled at settlement (75% driver / 25% platform)
+        const subtotal = params.subtotal || amount;
+        const serviceFee = params.serviceFee || 0;
+        const smallOrderFee = params.smallOrderFee || 0;
+        const commission = Math.round(subtotal * commissionRate * 100) / 100;
+        const merchantAmount = Math.round((subtotal - commission) * 100) / 100;
+        const platformFee = Math.round((commission + serviceFee + smallOrderFee) * 100) / 100;
 
         const payment = this.paymentRepo.create({
             orderId,
