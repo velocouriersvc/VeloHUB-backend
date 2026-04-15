@@ -355,6 +355,18 @@ export class RideService {
                 email,
             });
 
+            if (!result.success) {
+                // Payment initiation failed — revert ride status back to accepted
+                ride.status = RideStatus.ACCEPTED;
+                ride.paymentMethod = null as any;
+                await this.rideRepo.save(ride);
+                log.warn("Ride payment initiation failed, reverted to ACCEPTED", {
+                    rideId,
+                    message: result.message,
+                });
+                throw new Error(result.message || "Payment initiation failed. Please try again.");
+            }
+
             if (result.success && paymentMethod === PaymentMethod.WALLET) {
                 // Wallet payment is instant — mark ride as paid
                 ride.paymentStatus = PaymentStatus.PAID;

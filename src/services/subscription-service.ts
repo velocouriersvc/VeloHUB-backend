@@ -49,6 +49,16 @@ export class SubscriptionService {
             email: user.email || undefined,
         });
 
+        if (!result.success) {
+            // Payment initiation failed — clean up pending subscription
+            await this.subscriptionRepo.delete(sub.id);
+            log.warn("Subscription payment failed, removed pending record", {
+                subscriptionId: sub.id,
+                message: result.message,
+            });
+            throw new Error(result.message || "Payment initiation failed. Please try again.");
+        }
+
         log.info("Subscription initiated", { userId, subscriptionId: sub.id });
 
         return {

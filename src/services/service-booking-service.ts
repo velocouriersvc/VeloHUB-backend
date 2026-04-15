@@ -83,6 +83,16 @@ export class ServiceBookingService {
             email: user.email || undefined,
         });
 
+        if (!paymentResult.success) {
+            // Payment initiation failed — remove the booking
+            await this.bookingRepo.delete(savedBooking.id);
+            log.warn("Service booking payment failed, removed booking", {
+                bookingId: savedBooking.id,
+                message: paymentResult.message,
+            });
+            throw new Error(paymentResult.message || "Payment initiation failed. Please try again.");
+        }
+
         // 5. Notify merchant
         await this.notificationService.notify(
             input.merchantId,

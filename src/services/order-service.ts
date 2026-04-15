@@ -71,6 +71,7 @@ export interface CheckoutResult {
     payment: {
         reference: string;
         authorizationUrl?: string;
+        clientSecret?: string;
         status: string;
     } | null;
 }
@@ -371,9 +372,26 @@ export class OrderService {
                         email: user?.email || undefined,
                     });
 
+                    // ── Gate: if payment initiation failed, roll back ──
+                    if (!pmtResult.success) {
+                        log.error("Payment initiation failed during checkout, rolling back order", {
+                            orderId: savedOrder.id,
+                            paymentId: pmtResult.paymentId,
+                            paymentStatus: pmtResult.status,
+                            message: pmtResult.message,
+                        });
+                        await this.productService.restoreStock(stockItems);
+                        await this.historyRepo.delete({ orderId: savedOrder.id });
+                        await this.orderRepo.delete(savedOrder.id);
+                        throw new Error(
+                            `Payment failed: ${pmtResult.message || "Could not initiate payment. Please try again."}`
+                        );
+                    }
+
                     paymentResult = {
                         reference: pmtResult.reference,
                         authorizationUrl: pmtResult.authorizationUrl,
+                        clientSecret: pmtResult.clientSecret,
                         status: pmtResult.status,
                     };
 
@@ -384,15 +402,17 @@ export class OrderService {
                     }
                     await this.orderRepo.save(savedOrder);
                 } catch (payError) {
-                    // Payment failed — restore stock, delete order
-                    log.error("Payment failed during checkout, restoring stock", {
-                        orderId: savedOrder.id,
-                        error: (payError as Error).message,
-                    });
-                    await this.productService.restoreStock(stockItems);
-                    await this.historyRepo.delete({ orderId: savedOrder.id });
-                    await this.orderRepo.delete(savedOrder.id);
-                    throw new Error(`Payment failed: ${(payError as Error).message}`);
+                    // Payment failed — restore stock, delete order (if not already rolled back above)
+                    if (!(payError as Error).message.startsWith("Payment failed")) {
+                        log.error("Payment threw during checkout, restoring stock", {
+                            orderId: savedOrder.id,
+                            error: (payError as Error).message,
+                        });
+                        await this.productService.restoreStock(stockItems);
+                        await this.historyRepo.delete({ orderId: savedOrder.id });
+                        await this.orderRepo.delete(savedOrder.id);
+                    }
+                    throw payError instanceof Error ? payError : new Error(`Payment failed: ${payError}`);
                 }
             }
 
