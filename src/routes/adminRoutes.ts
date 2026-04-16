@@ -154,6 +154,39 @@ router.patch("/drivers/:id", adminRole, adminController.updateDriver);
 
 /**
  * @openapi
+ * /admin/drivers/{id}/verify:
+ *   post:
+ *     tags: [Admin]
+ *     summary: Approve or reject a driver's verification
+ *     security:
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [action]
+ *             properties:
+ *               action:
+ *                 type: string
+ *                 enum: [approve, reject]
+ *               rejection_reason:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Driver verified/rejected
+ */
+router.post("/drivers/:id/verify", adminRole, adminController.verifyDriver);
+
+/**
+ * @openapi
  * /admin/merchants/{id}:
  *   patch:
  *     tags: [Admin]

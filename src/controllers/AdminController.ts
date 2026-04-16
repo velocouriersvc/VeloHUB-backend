@@ -18,6 +18,7 @@ import { Wallet } from "../models/wallet";
 import { UserRole, RoleStatus } from "../models/user-role";
 import { Role, RoleType } from "../models/role";
 import { ServiceBookingStatus } from "../models/service-booking";
+import { Identification, IdentificationStatus } from "../models/identification";
 import crypto from "crypto";
 
 const log = createServiceLogger("AdminController");
@@ -26,6 +27,7 @@ export class AdminController {
     private userRepo = AppDataSource.getRepository(User);
     private driverRepo = AppDataSource.getRepository(DriverProfile);
     private merchantRepo = AppDataSource.getRepository(MerchantProfile);
+    private identificationRepo = AppDataSource.getRepository(Identification);
     private rideRepo = AppDataSource.getRepository(Ride);
     private zoneRepo = AppDataSource.getRepository(Zone);
     private settingsRepo = AppDataSource.getRepository(PlatformSettings);
@@ -52,17 +54,32 @@ export class AdminController {
     getDrivers = async (req: Request, res: Response) => {
         try {
             const drivers = await this.driverRepo.find({
-                relations: ["user"]
+                relations: ["user", "identification"]
             });
             return res.json(drivers.map(d => ({
                 id: d.userId,
+                driver_profile_id: d.id,
                 full_name: d.fullName,
                 email: d.user.email,
                 phone: d.user.phoneNumber,
                 vehicle_type: d.vehicleType,
                 vehicle_number: d.plateNumber,
-                status: d.user.status,
-                created_date: d.user.createdAt,
+                vehicle_model: d.vehicleModel,
+                vehicle_color: d.vehicleColor,
+                license_number: d.licenseNumber,
+                license_photo_url: d.licensePhotoUrl,
+                region: d.region,
+                status: d.status,
+                user_status: d.user.status,
+                created_date: d.createdAt,
+                // Identification documents
+                identification_id: d.identification?.id || null,
+                id_type: d.identification?.type || null,
+                id_number: d.identification?.idNumber || null,
+                id_front_url: d.identification?.frontUrl || null,
+                id_back_url: d.identification?.backUrl || null,
+                id_status: d.identification?.status || null,
+                id_expiry: d.identification?.expiryDate || null,
             })));
         } catch (error) {
             console.error("Error fetching drivers:", error);
@@ -273,6 +290,65 @@ export class AdminController {
             return res.json({ message: "Driver updated successfully" });
         } catch (error) {
             console.error("Error updating driver status:", error);
+            return res.status(500).json({ message: "Internal server error" });
+        }
+    };
+
+    /**
+     * POST /admin/drivers/:id/verify
+     * Approve or reject a driver's verification, updating both driver profile and identification status.
+     */
+    verifyDriver = async (req: Request, res: Response) => {
+        try {
+            const userId = req.params.id;
+            const { action, rejection_reason } = req.body; // action: 'approve' | 'reject'
+
+            if (!action || !['approve', 'reject'].includes(action)) {
+                return res.status(400).json({ message: "action must be 'approve' or 'reject'" });
+            }
+
+            const driver = await this.driverRepo.findOne({
+                where: { userId },
+                relations: ["identification", "user"],
+            });
+            if (!driver) return res.status(404).json({ message: "Driver not found" });
+
+            if (action === 'approve') {
+                driver.status = DriverVerificationStatus.APPROVED;
+                driver.user.status = UserStatus.ACTIVE;
+                if (driver.identification) {
+                    driver.identification.status = IdentificationStatus.VERIFIED;
+                    await this.identificationRepo.save(driver.identification);
+                }
+            } else {
+                driver.status = DriverVerificationStatus.REJECTED;
+                driver.user.status = UserStatus.SUSPENDED;
+                if (driver.identification) {
+                    driver.identification.status = IdentificationStatus.REJECTED;
+                    await this.identificationRepo.save(driver.identification);
+                }
+            }
+
+            await this.userRepo.save(driver.user);
+            await this.driverRepo.save(driver);
+
+            await AuditLogController.record({
+                action: action === 'approve' ? "Approve Driver" : "Reject Driver",
+                entity_type: "driver",
+                entity_id: userId,
+                performed_by: (req as any).user?.email || "Admin",
+                details: action === 'approve'
+                    ? `Driver verified and approved`
+                    : `Driver rejected: ${rejection_reason || 'No reason provided'}`,
+                risk_level: AuditRiskLevel.MEDIUM,
+            });
+
+            return res.json({
+                message: `Driver ${action === 'approve' ? 'approved' : 'rejected'} successfully`,
+                status: driver.status,
+            });
+        } catch (error) {
+            console.error("Error verifying driver:", error);
             return res.status(500).json({ message: "Internal server error" });
         }
     };
