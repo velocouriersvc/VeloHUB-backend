@@ -19,6 +19,8 @@ import { UserRole, RoleStatus } from "../models/user-role";
 import { Role, RoleType } from "../models/role";
 import { ServiceBookingStatus } from "../models/service-booking";
 import { Identification, IdentificationStatus } from "../models/identification";
+import { NotificationService } from "../services/notification-service";
+import { NotificationType } from "../models/notification";
 import crypto from "crypto";
 
 const log = createServiceLogger("AdminController");
@@ -370,6 +372,28 @@ export class AdminController {
                     : `Driver rejected: ${rejection_reason || 'No reason provided'}`,
                 risk_level: AuditRiskLevel.MEDIUM,
             });
+
+            // Send in-app + push notification to the driver
+            const notificationService = new NotificationService();
+            if (action === 'approve') {
+                await notificationService.notify(
+                    userId,
+                    NotificationType.ROLE_APPROVED,
+                    "You're Approved! 🎉",
+                    "Your driver verification has been approved. You can now go online and start accepting rides and deliveries.",
+                    { type: "driver_approved" }
+                );
+            } else {
+                await notificationService.notify(
+                    userId,
+                    NotificationType.ROLE_REJECTED,
+                    "Verification Update",
+                    rejection_reason
+                        ? `Your driver verification was not approved: ${rejection_reason}`
+                        : "Your driver verification was not approved. Please review your documents and try again.",
+                    { type: "driver_rejected", reason: rejection_reason || null }
+                );
+            }
 
             return res.json({
                 message: `Driver ${action === 'approve' ? 'approved' : 'rejected'} successfully`,
