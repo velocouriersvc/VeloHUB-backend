@@ -336,6 +336,44 @@ router.get("/rides/history", driverRole, driverController.getRideHistory);
 router.get("/stats", driverRole, driverController.getStats);
 
 // ════════════════════════════════════════════════════════════════════
+//  DRIVER PROFILE
+// ════════════════════════════════════════════════════════════════════
+
+/**
+ * @openapi
+ * /driver/profile:
+ *   get:
+ *     tags: [Driver]
+ *     summary: Get driver's own profile
+ *     description: Returns the driver's profile including vehicle info, documents, and verification status.
+ *     security:
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - $ref: '#/components/parameters/PhoneNumber'
+ *     responses:
+ *       200:
+ *         description: Driver profile object
+ *       404:
+ *         description: Driver profile not found
+ */
+router.get("/profile", driverRole, driverController.getProfile);
+
+/**
+ * @openapi
+ * /driver/profile:
+ *   put:
+ *     tags: [Driver]
+ *     summary: Update driver's own profile
+ *     description: Update name, vehicle model, color, or plate number.
+ *     security:
+ *       - ApiKeyAuth: []
+ *     responses:
+ *       200:
+ *         description: Profile updated
+ */
+router.put("/profile", driverRole, driverController.updateProfile);
+
+// ════════════════════════════════════════════════════════════════════
 //  MARKETPLACE DELIVERIES
 // ════════════════════════════════════════════════════════════════════
 

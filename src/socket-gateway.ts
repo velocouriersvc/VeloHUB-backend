@@ -41,8 +41,11 @@ export function initSocketGateway(httpServer: HttpServer): Server {
 
         log.info("Driver connected", { driverId, socketId: socket.id });
 
+        // Join a personal room so we can send targeted events
+        socket.join(`driver:${driverId}`);
+
         // Driver sends location updates
-        socket.on("location:update", async (data: { lat: number; lng: number; heading?: number }) => {
+        socket.on("location:update", async (data: { lat: number; lng: number; heading?: number; rideId?: string }) => {
             try {
                 await locationService.updateDriverLocation(driverId, data.lat, data.lng);
 
@@ -54,6 +57,17 @@ export function initSocketGateway(httpServer: HttpServer): Server {
                     heading: data.heading ?? 0,
                     ts: Date.now(),
                 });
+
+                // If there's an active ride, also emit to that ride's room for the customer
+                if (data.rideId) {
+                    io!.of("/rides").to(`ride:${data.rideId}`).emit("driver:location", {
+                        driverId,
+                        lat: data.lat,
+                        lng: data.lng,
+                        heading: data.heading ?? 0,
+                        ts: Date.now(),
+                    });
+                }
             } catch (err) {
                 log.error("Error updating driver location", { driverId, error: (err as Error).message });
             }
@@ -140,6 +154,12 @@ export function emitRideEvent(rideId: string, event: string, payload: Record<str
 export function emitToUser(userId: string, event: string, payload: Record<string, any>) {
     if (!io) return;
     io.of("/rides").emit(event, { ...payload, targetUserId: userId });
+}
+
+/** Emit an event to a specific driver's personal room */
+export function emitToDriver(driverId: string, event: string, payload: Record<string, any>) {
+    if (!io) return;
+    io.of("/drivers").to(`driver:${driverId}`).emit(event, payload);
 }
 
 // ── Helper to emit order status events from anywhere in the backend ──
