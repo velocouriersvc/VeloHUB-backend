@@ -313,6 +313,10 @@ export class AdminController {
             });
             if (!driver) return res.status(404).json({ message: "Driver not found" });
 
+            // Find the driver role definition
+            const driverRole = await this.roleRepo.findOneBy({ name: RoleType.DRIVER });
+            if (!driverRole) return res.status(500).json({ message: "Driver role not found in system" });
+
             if (action === 'approve') {
                 driver.status = DriverVerificationStatus.APPROVED;
                 driver.user.status = UserStatus.ACTIVE;
@@ -320,12 +324,36 @@ export class AdminController {
                     driver.identification.status = IdentificationStatus.VERIFIED;
                     await this.identificationRepo.save(driver.identification);
                 }
+
+                // Approve the user_role entry so the driver role shows up in auth responses
+                let userRole = await this.userRoleRepo.findOneBy({ userId, roleId: driverRole.id });
+                if (userRole) {
+                    userRole.status = RoleStatus.APPROVED;
+                    userRole.completedRequirements = true;
+                    await this.userRoleRepo.save(userRole);
+                } else {
+                    // Create user_role if it doesn't exist (e.g. manual admin creation)
+                    userRole = this.userRoleRepo.create({
+                        userId,
+                        roleId: driverRole.id,
+                        status: RoleStatus.APPROVED,
+                        completedRequirements: true,
+                    });
+                    await this.userRoleRepo.save(userRole);
+                }
             } else {
                 driver.status = DriverVerificationStatus.REJECTED;
                 driver.user.status = UserStatus.SUSPENDED;
                 if (driver.identification) {
                     driver.identification.status = IdentificationStatus.REJECTED;
                     await this.identificationRepo.save(driver.identification);
+                }
+
+                // Reject the user_role entry
+                const userRole = await this.userRoleRepo.findOneBy({ userId, roleId: driverRole.id });
+                if (userRole) {
+                    userRole.status = RoleStatus.REJECTED;
+                    await this.userRoleRepo.save(userRole);
                 }
             }
 
