@@ -88,7 +88,7 @@ export class IdentityVerificationService {
         );
 
         return {
-            sessionId: session.id,
+            id: session.id,
             clientSecret: session.client_secret,
             ephemeralKeySecret: ephemeralKey.secret,
         };

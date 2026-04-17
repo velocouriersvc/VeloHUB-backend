@@ -1,10 +1,12 @@
 import { Router } from "express";
 import { AuthController } from "../controllers/AuthController";
+import { IdentityController } from "../controllers/IdentityController";
 import { apiKeyMiddleware } from "../middleware/api-key-middleware";
-import { requireAuth } from "../middleware/role-middleware";
+import { requireAuth, requireRole } from "../middleware/role-middleware";
 
 const router = Router();
 const authController = new AuthController();
+const identityController = new IdentityController();
 
 // Apply API Key Middleware to all auth routes
 router.use(apiKeyMiddleware);
@@ -162,5 +164,38 @@ router.post("/sync", authController.syncUser);
  *         description: Invalid API key or role not approved
  */
 router.get("/me", requireAuth, authController.getMe);
+
+/**
+ * @openapi
+ * /auth/identity-session:
+ *   post:
+ *     tags: [Auth]
+ *     summary: Create Stripe Identity verification session
+ *     description: Creates a Stripe Identity Verification session and returns the client secret and ephemeral key for the mobile SDK.
+ *     security:
+ *       - ApiKeyAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               phoneNumber:
+ *                 type: string
+ *                 example: "+233501234567"
+ *     responses:
+ *       201:
+ *         description: Session created
+ *         content:
+ *           application/json:
+ *             example:
+ *               id: "vs_XXXXX"
+ *               clientSecret: "vsc_XXXXX"
+ *               ephemeralKeySecret: "vsek_XXXXX"
+ *       403:
+ *         description: Unauthorized
+ */
+router.post("/identity-session", requireRole(["driver", "merchant", "buyer"]), identityController.createSession);
 
 export default router;

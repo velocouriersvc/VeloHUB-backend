@@ -224,6 +224,32 @@ router.get("/active", requireRole(["buyer"]), rideController.getActiveRide);
 
 /**
  * @openapi
+ * /rides/nearby-drivers:
+ *   post:
+ *     tags: [Rides]
+ *     summary: Get nearby online drivers
+ *     description: Returns online drivers within a radius for map overlay. Requires **buyer** role.
+ *     security:
+ *       - ApiKeyAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           example:
+ *             phoneNumber: "+233501234567"
+ *             lat: 5.6037
+ *             lng: -0.187
+ *             radiusKm: 10
+ *     responses:
+ *       200:
+ *         description: Array of nearby drivers with locations
+ *       403:
+ *         description: Invalid API key or role not approved
+ */
+router.post("/nearby-drivers", requireRole(["buyer"]), rideController.getNearbyDrivers);
+
+/**
+ * @openapi
  * /rides/history:
  *   get:
  *     tags: [Rides]

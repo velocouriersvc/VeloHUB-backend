@@ -1152,6 +1152,15 @@ export class AdminService {
         return profile;
     }
 
+    async deleteUser(userId: string, adminId: string) {
+        const user = await this.userRepo.findOneBy({ id: userId });
+        if (!user) throw new Error("User not found");
+
+        const result = await this.userRepo.remove(user);
+        log.info("Admin deleted user account", { userId, adminId, phoneNumber: user.phoneNumber });
+        return { success: true, message: `User ${user.phoneNumber} permanently deleted.` };
+    }
+
     async updateMerchantProfile(
         merchantId: string,
         data: Partial<MerchantProfile>,
