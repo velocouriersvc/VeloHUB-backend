@@ -3,6 +3,8 @@ import { AuthController } from "../controllers/AuthController";
 import { IdentityController } from "../controllers/IdentityController";
 import { apiKeyMiddleware } from "../middleware/api-key-middleware";
 import { requireAuth, requireRole } from "../middleware/role-middleware";
+import { AppDataSource } from "../db/data-source";
+import { PlatformSettings } from "../models/platform-settings";
 
 const router = Router();
 const authController = new AuthController();
@@ -197,5 +199,37 @@ router.get("/me", requireAuth, authController.getMe);
  *         description: Unauthorized
  */
 router.post("/identity-session", requireRole(["driver", "merchant", "buyer"]), identityController.createSession);
+
+/**
+ * GET /auth/platform-config/:country
+ * Public endpoint — returns service availability flags for the given country.
+ */
+router.get("/platform-config/:country", async (req, res) => {
+    try {
+        const country = req.params.country.toUpperCase();
+        const repo = AppDataSource.getRepository(PlatformSettings);
+        const settings = await repo.findOne({ where: { country } });
+
+        if (!settings) {
+            return res.status(200).json({
+                country,
+                ridesEnabled: false,
+                deliveryEnabled: false,
+                isActive: false,
+                currency: "USD",
+            });
+        }
+
+        return res.status(200).json({
+            country: settings.country,
+            currency: settings.currency,
+            ridesEnabled: settings.ridesEnabled ?? true,
+            deliveryEnabled: settings.deliveryEnabled ?? true,
+            isActive: settings.isActive,
+        });
+    } catch {
+        return res.status(500).json({ message: "Failed to fetch platform config" });
+    }
+});
 
 export default router;

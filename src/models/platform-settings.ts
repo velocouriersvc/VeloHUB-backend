@@ -118,6 +118,12 @@ export class PlatformSettings {
     globalSurgeMultiplier: number;
 
     @Column({ type: "boolean", default: true })
+    ridesEnabled: boolean;
+
+    @Column({ type: "boolean", default: true })
+    deliveryEnabled: boolean;
+
+    @Column({ type: "boolean", default: true })
     isActive: boolean;
 
     @UpdateDateColumn()

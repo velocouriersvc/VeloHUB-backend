@@ -1635,6 +1635,8 @@ export class AdminService {
             leaderboardLimit: number;
             isGlobalSurgeActive: boolean;
             globalSurgeMultiplier: number;
+            ridesEnabled: boolean;
+            deliveryEnabled: boolean;
             isActive: boolean;
         }>,
         adminId: string
