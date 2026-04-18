@@ -30,12 +30,12 @@ const SETTINGS: Partial<PlatformSettings>[] = [
         defaultPickupFeeRate: 10.00,
         deliveryBaseFee: 3.49,              // $3.49 base
         deliveryPerKmFee: +(0.60 / MI_TO_KM).toFixed(4) as any, // $0.60/mile → per km
-        driverDeliveryFeeShare: 75.00,      // Driver gets 75% of delivery fee
+        driverDeliveryFeeShare: 85.00,      // Driver gets 85% of delivery fee (per formula & examples)
 
         // Rides
         rideCommissionRate: 15.00,          // VeloHUB takes 15%, driver keeps 85%
         riderServiceFee: 1.99,              // flat $1.99 on top of ride fare
-        maxSurgeMultiplier: 2.50,
+        maxSurgeMultiplier: 2.00,           // spec: 1.0x – 2.0x max
 
         // Delivery rides (order+driver combined)
         deliveryTotalCommissionRate: 40.00,

@@ -37,7 +37,7 @@ const US_PER_KM = +(1.00 / MI_TO_KM).toFixed(4);
 
 const US_PRICING: PricingRow[] = [
     { vehicleType: VehicleType.BIKE, country: "US", basePrice: 1.50, pricePerKm: +(0.75 / MI_TO_KM).toFixed(4) as any, pricePerMin: 0.15, minimumFare: 3.50, maxPassengers: 1 },
-    { vehicleType: VehicleType.CAR,  country: "US", basePrice: 2.00, pricePerKm: US_PER_KM,  pricePerMin: 0.20, minimumFare: 5.00, maxPassengers: 4 },
+    { vehicleType: VehicleType.CAR,  country: "US", basePrice: 2.00, pricePerKm: US_PER_KM,  pricePerMin: 0.20, minimumFare: 6.00, maxPassengers: 4 },
     { vehicleType: VehicleType.SUV,  country: "US", basePrice: 3.00, pricePerKm: +(1.50 / MI_TO_KM).toFixed(4) as any, pricePerMin: 0.30, minimumFare: 8.00, maxPassengers: 6 },
     { vehicleType: VehicleType.TRUCK,country: "US", basePrice: 5.00, pricePerKm: +(2.00 / MI_TO_KM).toFixed(4) as any, pricePerMin: 0.40, minimumFare: 12.00, maxPassengers: 2 },
 ];
