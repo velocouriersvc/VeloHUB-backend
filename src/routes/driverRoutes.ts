@@ -796,7 +796,7 @@ router.post("/deliveries/:orderId/complete", driverRole, deliveryController.comp
 router.post(
     "/deliveries/:orderId/verify-delivery-code",
     driverRole,
-    validate([body("code").notEmpty().withMessage("Delivery code is required")]),
+    validate([body("code").required("Delivery code is required")]),
     deliveryController.verifyDeliveryCode
 );
 
