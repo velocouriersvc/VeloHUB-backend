@@ -756,4 +756,48 @@ router.patch("/deliveries/:orderId/status", driverRole, validate([
  */
 router.post("/deliveries/:orderId/complete", driverRole, deliveryController.completeDelivery);
 
+/**
+ * @openapi
+ * /driver/deliveries/{orderId}/verify-delivery-code:
+ *   post:
+ *     tags: [Driver - Deliveries]
+ *     summary: Verify delivery code given by customer
+ *     description: |
+ *       Driver submits the code provided by the customer/buyer to confirm delivery ownership.
+ *       On success the order transitions to DELIVERED and deliveryCodeVerifiedAt is set.
+ *       Max 5 attempts per order per hour.
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: orderId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [code]
+ *             properties:
+ *               code:
+ *                 type: string
+ *                 example: "A3BX7Q"
+ *     responses:
+ *       200:
+ *         description: Code verified, order marked as delivered
+ *       400:
+ *         description: Invalid code
+ *       429:
+ *         description: Too many attempts
+ */
+router.post(
+    "/deliveries/:orderId/verify-delivery-code",
+    driverRole,
+    validate([body("code").notEmpty().withMessage("Delivery code is required")]),
+    deliveryController.verifyDeliveryCode
+);
+
 export default router;

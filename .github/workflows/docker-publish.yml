@@ -57,6 +57,9 @@ jobs:
   deploy:
     needs: build
     runs-on: ubuntu-latest
+    env:
+      STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
+      STRIPE_WEBHOOK_SECRET: ${{ secrets.STRIPE_WEBHOOK_SECRET }}
     steps:
       - name: Deploy to VPS
         id: deploy
@@ -68,12 +71,28 @@ jobs:
           port: ${{ secrets.VPS_PORT }}
           request_pty: true
           command_timeout: 180s
+          envs: STRIPE_SECRET_KEY,STRIPE_WEBHOOK_SECRET
           script: |
             echo "=========================================="
             echo "🚀 DEPLOYMENT STARTED"
             echo "=========================================="
             echo "⏰ Time: $(date '+%Y-%m-%d %H:%M:%S %Z')"
             echo "📦 Image: ghcr.io/velocouriersvc/velo-backend:latest"
+            echo ""
+
+            # ── Step 0: Update Kubernetes secrets ──
+            echo "── UPDATING SECRETS ──"
+            sudo kubectl -n velo patch secret velo-secrets \
+              --type='json' \
+              -p="[
+                {\"op\":\"replace\",\"path\":\"/data/STRIPE_SECRET_KEY\",\"value\":\"$(echo -n "$STRIPE_SECRET_KEY" | base64 -w 0)\"},
+                {\"op\":\"replace\",\"path\":\"/data/STRIPE_WEBHOOK_SECRET\",\"value\":\"$(echo -n "$STRIPE_WEBHOOK_SECRET" | base64 -w 0)\"}
+              ]" 2>/dev/null || \
+            sudo kubectl -n velo create secret generic velo-secrets \
+              --from-literal=STRIPE_SECRET_KEY="$STRIPE_SECRET_KEY" \
+              --from-literal=STRIPE_WEBHOOK_SECRET="$STRIPE_WEBHOOK_SECRET" \
+              --dry-run=client -o yaml | sudo kubectl apply -f -
+            echo "Secrets updated."
             echo ""
 
             # ── Step 1: Pre-deploy status ──

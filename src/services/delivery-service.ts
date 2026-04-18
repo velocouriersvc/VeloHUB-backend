@@ -15,6 +15,9 @@ const log = createServiceLogger("DeliveryService");
 // Redis keys
 const DELIVERY_LOCK_KEY = (orderId: string) => `delivery:lock:${orderId}`;
 const DELIVERY_LOCK_TTL = 15; // seconds — prevent double-accept
+const DELIVERY_CODE_ATTEMPTS_KEY = (orderId: string) => `delivery:code:attempts:${orderId}`;
+const MAX_CODE_ATTEMPTS = 5;
+const CODE_ATTEMPTS_TTL = 3600;
 
 // ── Result Types ────────────────────────────────────────────────────
 
@@ -390,6 +393,65 @@ export class DeliveryService {
             order: settledOrder || order,
             settlement,
         };
+    }
+
+    // ── Verify Delivery Code ────────────────────────────────────────
+
+    /**
+     * Driver submits the delivery code given by the customer.
+     * Verifies it matches the order's deliveryCode, marks deliveryCodeVerifiedAt,
+     * and transitions the order to DELIVERED.
+     */
+    async verifyDeliveryCode(
+        driverId: string,
+        orderId: string,
+        submittedCode: string
+    ): Promise<{ valid: boolean; attemptsRemaining: number; order?: Order }> {
+        const order = await this.orderRepo.findOne({
+            where: { id: orderId, driverId },
+            relations: { customer: true },
+        });
+
+        if (!order) throw new Error("Order not found or not assigned to you");
+        if (!order.deliveryCode) throw new Error("This order has no delivery code");
+
+        if (order.status !== OrderStatus.IN_TRANSIT && order.status !== OrderStatus.READY_FOR_DELIVERY) {
+            throw new Error(`Cannot verify delivery code — order status is "${order.status}"`);
+        }
+
+        const key = DELIVERY_CODE_ATTEMPTS_KEY(orderId);
+        const attempts = await redis.get(key);
+        const currentAttempts = attempts ? parseInt(attempts, 10) : 0;
+
+        if (currentAttempts >= MAX_CODE_ATTEMPTS) {
+            throw new Error("Too many verification attempts. Please wait and try again.");
+        }
+
+        const valid = submittedCode.toUpperCase().trim() === order.deliveryCode.toUpperCase().trim();
+
+        if (valid) {
+            await redis.del(key);
+            order.deliveryCodeVerifiedAt = new Date();
+            order.status = OrderStatus.DELIVERED;
+            order.deliveredAt = new Date();
+            await this.orderRepo.save(order);
+
+            await this.recordStatusChange(orderId, order.status, OrderStatus.DELIVERED, driverId, "driver", "Delivery code verified by driver");
+
+            emitOrderEvent(orderId, "order:status", {
+                orderId,
+                status: OrderStatus.DELIVERED,
+                updatedAt: new Date().toISOString(),
+            });
+
+            log.info("Delivery code verified successfully", { orderId, driverId });
+            return { valid: true, attemptsRemaining: MAX_CODE_ATTEMPTS, order };
+        } else {
+            const newAttempts = currentAttempts + 1;
+            await redis.set(key, newAttempts.toString(), "EX", CODE_ATTEMPTS_TTL);
+            log.warn("Invalid delivery code attempt", { orderId, attempt: newAttempts });
+            return { valid: false, attemptsRemaining: MAX_CODE_ATTEMPTS - newAttempts };
+        }
     }
 
     // ── Driver Active Delivery ──────────────────────────────────────
