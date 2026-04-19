@@ -41,6 +41,8 @@ import serviceBookingRoutes from "./routes/service-booking-routes";
 import subscriptionRoutes from "./routes/subscription-routes";
 import identityRoutes from "./routes/identityRoutes";
 import checkoutRoutes from "./routes/checkoutRoutes";
+import supabaseRoutes from "./routes/supabaseRoutes";
+
 
 const app = express();
 const httpServer = createServer(app);
@@ -113,6 +115,8 @@ app.use("/api/v1/services/bookings", serviceBookingRoutes);
 app.use("/api/v1/services/subscriptions", subscriptionRoutes);
 app.use("/api/v1/identity", identityRoutes);
 app.use("/api/v1/checkout", checkoutRoutes);
+app.use("/api/v1/admin/supabase", supabaseRoutes);
+
 app.use("/api/orders", orderRoutes);
 
 // Explicit DB Viewer Route for local dev
