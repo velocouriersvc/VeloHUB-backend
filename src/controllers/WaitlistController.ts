@@ -93,7 +93,7 @@ export class WaitlistController {
                 where,
                 order: { name: "ASC" }
             });
-            return res.json({ countries });
+            return res.json(countries);
         } catch (error) {
             console.error("Error fetching waitlist countries:", error);
             return res.status(500).json({ message: "Internal server error" });
