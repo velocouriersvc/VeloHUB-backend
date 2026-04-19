@@ -238,7 +238,21 @@ export class RideService {
             await this.driverMatchService.broadcastRideRequest(
                 savedRide.id,
                 request.pickupAddress,
-                driverUserIds
+                driverUserIds,
+                {
+                    rideId: savedRide.id,
+                    type: savedRide.type,
+                    pickupAddress: request.pickupAddress,
+                    dropoffAddress: request.dropoffAddress,
+                    pickupLat: request.pickupLat,
+                    pickupLng: request.pickupLng,
+                    dropoffLat: request.dropoffLat,
+                    dropoffLng: request.dropoffLng,
+                    fare: savedRide.finalFare,
+                    distanceKm: request.distanceKm,
+                    durationMin: request.durationMin,
+                    vehicleType: request.vehicleType,
+                }
             );
         }
 

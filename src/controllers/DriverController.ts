@@ -1,6 +1,7 @@
 import { Response } from "express";
 import { AuthRequest } from "../middleware/role-middleware";
 import { RideService } from "../services/ride-service";
+import { FareService } from "../services/fare-service";
 import { RedisLocationService } from "../services/redis-location-service";
 import { RatingService } from "../services/rating-service";
 import { createServiceLogger } from "../utils/logger";
@@ -15,6 +16,7 @@ const log = createServiceLogger("DriverController");
 
 export class DriverController {
     private rideService = new RideService();
+    private fareService = new FareService();
     private redisLocation = new RedisLocationService();
     private ratingService = new RatingService();
     private driverProfileRepo = AppDataSource.getRepository(DriverProfile);
@@ -315,6 +317,21 @@ export class DriverController {
             return res.json({ message: "Profile updated", profile: driverProfile });
         } catch (error) {
             log.error("Error updating driver profile", { error: (error as Error).message });
+            return res.status(500).json({ message: "Internal server error" });
+        }
+    };
+
+    /**
+     * GET /driver/surge
+     * Get current surge multiplier for the driver's area
+     */
+    getSurge = async (req: AuthRequest, res: Response) => {
+        try {
+            const country = (req.query.country as string) || "GH";
+            const surgeMultiplier = await this.fareService.getSurgeMultiplier(country);
+            return res.json({ surgeMultiplier, country });
+        } catch (error) {
+            log.error("Error getting surge", { error: (error as Error).message });
             return res.status(500).json({ message: "Internal server error" });
         }
     };

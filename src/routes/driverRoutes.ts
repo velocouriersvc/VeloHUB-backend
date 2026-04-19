@@ -800,4 +800,26 @@ router.post(
     deliveryController.verifyDeliveryCode
 );
 
+/**
+ * @openapi
+ * /driver/surge:
+ *   get:
+ *     tags: [Driver - Rides]
+ *     summary: Get current surge multiplier
+ *     description: Returns the current surge multiplier for the driver's country.
+ *     security:
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - $ref: '#/components/parameters/PhoneNumber'
+ *       - in: query
+ *         name: country
+ *         schema:
+ *           type: string
+ *           default: GH
+ *     responses:
+ *       200:
+ *         description: Current surge multiplier
+ */
+router.get("/surge", driverRole, driverController.getSurge);
+
 export default router;
