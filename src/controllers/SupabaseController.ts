@@ -97,7 +97,7 @@ export class SupabaseController {
                 entity_type: "supabase_table",
                 entity_id: tableName,
                 performed_by: (req as any).user?.email || (req as any).user?.phoneNumber || "Admin",
-                details: `Viewed ${data.length} records from Supabase table: ${tableName}`,
+                details: `Viewed ${data?.length ?? 0} records from Supabase table: ${tableName}`,
                 risk_level: AuditRiskLevel.LOW
             });
 
