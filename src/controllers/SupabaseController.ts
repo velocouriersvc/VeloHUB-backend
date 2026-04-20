@@ -54,8 +54,13 @@ export class SupabaseController {
             let { data, error, count } = await query.order("created_at", { ascending: false });
 
             // If it fails because of missing created_at, try sorting by id or just fetch without order
-            if (error && (error.message.includes('column "created_at" does not exist') || error.code === 'PGRST100')) {
-                console.log(`Table ${tableName} missing 'created_at' column. Retrying with 'id' or no order.`);
+            if (error && (
+                error.code === '42703' || 
+                error.code === 'PGRST100' || 
+                error.message.includes('created_at" does not exist') ||
+                error.message.includes('created_at does not exist')
+            )) {
+                console.log(`Table ${tableName} missing 'created_at' column (Code: ${error.code}). Retrying with 'id' or no order.`);
                 
                 // Reset query
                 const idQuery = supabaseAdmin
