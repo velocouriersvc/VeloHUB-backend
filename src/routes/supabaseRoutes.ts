@@ -13,6 +13,17 @@ router.use(requireRole(["admin"]));
 
 /**
  * @openapi
+ * /admin/supabase/migrate/stream:
+ *   get:
+ *     tags: [Admin, Supabase]
+ *     summary: Stream the full data migration progress
+ *     security:
+ *       - ApiKeyAuth: []
+ */
+router.get("/migrate/stream", supabaseController.streamMigration);
+
+/**
+ * @openapi
  * /admin/supabase/tables:
  *   get:
  *     tags: [Admin, Supabase]
