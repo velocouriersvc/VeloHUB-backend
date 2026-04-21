@@ -208,6 +208,9 @@ export class SupabaseController {
         const clearSecondary = req.query.clearSecondary === 'true';
         console.log("Starting migration stream...", { clearSecondary });
 
+        const validUserIds = new Set<string>();
+        const validMerchantIds = new Set<string>();
+        const validDriverIds = new Set<string>();
         const merchantCountries = new Map<string, string>();
 
         const snakeToCamel = (str: string) => {
@@ -479,16 +482,41 @@ export class SupabaseController {
                 sendEvent('info', { message: 'Cleanup complete.' });
             }
 
-            // Cache Merchant Countries for Product migration
-            sendEvent('info', { message: 'Caching merchant data for currency resolution...' });
-            const merchantCountries = new Map<string, string>();
-            const merchants = await AppDataSource.query(`
-                SELECT mp."userId", u.country 
-                FROM merchant_profiles mp 
-                JOIN users u ON mp."userId" = u.id
-            `);
-            merchants.forEach((m: any) => merchantCountries.set(m.userId, m.country));
-            (req as any).merchantCountries = merchantCountries;
+            const refreshIdentityCaches = async () => {
+                sendEvent('info', { message: 'Updating identity caches for strict relationship validation...' });
+                
+                // Fetch Users
+                const users = await AppDataSource.query(`SELECT id FROM users`);
+                validUserIds.clear();
+                users.forEach((u: any) => validUserIds.add(u.id));
+
+                // Fetch Merchants
+                const merchants = await AppDataSource.query(`
+                    SELECT mp."userId", u.country 
+                    FROM merchant_profiles mp 
+                    JOIN users u ON mp."userId" = u.id
+                `);
+                validMerchantIds.clear();
+                merchantCountries.clear();
+                merchants.forEach((m: any) => {
+                    validMerchantIds.add(m.userId);
+                    merchantCountries.set(m.userId, m.country);
+                });
+
+                // Fetch Drivers
+                const drivers = await AppDataSource.query(`SELECT "userId" FROM driver_profiles`);
+                validDriverIds.clear();
+                drivers.forEach((d: any) => validDriverIds.add(d.userId));
+
+                (req as any).merchantCountries = merchantCountries;
+                
+                sendEvent('info', { 
+                    message: `Caches ready: ${validUserIds.size} Users, ${validMerchantIds.size} Merchants, ${validDriverIds.size} Drivers.` 
+                });
+            };
+
+            // Initial cache build (in case we are resuming or running without clearing)
+            await refreshIdentityCaches();
 
             const batchSize = 1000;
             let currentTableIndex = 0;
@@ -517,6 +545,12 @@ export class SupabaseController {
                         rowsMigrated: 0
                     });
                     continue;
+                }
+
+                // If we just finished migrating identity tables, refresh the caches before moving to dependent data
+                const identityTables = ['profiles', 'merchants', 'drivers'];
+                if (currentTableIndex > 1 && identityTables.includes(tables[currentTableIndex - 2])) {
+                    await refreshIdentityCaches();
                 }
 
                 sendEvent('progress', { 
@@ -563,15 +597,34 @@ export class SupabaseController {
                         // Filter out items that have NULL for critical foreign keys (userId, customerId, etc)
                         // but only for specific tables that require them
                         const cleanedItems = items.filter(item => {
-                            // Filter out items that have NULL for critical foreign keys (userId, customerId, etc)
-                            // Note: driverId is removed because pending orders/rides can have null drivers
-                            const criticalKeys = ['userId', 'customerId', 'merchantId'];
-                            for (const key of criticalKeys) {
+                            // 1. Mandatory Identity Checks (must NOT be null)
+                            const mandatoryKeys = ['userId', 'customerId', 'merchantId'];
+                            for (const key of mandatoryKeys) {
                                 if (Object.prototype.hasOwnProperty.call(item, key) && (item[key] === null || item[key] === undefined)) {
-                                    sendEvent('warning', { message: `Skipping row in ${targetTable}: missing ${key}` });
+                                    sendEvent('warning', { message: `Skipping row in ${targetTable}: NULL relationship for ${key}` });
                                     return false;
                                 }
                             }
+
+                            // 2. Strict Existence Checks (must exist in our identity cache)
+                            if (item.userId && !validUserIds.has(item.userId) && targetTable !== 'users') {
+                                sendEvent('warning', { message: `Skipping row in ${targetTable}: Unknown User identity ${item.userId}` });
+                                return false;
+                            }
+                            if (item.customerId && !validUserIds.has(item.customerId)) {
+                                sendEvent('warning', { message: `Skipping row in ${targetTable}: Unknown Customer ${item.customerId}` });
+                                return false;
+                            }
+                            if (item.merchantId && !validMerchantIds.has(item.merchantId)) {
+                                sendEvent('warning', { message: `Skipping row in ${targetTable}: Unknown Merchant ${item.merchantId}` });
+                                return false;
+                            }
+                            if (item.driverId && !validDriverIds.has(item.driverId)) {
+                                // Rides/Orders can have null drivers if pending, but if set, it MUST exist
+                                sendEvent('warning', { message: `Skipping row in ${targetTable}: Unknown Driver ${item.driverId}` });
+                                return false;
+                            }
+
                             return true;
                         });
 
