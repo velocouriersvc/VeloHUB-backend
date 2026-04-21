@@ -50,6 +50,9 @@ export class Product {
     @Column({ type: "decimal", precision: 10, scale: 2 })
     price: number;
 
+    @Column({ type: "varchar", length: 10, default: "GHS" })
+    currency: string;
+
     @Column({ type: "decimal", precision: 10, scale: 2, nullable: true })
     compareAtPrice: number | null;
 

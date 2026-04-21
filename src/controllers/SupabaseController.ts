@@ -3,6 +3,9 @@ import { supabaseAdmin } from "../utils/supabase-client";
 import { AuditLogController } from "./AuditLogController";
 import { AuditRiskLevel } from "../models/audit-log";
 import { AppDataSource } from "../db/data-source";
+import { createServiceLogger } from "../utils/logger";
+
+const log = createServiceLogger("SupabaseMigration");
 
 export class SupabaseController {
     /**
@@ -199,7 +202,13 @@ export class SupabaseController {
 
         const sendEvent = (event: string, data: any) => {
             res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+            // res.flushHeaders();
         };
+
+        const clearSecondary = req.query.clearSecondary === 'true';
+        console.log("Starting migration stream...", { clearSecondary });
+
+        const merchantCountries = new Map<string, string>();
 
         const snakeToCamel = (str: string) => {
             return str.replace(/_([a-z])/g, (match, letter) => letter.toUpperCase());
@@ -375,6 +384,17 @@ export class SupabaseController {
                 } else {
                     mapped.images = [];
                 }
+
+                // Currency resolution based on merchant's country
+                const country = (req as any).merchantCountries?.get(mapped.merchantId) || 'GH';
+                const countryToCurrency: any = {
+                    'GH': 'GHS',
+                    'NG': 'NGN',
+                    'KE': 'KES',
+                    'US': 'USD',
+                    'GB': 'GBP'
+                };
+                mapped.currency = countryToCurrency[country] || 'GHS';
             }
 
             if (tableName === 'categories') {
@@ -418,6 +438,42 @@ export class SupabaseController {
 
             // Disable FK checks so we can insert tables in any order without failing on related data bugs
             await AppDataSource.query(`SET session_replication_role = 'replica';`);
+
+            if (clearSecondary) {
+                sendEvent('info', { message: 'Clearing dynamic secondary tables (products, orders, rides, etc.)...' });
+                const tablesToClear = [
+                    'products', 'product_categories', 'orders', 'rides', 'audit_logs', 
+                    'service_subscriptions', 'service_bookings', 'wallets', 
+                    'wallet_transactions', 'promo_codes', 'payment_methods'
+                ];
+                
+                for (const t of tablesToClear) {
+                    try {
+                        // Check if table exists before truncating
+                        const [{ exists }] = await AppDataSource.query(
+                            `SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_schema = 'public' AND table_name = $1);`, [t]
+                        );
+                        if (exists) {
+                            await AppDataSource.query(`TRUNCATE TABLE "${t}" RESTART IDENTITY CASCADE;`);
+                            log.info(`Truncated table: ${t}`);
+                        }
+                    } catch (e: any) {
+                        log.warn(`Failed to truncate ${t}: ${e.message}`);
+                    }
+                }
+                sendEvent('info', { message: 'Cleanup complete.' });
+            }
+
+            // Cache Merchant Countries for Product migration
+            sendEvent('info', { message: 'Caching merchant data for currency resolution...' });
+            const merchantCountries = new Map<string, string>();
+            const merchants = await AppDataSource.query(`
+                SELECT mp."userId", u.country 
+                FROM merchant_profiles mp 
+                JOIN users u ON mp."userId" = u.id
+            `);
+            merchants.forEach((m: any) => merchantCountries.set(m.userId, m.country));
+            (req as any).merchantCountries = merchantCountries;
 
             const batchSize = 1000;
             let currentTableIndex = 0;
