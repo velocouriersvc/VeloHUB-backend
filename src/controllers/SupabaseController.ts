@@ -451,7 +451,9 @@ export class SupabaseController {
                         // Filter out items that have NULL for critical foreign keys (userId, customerId, etc)
                         // but only for specific tables that require them
                         const cleanedItems = items.filter(item => {
-                            const criticalKeys = ['userId', 'customerId', 'driverId', 'merchantId'];
+                            // Filter out items that have NULL for critical foreign keys (userId, customerId, etc)
+                            // Note: driverId is removed because pending orders/rides can have null drivers
+                            const criticalKeys = ['userId', 'customerId', 'merchantId'];
                             for (const key of criticalKeys) {
                                 if (Object.prototype.hasOwnProperty.call(item, key) && (item[key] === null || item[key] === undefined)) {
                                     sendEvent('warning', { message: `Skipping row in ${targetTable}: missing ${key}` });
