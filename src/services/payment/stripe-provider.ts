@@ -6,6 +6,7 @@ import {
     PaymentVerification,
 } from "./payment-provider.interface";
 import { createServiceLogger } from "../../utils/logger";
+import { currencyConversionService } from "../currency-conversion-service";
 
 const log = createServiceLogger("StripeProvider");
 
@@ -46,20 +47,61 @@ export class StripeProvider implements PaymentProvider {
         customerId?: string;
     }> {
         try {
+            let finalAmount = params.amount;
+            let finalCurrency = params.currency.toUpperCase();
+            let conversionMetadata: Record<string, any> = {};
+
+            // Check if currency is supported by Stripe for US accounts
+            if (!currencyConversionService.isStripeSupportedCurrency(params.currency)) {
+                log.info("Currency not supported by Stripe, converting to USD", {
+                    originalCurrency: params.currency,
+                    originalAmount: params.amount,
+                });
+
+                // Convert to USD using live exchange rates
+                const conversion = await currencyConversionService.convertCurrency(
+                    params.amount,
+                    params.currency,
+                    'USD'
+                );
+                finalAmount = conversion.amount;
+                finalCurrency = 'USD';
+                
+                // Store conversion details in metadata
+                conversionMetadata = {
+                    originalAmount: conversion.originalAmount,
+                    originalCurrency: conversion.originalCurrency,
+                    conversionRate: conversion.rate,
+                    convertedAmount: conversion.amount,
+                    convertedCurrency: conversion.currency,
+                    conversionTimestamp: conversion.timestamp,
+                };
+
+                log.info("Currency converted for Stripe using live rates", {
+                    from: `${conversion.originalAmount} ${conversion.originalCurrency}`,
+                    to: `${conversion.amount} ${conversion.currency}`,
+                    rate: conversion.rate,
+                });
+            }
+
             // Stripe expects amounts in the smallest currency unit (cents)
-            const amountInCents = Math.round(params.amount * 100);
+            const amountInCents = Math.round(finalAmount * 100);
 
             const paymentIntent = await this.stripe.paymentIntents.create({
                 amount: amountInCents,
-                currency: params.currency.toLowerCase(),
+                currency: finalCurrency.toLowerCase(),
                 automatic_payment_methods: { enabled: true },
-                metadata: params.metadata || {},
+                metadata: {
+                    ...params.metadata,
+                    ...conversionMetadata,
+                },
             });
 
             log.info("PaymentIntent created", {
                 id: paymentIntent.id,
                 amount: amountInCents,
-                currency: params.currency,
+                currency: finalCurrency,
+                originalCurrency: params.currency,
             });
 
             return {

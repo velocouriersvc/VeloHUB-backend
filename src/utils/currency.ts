@@ -54,3 +54,5 @@ const COUNTRY_CURRENCY: Record<string, string> = {
 export function currencyForCountry(countryCode: string): string {
     return COUNTRY_CURRENCY[countryCode] || "USD";
 }
+
+
