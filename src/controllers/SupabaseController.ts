@@ -127,6 +127,37 @@ export class SupabaseController {
     };
 
     /**
+     * GET /api/v1/admin/supabase/config
+     * Returns the current Supabase configuration used by the backend.
+     */
+    getSupabaseConfig = async (req: Request, res: Response) => {
+        try {
+            const url = process.env.SUPABASE_URL || "NOT_SET";
+            const anonKey = process.env.SUPABASE_ANON_KEY || "NOT_SET";
+            const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || "NOT_SET";
+
+            const mask = (str: string) => {
+                if (str === "NOT_SET") return str;
+                if (str.length < 20) return str.substring(0, 3) + "...";
+                return str.substring(0, 8) + "..." + str.substring(str.length - 8);
+            };
+
+            return res.json({
+                url,
+                anonKey: mask(anonKey),
+                serviceRoleKey: mask(serviceKey),
+                // Providing full keys length helps verify if anything was truncated
+                lengths: {
+                    anonKey: anonKey.length,
+                    serviceRoleKey: serviceKey.length
+                }
+            });
+        } catch (error: any) {
+            return res.status(500).json({ message: "Internal server error", error: error.message });
+        }
+    };
+
+    /**
      * GET /api/v1/admin/supabase/migrate/stream
      * Streams the real-time migration progress of copying data from Supabase to Local DB.
      */

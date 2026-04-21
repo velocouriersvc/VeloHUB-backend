@@ -21,6 +21,7 @@ router.use(requireRole(["admin"]));
  *       - ApiKeyAuth: []
  */
 router.get("/migrate/stream", supabaseController.streamMigration);
+router.get("/config", supabaseController.getSupabaseConfig);
 
 /**
  * @openapi
