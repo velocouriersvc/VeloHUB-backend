@@ -243,7 +243,8 @@ export class SupabaseController {
             'profiles': 'users',
             'merchants': 'merchant_profiles',
             'drivers': 'driver_profiles',
-            'buyer_information': 'buyer_profiles'
+            'buyer_information': 'buyer_profiles',
+            'categories': 'product_categories'
         };
 
         const extractPoint = (hex: string) => {
@@ -366,6 +367,19 @@ export class SupabaseController {
                 mapped.category = (row.categories as any)?.name || 'General';
                 mapped.isActive = row.is_available ?? true;
                 mapped.stockQuantity = row.stock_quantity ?? 0;
+                
+                // Handle image mappings (Supabase often uses image_url or image_urls)
+                const rawImages = row.image_urls || row.image_url || row.image || row.images;
+                if (rawImages) {
+                    mapped.images = Array.isArray(rawImages) ? rawImages : [rawImages];
+                } else {
+                    mapped.images = [];
+                }
+            }
+
+            if (tableName === 'categories') {
+                mapped.icon = row.icon || row.image_url || row.image;
+                mapped.slug = row.slug || row.name?.toLowerCase().replace(/\s+/g, '-');
             }
 
             return mapped;
