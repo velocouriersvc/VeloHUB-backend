@@ -158,6 +158,33 @@ export class SupabaseController {
     };
 
     /**
+     * GET /api/v1/admin/supabase/stats
+     * Returns the row counts for all tables in Supabase to verify data presence.
+     */
+    getSupabaseStats = async (req: Request, res: Response) => {
+        try {
+            const tables = [
+                "profiles", "merchants", "drivers", "buyer_information", 
+                "orders", "rides", "products", "wallets", "transactions", "user_roles"
+            ];
+            
+            const stats: any = {};
+            
+            await Promise.all(tables.map(async (table) => {
+                const { count, error } = await supabaseAdmin
+                    .from(table)
+                    .select("*", { count: "exact", head: true });
+                
+                stats[table] = error ? -1 : (count || 0);
+            }));
+            
+            return res.json({ stats });
+        } catch (error: any) {
+            return res.status(500).json({ message: "Internal server error", error: error.message });
+        }
+    };
+
+    /**
      * GET /api/v1/admin/supabase/migrate/stream
      * Streams the real-time migration progress of copying data from Supabase to Local DB.
      */

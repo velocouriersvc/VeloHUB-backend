@@ -22,6 +22,7 @@ router.use(requireRole(["admin"]));
  */
 router.get("/migrate/stream", supabaseController.streamMigration);
 router.get("/config", supabaseController.getSupabaseConfig);
+router.get("/stats", supabaseController.getSupabaseStats);
 
 /**
  * @openapi
