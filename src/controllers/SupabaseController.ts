@@ -268,12 +268,24 @@ export class SupabaseController {
             }
         };
 
+        const isValidImageUrl = (url: any): boolean => {
+            if (!url || typeof url !== 'string') return false;
+            const lowerUrl = url.toLowerCase();
+            // Filter out junk data like local simulator paths or developer machine paths
+            if (lowerUrl.startsWith('file://')) return false;
+            if (lowerUrl.includes('/library/caches/')) return false;
+            if (lowerUrl.includes('/containers/data/')) return false;
+            if (lowerUrl.includes('/exponentexperience/')) return false;
+            return true;
+        };
+
         const mapRowToLocal = (tableName: string, row: any) => {
             const mapped: any = {};
             const colMap = TABLE_COLUMN_MAP[tableName] || {};
 
             for (const [key, value] of Object.entries(row)) {
                 let localKey = colMap[key] || snakeToCamel(key);
+                
 
                 // GPS Extraction
                 if (tableName === 'rides' && (key === 'pickup' || key === 'dropoff')) {
@@ -349,7 +361,7 @@ export class SupabaseController {
                 const profileRow: any = {
                     userId: row.id,
                     fullName: row.full_name || row.email?.split('@')[0] || 'Valued User',
-                    profileImageUrl: row.avatar_url
+                    profileImageUrl: isValidImageUrl(row.avatar_url) ? row.avatar_url : null
                 };
 
                 return { userRow, profileRow };
@@ -359,6 +371,7 @@ export class SupabaseController {
                 mapped.status = 'approved';
                 mapped.category = row.business_type || 'General';
                 mapped.fullName = (row.profiles as any)?.full_name || row.business_name || 'Business Owner';
+                mapped.coverImageUrl = isValidImageUrl(row.cover_image_url) ? row.cover_image_url : null;
             }
 
             if (tableName === 'drivers') {
@@ -380,7 +393,8 @@ export class SupabaseController {
                 // Handle image mappings (Supabase often uses image_url or image_urls)
                 const rawImages = row.image_urls || row.image_url || row.image || row.images;
                 if (rawImages) {
-                    mapped.images = Array.isArray(rawImages) ? rawImages : [rawImages];
+                    const imgList = Array.isArray(rawImages) ? rawImages : [rawImages];
+                    mapped.images = imgList.filter(isValidImageUrl);
                 } else {
                     mapped.images = [];
                 }
@@ -398,7 +412,8 @@ export class SupabaseController {
             }
 
             if (tableName === 'categories') {
-                mapped.icon = row.icon || row.image_url || row.image;
+                const rawIcon = row.icon || row.image_url || row.image;
+                mapped.icon = isValidImageUrl(rawIcon) ? rawIcon : null;
                 mapped.slug = row.slug || row.name?.toLowerCase().replace(/\s+/g, '-');
             }
 
