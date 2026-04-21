@@ -50,6 +50,7 @@ export interface PackageRideCheckoutInput {
     distanceKm: number;
     durationMin: number;
     promoCode?: string;
+    paymentMethod?: string;
 }
 
 export type UnifiedCheckoutInput = ProductOrderCheckoutInput | ProductOrderWithDeliveryCheckoutInput | PackageRideCheckoutInput;

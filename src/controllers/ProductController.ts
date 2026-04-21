@@ -32,9 +32,9 @@ export class ProductController {
      */
     getProducts = async (req: AuthRequest, res: Response) => {
         try {
-            const { merchantId, category, search, page, limit } = req.query;
+            const { merchantId, category, search, page, limit, country } = req.query;
 
-            log.info(`[getProducts] incoming request → category="${category || ''}" search="${search || ''}" merchantId="${merchantId || ''}" page=${page || 1} limit=${limit || 20}`);
+            log.info(`[getProducts] incoming request → category="${category || ''}" search="${search || ''}" merchantId="${merchantId || ''}" country="${country || ''}" page=${page || 1} limit=${limit || 20}`);
 
             const result = await this.productService.getProducts({
                 merchantId: merchantId as string,
@@ -42,6 +42,7 @@ export class ProductController {
                 search: search as string,
                 page: page ? Number(page) : undefined,
                 limit: limit ? Number(limit) : undefined,
+                country: country as string,
             });
 
             log.info(`[getProducts] returning ${result.products.length}/${result.total} products for category="${category || 'ALL'}"`);
@@ -79,10 +80,11 @@ export class ProductController {
         try {
             const category = (req.query.category as string) || "food";
             const limit = req.query.limit ? Number(req.query.limit) : 5;
+            const country = (req.query.country as string)?.toUpperCase();
 
-            log.info(`[getPopularProducts] incoming request → category="${category}" limit=${limit}`);
+            log.info(`[getPopularProducts] incoming request → category="${category}" limit=${limit} country="${country || ''}"`);
 
-            const products = await this.productService.getPopularProducts(category, limit);
+            const products = await this.productService.getPopularProducts(category, limit, country);
 
             log.info(`[getPopularProducts] returning ${products.length} popular products for category="${category}"`);
 

@@ -298,6 +298,7 @@ export class ProductService {
         isActive?: boolean;
         page?: number;
         limit?: number;
+        country?: string;
     }): Promise<{ products: Product[]; total: number; page: number; limit: number }> {
         const page = params.page || 1;
         const limit = Math.min(params.limit || 20, 50);
@@ -320,6 +321,10 @@ export class ProductService {
 
         if (params.merchantId) {
             qb.andWhere("product.merchantId = :merchantId", { merchantId: params.merchantId });
+        }
+
+        if (params.country) {
+            qb.andWhere("merchant.country = :country", { country: params.country });
         }
 
         if (params.category) {
@@ -398,7 +403,7 @@ export class ProductService {
     /**
      * Get popular products for a given category based on historical orders.
      */
-    async getPopularProducts(category: string = "food", limit: number = 5): Promise<Product[]> {
+    async getPopularProducts(category: string = "food", limit: number = 5, country?: string): Promise<Product[]> {
         const safeLimit = Math.min(Math.max(limit || 1, 1), 20);
 
         // Resolve category type to slugs (e.g. "food" → ["burgers", "pizza", ...])
@@ -410,6 +415,10 @@ export class ProductService {
             ? "AND p.category = $1"
             : "AND p.category = ANY($1)";
         const categoryParam = slugs.length === 1 ? slugs[0] : slugs;
+
+        const countryFilter = country ? "AND m.country = $5" : "";
+        const params: any[] = [categoryParam, OrderStatus.CANCELLED, OrderStatus.REFUNDED, safeLimit];
+        if (country) params.push(country.toUpperCase());
 
         const rows = await AppDataSource.query(
             `
@@ -434,6 +443,7 @@ export class ProductService {
                 p.created_at AS "createdAt",
                 p.updated_at AS "updatedAt"
             FROM products p
+            INNER JOIN merchants m ON m.id = p.merchant_id
             INNER JOIN LATERAL (
                 SELECT SUM((item->>'quantity')::int) AS popularity
                 FROM orders o,
@@ -444,13 +454,14 @@ export class ProductService {
             WHERE p.deleted_at IS NULL
               AND p.is_active = true
               ${categoryFilter}
+              ${countryFilter}
             ORDER BY pop.popularity DESC
             LIMIT $4
             `,
-            [categoryParam, OrderStatus.CANCELLED, OrderStatus.REFUNDED, safeLimit]
+            params
         );
 
-        log.info(`[getPopularProducts] category="${category}" → ${rows.length} popular products found`);
+        log.info(`[getPopularProducts] category="${category}" country="${country || 'ALL'}" → ${rows.length} popular products found`);
 
         return rows.map((row: any) => ({
             ...row,
