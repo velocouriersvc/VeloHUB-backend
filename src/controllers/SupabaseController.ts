@@ -172,14 +172,13 @@ export class SupabaseController {
             'push_tokens': { 'user_id': 'userId' },
             'referral_codes': { 'user_id': 'userId' },
             'referral_links': { 'referrer_id': 'referrerId' },
-            'service_subscriptions': { 'user_id': 'userId' },
+            'service_subscriptions': { 'user_id': 'userId', 'merchant_id': 'merchantId', 'buyer_id': 'userId' },
             'profiles': { 'is_active': 'status', 'full_name': 'fullName', 'avatar_url': 'profileImageUrl' },
             'merchants': { 'id': 'userId', 'business_name': 'businessName', 'business_address': 'address' },
             'drivers': { 'id': 'userId', 'account_status': 'status' },
             'buyer_information': { 'id': 'userId' },
             'products': { 'merchant_id': 'merchantId', 'stock_quantity': 'stockQuantity', 'is_available': 'isActive' },
-            'service_bookings': { 'merchant_id': 'merchantId', 'buyer_id': 'customerId' },
-            'service_subscriptions': { 'merchant_id': 'merchantId', 'buyer_id': 'userId' }
+            'service_bookings': { 'merchant_id': 'merchantId', 'buyer_id': 'customerId' }
         };
 
         const REDIRECT_MAP: any = {
