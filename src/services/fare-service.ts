@@ -12,6 +12,46 @@ const CURRENCY_MAP: Record<string, string> = {
     GH: "GHS", NG: "NGN", US: "USD", CA: "CAD", IN: "INR", GB: "GBP",
 };
 
+/**
+ * Country-specific display names for vehicle types.
+ * The DB key stays as bike/car/suv/truck everywhere internally.
+ * Only the label shown to the user changes by country.
+ */
+const VEHICLE_DISPLAY_NAMES: Record<string, Record<string, string>> = {
+    US: {
+        bike:  "Velo Go",      // No bikes in US — we call this tier "Velo Go"
+        car:   "Velo Comfort", // Standard sedan
+        suv:   "Velo XL",      // SUV / larger vehicle
+        truck: "Velo Cargo",   // Truck / heavy load
+    },
+    CA: {
+        bike:  "Velo Go",
+        car:   "Velo Comfort",
+        suv:   "Velo XL",
+        truck: "Velo Cargo",
+    },
+    // Ghana & Nigeria keep the original brand names
+    GH: {
+        bike:  "Velo Bikes",
+        car:   "Velo Basic",
+        suv:   "Velo Premium",
+        truck: "Velo Trucks",
+    },
+    NG: {
+        bike:  "Velo Bikes",
+        car:   "Velo Basic",
+        suv:   "Velo Premium",
+        truck: "Velo Trucks",
+    },
+};
+
+/** Returns the display name for a vehicle type in a given country */
+function getVehicleDisplayName(vehicleType: string, country: string): string {
+    return VEHICLE_DISPLAY_NAMES[country]?.[vehicleType]
+        ?? VEHICLE_DISPLAY_NAMES["GH"]?.[vehicleType]
+        ?? vehicleType;
+}
+
 export interface FareBreakdown {
     baseFare: number;
     distanceCost: number;
@@ -27,6 +67,7 @@ export interface FareBreakdown {
     platformCommission: number; // 15% × (base + distance + time) after surge
     currency: string;
     vehicleType: VehicleType;
+    displayName: string;        // Country-specific label shown to the user
     distanceKm: number;
     durationMin: number;
 }
@@ -146,6 +187,7 @@ export class FareService {
             platformCommission,
             currency,
             vehicleType,
+            displayName: getVehicleDisplayName(vehicleType, country),
             distanceKm,
             durationMin,
         };
