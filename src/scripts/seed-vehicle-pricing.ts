@@ -27,35 +27,38 @@ interface PricingRow {
     pricePerKm: number;
     pricePerMin: number;
     minimumFare: number;
+    riderServiceFee: number;
     maxPassengers: number;
 }
 
-// ── US: client-specified rates (UPDATED April 22, 2026) ───────────────
+// ── US: client-specified rates (UPDATED April 22, 2026 - CLIENT REQUEST) ───────────────
 // Pricing stored as per-km (backend uses km internally)
-// Rider Service Fee: $1.99 (stored in platform_settings)
+// Based on US Itemized Rate Card from client
+// Service fees vary by vehicle per client spec
 const US_PRICING: PricingRow[] = [
-    { vehicleType: VehicleType.BIKE, country: "US", basePrice: 2.00, pricePerKm: 0.75, pricePerMin: 0.22, minimumFare: 5.50, maxPassengers: 1 },
-    { vehicleType: VehicleType.CAR,  country: "US", basePrice: 2.50, pricePerKm: 0.85, pricePerMin: 0.28, minimumFare: 7.50, maxPassengers: 4 },
-    { vehicleType: VehicleType.SUV,  country: "US", basePrice: 4.00, pricePerKm: 1.25, pricePerMin: 0.40, minimumFare: 11.00, maxPassengers: 6 },
-    { vehicleType: VehicleType.TRUCK,country: "US", basePrice: 8.00, pricePerKm: 1.80, pricePerMin: 0.65, minimumFare: 15.00, maxPassengers: 2 },
+    { vehicleType: VehicleType.BIKE, country: "US", basePrice: 2.00, pricePerKm: 0.60, pricePerMin: 0.15, minimumFare: 7.00, riderServiceFee: 1.50, maxPassengers: 1 },
+    { vehicleType: VehicleType.CAR,  country: "US", basePrice: 3.50, pricePerKm: 1.40, pricePerMin: 0.35, minimumFare: 10.00, riderServiceFee: 3.00, maxPassengers: 4 },
+    { vehicleType: VehicleType.SUV,  country: "US", basePrice: 7.00, pricePerKm: 2.50, pricePerMin: 0.65, minimumFare: 20.00, riderServiceFee: 6.00, maxPassengers: 6 },
+    { vehicleType: VehicleType.TRUCK,country: "US", basePrice: 15.00, pricePerKm: 4.50, pricePerMin: 1.20, minimumFare: 40.00, riderServiceFee: 10.00, maxPassengers: 2 },
 ];
 
 // ── Nigeria: client-specified exact rates (UPDATED April 22, 2026) ────
-// Rider Service Fee: ₦400 (stored in platform_settings)
+// Rider Service Fee: ₦400 (per client spec)
 const NG_PRICING: PricingRow[] = [
-    { vehicleType: VehicleType.BIKE, country: "NG", basePrice: 1200, pricePerKm: 650,  pricePerMin: 220, minimumFare: 5000,  maxPassengers: 1 },
-    { vehicleType: VehicleType.CAR,  country: "NG", basePrice: 2600, pricePerKm: 850,  pricePerMin: 270, minimumFare: 6000,  maxPassengers: 4 },
-    { vehicleType: VehicleType.SUV,  country: "NG", basePrice: 4200, pricePerKm: 1280, pricePerMin: 410, minimumFare: 11000, maxPassengers: 6 },
-    { vehicleType: VehicleType.TRUCK,country: "NG", basePrice: 6800, pricePerKm: 1750, pricePerMin: 560, minimumFare: 11500, maxPassengers: 2 },
+    { vehicleType: VehicleType.BIKE, country: "NG", basePrice: 1200, pricePerKm: 650,  pricePerMin: 220, minimumFare: 5000,  riderServiceFee: 400, maxPassengers: 1 },
+    { vehicleType: VehicleType.CAR,  country: "NG", basePrice: 2600, pricePerKm: 850,  pricePerMin: 270, minimumFare: 6000,  riderServiceFee: 400, maxPassengers: 4 },
+    { vehicleType: VehicleType.SUV,  country: "NG", basePrice: 4200, pricePerKm: 1280, pricePerMin: 410, minimumFare: 11000, riderServiceFee: 400, maxPassengers: 6 },
+    { vehicleType: VehicleType.TRUCK,country: "NG", basePrice: 6800, pricePerKm: 1750, pricePerMin: 560, minimumFare: 11500, riderServiceFee: 400, maxPassengers: 2 },
 ];
 
-// ── Ghana: ACTUAL production rates (client-specified April 22, 2026) ──
-// Rider Service Fee: GH₵ 4.00 (stored in platform_settings)
+// ── Ghana: ACTUAL production rates (CLIENT REQUEST April 22, 2026) ──
+// NEW PRICING: Dramatically reduced rates (70-80% lower than previous)
+// Service fees match base fare per client spec
 const GH_PRICING: PricingRow[] = [
-    { vehicleType: VehicleType.BIKE, country: "GH", basePrice: 12.00, pricePerKm: 6.80,  pricePerMin: 2.20, minimumFare: 50.00,  maxPassengers: 1 },
-    { vehicleType: VehicleType.CAR,  country: "GH", basePrice: 26.00, pricePerKm: 8.50,  pricePerMin: 2.70, minimumFare: 60.00,  maxPassengers: 4 },
-    { vehicleType: VehicleType.SUV,  country: "GH", basePrice: 42.00, pricePerKm: 12.80, pricePerMin: 4.10, minimumFare: 110.00, maxPassengers: 6 },
-    { vehicleType: VehicleType.TRUCK, country: "GH", basePrice: 68.00, pricePerKm: 17.50, pricePerMin: 5.60, minimumFare: 115.00, maxPassengers: 2 },
+    { vehicleType: VehicleType.BIKE, country: "GH", basePrice: 3.00,  pricePerKm: 1.00, pricePerMin: 0.40, minimumFare: 10.00, riderServiceFee: 3.00, maxPassengers: 1 },
+    { vehicleType: VehicleType.CAR,  country: "GH", basePrice: 5.00,  pricePerKm: 2.00, pricePerMin: 0.80, minimumFare: 10.00, riderServiceFee: 5.00, maxPassengers: 4 },
+    { vehicleType: VehicleType.SUV,  country: "GH", basePrice: 8.00,  pricePerKm: 3.50, pricePerMin: 1.20, minimumFare: 10.00, riderServiceFee: 8.00, maxPassengers: 6 },
+    { vehicleType: VehicleType.TRUCK, country: "GH", basePrice: 15.00, pricePerKm: 5.00, pricePerMin: 2.50, minimumFare: 10.00, riderServiceFee: 15.00, maxPassengers: 2 },
 ];
 
 // ── Canada: ~1.35× USD ──────────────────────────────────────────────
@@ -101,25 +104,71 @@ export async function seedVehiclePricing(alreadyInitialised = false) {
         await AppDataSource.initialize();
     }
 
+    // Auto-migration: Add riderServiceFee column if it doesn't exist
+    // This is safe to run multiple times - it checks before altering
+    try {
+        const queryRunner = AppDataSource.createQueryRunner();
+        await queryRunner.connect();
+        
+        // Check if column exists using precise query
+        const result = await queryRunner.query(`
+            SELECT column_name 
+            FROM information_schema.columns 
+            WHERE table_schema = 'public'
+              AND table_name = 'vehicle_pricing' 
+              AND column_name = 'riderServiceFee'
+        `);
+        
+        // Only add column if it truly doesn't exist
+        if (!result || result.length === 0) {
+            console.log("🔧 Adding riderServiceFee column to vehicle_pricing table...");
+            await queryRunner.query(`
+                ALTER TABLE vehicle_pricing 
+                ADD COLUMN "riderServiceFee" DECIMAL(8,2) NOT NULL DEFAULT 1.99
+            `);
+            console.log("✅ riderServiceFee column added successfully");
+        } else {
+            console.log("✓ riderServiceFee column already exists, skipping migration");
+        }
+        
+        await queryRunner.release();
+    } catch (err) {
+        // If any error occurs (column exists, permission issue, etc.), continue safely
+        const errorMsg = (err as Error).message;
+        if (errorMsg.includes('already exists')) {
+            console.log("✓ riderServiceFee column already exists, skipping migration");
+        } else {
+            console.warn("⚠️  Migration check failed (continuing anyway):", errorMsg);
+        }
+    }
+
     const repo = AppDataSource.getRepository(VehiclePricing);
 
     let upserted = 0;
+    let updated = 0;
+    let created = 0;
+    
     for (const data of ALL_PRICING) {
+        // Find existing row by unique combination of vehicleType + country
         const existing = await repo.findOne({
             where: { vehicleType: data.vehicleType, country: data.country },
         });
 
         if (existing) {
+            // UPDATE existing row - safe, no duplicates
             Object.assign(existing, data);
             existing.isActive = true;
             await repo.save(existing);
+            updated++;
         } else {
+            // CREATE new row - only if doesn't exist
             await repo.save(repo.create({ ...data, isActive: true }));
+            created++;
         }
         upserted++;
     }
 
-    console.log(`✅ vehicle_pricing: upserted ${upserted} rows`);
+    console.log(`✅ vehicle_pricing: upserted ${upserted} rows (${created} created, ${updated} updated)`);
 
     if (!alreadyInitialised) {
         await AppDataSource.destroy();

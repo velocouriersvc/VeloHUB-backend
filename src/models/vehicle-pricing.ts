@@ -31,6 +31,9 @@ export class VehiclePricing {
     @Column({ type: "decimal", precision: 8, scale: 2 })
     minimumFare: number;
 
+    @Column({ type: "decimal", precision: 8, scale: 2, default: 1.99 })
+    riderServiceFee: number;
+
     @Column({ type: "int" })
     maxPassengers: number;
 
