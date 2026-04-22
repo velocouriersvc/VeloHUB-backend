@@ -30,39 +30,33 @@ interface PricingRow {
     maxPassengers: number;
 }
 
-// ── US: client-specified rates (CAR is the reference) ───────────────
-// Client example: Base $2.00 + $1.00/mile + $0.20/min
-// We convert per-mile to per-km for internal calculations.
-const US_PER_KM = +(1.00 / MI_TO_KM).toFixed(4);
-
+// ── US: client-specified rates (UPDATED April 22, 2026) ───────────────
+// Pricing stored as per-km (backend uses km internally)
+// Rider Service Fee: $1.99 (stored in platform_settings)
 const US_PRICING: PricingRow[] = [
-    { vehicleType: VehicleType.BIKE, country: "US", basePrice: 1.50, pricePerKm: +(0.75 / MI_TO_KM).toFixed(4) as any, pricePerMin: 0.15, minimumFare: 3.50, maxPassengers: 1 },
-    { vehicleType: VehicleType.CAR,  country: "US", basePrice: 2.00, pricePerKm: US_PER_KM,  pricePerMin: 0.20, minimumFare: 6.00, maxPassengers: 4 },
-    { vehicleType: VehicleType.SUV,  country: "US", basePrice: 3.00, pricePerKm: +(1.50 / MI_TO_KM).toFixed(4) as any, pricePerMin: 0.30, minimumFare: 8.00, maxPassengers: 6 },
-    { vehicleType: VehicleType.TRUCK,country: "US", basePrice: 5.00, pricePerKm: +(2.00 / MI_TO_KM).toFixed(4) as any, pricePerMin: 0.40, minimumFare: 12.00, maxPassengers: 2 },
+    { vehicleType: VehicleType.BIKE, country: "US", basePrice: 2.00, pricePerKm: 0.75, pricePerMin: 0.22, minimumFare: 5.50, maxPassengers: 1 },
+    { vehicleType: VehicleType.CAR,  country: "US", basePrice: 2.50, pricePerKm: 0.85, pricePerMin: 0.28, minimumFare: 7.50, maxPassengers: 4 },
+    { vehicleType: VehicleType.SUV,  country: "US", basePrice: 4.00, pricePerKm: 1.25, pricePerMin: 0.40, minimumFare: 11.00, maxPassengers: 6 },
+    { vehicleType: VehicleType.TRUCK,country: "US", basePrice: 8.00, pricePerKm: 1.80, pricePerMin: 0.65, minimumFare: 15.00, maxPassengers: 2 },
 ];
 
-// ── Nigeria: client-specified exact rates ────────────────────────────
-// Base ₦600, Per Km ₦120, Per Min ₦25, Min Fare ₦1,200
+// ── Nigeria: client-specified exact rates (UPDATED April 22, 2026) ────
+// Rider Service Fee: ₦400 (stored in platform_settings)
 const NG_PRICING: PricingRow[] = [
-    { vehicleType: VehicleType.BIKE, country: "NG", basePrice: 400,  pricePerKm: 80,   pricePerMin: 15, minimumFare: 800,  maxPassengers: 1 },
-    { vehicleType: VehicleType.CAR,  country: "NG", basePrice: 600,  pricePerKm: 120,  pricePerMin: 25, minimumFare: 1200, maxPassengers: 4 },
-    { vehicleType: VehicleType.SUV,  country: "NG", basePrice: 900,  pricePerKm: 180,  pricePerMin: 35, minimumFare: 1800, maxPassengers: 6 },
-    { vehicleType: VehicleType.TRUCK,country: "NG", basePrice: 1500, pricePerKm: 250,  pricePerMin: 50, minimumFare: 3000, maxPassengers: 2 },
+    { vehicleType: VehicleType.BIKE, country: "NG", basePrice: 1200, pricePerKm: 650,  pricePerMin: 220, minimumFare: 5000,  maxPassengers: 1 },
+    { vehicleType: VehicleType.CAR,  country: "NG", basePrice: 2600, pricePerKm: 850,  pricePerMin: 270, minimumFare: 6000,  maxPassengers: 4 },
+    { vehicleType: VehicleType.SUV,  country: "NG", basePrice: 4200, pricePerKm: 1280, pricePerMin: 410, minimumFare: 11000, maxPassengers: 6 },
+    { vehicleType: VehicleType.TRUCK,country: "NG", basePrice: 6800, pricePerKm: 1750, pricePerMin: 560, minimumFare: 11500, maxPassengers: 2 },
 ];
 
-// ── Ghana: proportional (~16× USD) ──────────────────────────────────
-function ghPricing(): PricingRow[] {
-    const m = 16;
-    return US_PRICING.map(r => ({
-        ...r,
-        country: "GH",
-        basePrice: +(r.basePrice * m).toFixed(2),
-        pricePerKm: +(Number(r.pricePerKm) * m).toFixed(2),
-        pricePerMin: +(r.pricePerMin * m).toFixed(2),
-        minimumFare: +(r.minimumFare * m).toFixed(2),
-    }));
-}
+// ── Ghana: ACTUAL production rates (client-specified April 22, 2026) ──
+// Rider Service Fee: GH₵ 4.00 (stored in platform_settings)
+const GH_PRICING: PricingRow[] = [
+    { vehicleType: VehicleType.BIKE, country: "GH", basePrice: 12.00, pricePerKm: 6.80,  pricePerMin: 2.20, minimumFare: 50.00,  maxPassengers: 1 },
+    { vehicleType: VehicleType.CAR,  country: "GH", basePrice: 26.00, pricePerKm: 8.50,  pricePerMin: 2.70, minimumFare: 60.00,  maxPassengers: 4 },
+    { vehicleType: VehicleType.SUV,  country: "GH", basePrice: 42.00, pricePerKm: 12.80, pricePerMin: 4.10, minimumFare: 110.00, maxPassengers: 6 },
+    { vehicleType: VehicleType.TRUCK, country: "GH", basePrice: 68.00, pricePerKm: 17.50, pricePerMin: 5.60, minimumFare: 115.00, maxPassengers: 2 },
+];
 
 // ── Canada: ~1.35× USD ──────────────────────────────────────────────
 function caPricing(): PricingRow[] {
@@ -93,7 +87,7 @@ function inPricing(): PricingRow[] {
 const ALL_PRICING: PricingRow[] = [
     ...US_PRICING,
     ...NG_PRICING,
-    ...ghPricing(),
+    ...GH_PRICING,
     ...caPricing(),
     ...inPricing(),
 ];

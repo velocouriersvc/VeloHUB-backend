@@ -3,6 +3,12 @@ import { PlatformSettings } from "../models/platform-settings";
 
 /**
  * VeloHUB Platform Settings — exact client-specified rates.
+ * UPDATED: April 22, 2026
+ *
+ * Rider Service Fees:
+ * - USA: $1.99
+ * - Ghana: GH₵ 4.00
+ * - Nigeria: ₦400.00
  *
  * IMPORTANT: Delivery rates use PER-MILE values converted to per-km internally.
  * Client quotes "$0.60/mile" → stored as ~$0.3728/km (÷ 1.60934).
@@ -58,7 +64,7 @@ const SETTINGS: Partial<PlatformSettings>[] = [
     },
 
     // ── Ghana (GHS) ─────────────────────────────────────────────────
-    // Mirror US structure in GHS. Approximate rate: 16 GHS/USD.
+    // ACTUAL production rates (client-specified, NOT auto-calculated)
     {
         country: "GH",
         currency: "GHS",
@@ -75,7 +81,7 @@ const SETTINGS: Partial<PlatformSettings>[] = [
         driverDeliveryFeeShare: 75.00,
 
         rideCommissionRate: 15.00,
-        riderServiceFee: 31.84,             // ~$1.99 × 16
+        riderServiceFee: 4.00,              // ✅ ACTUAL Ghana rider service fee
         maxSurgeMultiplier: 2.50,
 
         deliveryTotalCommissionRate: 40.00,
@@ -112,9 +118,9 @@ const SETTINGS: Partial<PlatformSettings>[] = [
         deliveryPerKmFee: 120.00,           // ₦120/km (client specified per-km directly)
         driverDeliveryFeeShare: 75.00,
 
-        // Rides — client-specified Nigeria rates
+        // Rides — client-specified Nigeria rates (UPDATED April 22, 2026)
         rideCommissionRate: 15.00,
-        riderServiceFee: 300.00,            // ₦300 flat
+        riderServiceFee: 400.00,            // ₦400 flat (updated from ₦300)
         maxSurgeMultiplier: 1.80,           // 1.0× – 1.8× max (client specified)
 
         deliveryTotalCommissionRate: 40.00,
