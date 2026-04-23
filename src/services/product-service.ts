@@ -93,10 +93,12 @@ export class ProductService {
     }
 
     /**
-     * Return active product categories from DB as source of truth.
-     * Falls back to enum values when DB categories are empty.
+     * Return product categories from DB as source of truth.
+     * @param includePending  When true (merchant screens), also returns isActive=false rows
+     *                        so merchants can see their submitted-but-pending categories.
+     * Falls back to enum values only when DB has zero active rows at all.
      */
-    async getAvailableCategories(): Promise<Array<{
+    async getAvailableCategories(includePending = false): Promise<Array<{
         id: string;
         slug: string;
         name: string;
@@ -104,23 +106,31 @@ export class ProductService {
         type: string;
         isActive: boolean;
     }>> {
-        const rows = await this.productCategoryRepo.find({
+        // Fetch active rows (always); also fetch inactive when merchant requests
+        const activeRows = await this.productCategoryRepo.find({
             where: { isActive: true },
             order: { name: "ASC" },
         });
 
-        if (rows.length > 0) {
-            return rows.map((c) => ({
-                id: c.id,
-                slug: c.slug,
-                name: c.name,
-                icon: c.icon || null,
-                type: c.type || (c.slug === ProductCategory.SERVICES ? "service" : "marketplace"),
-                isActive: c.isActive,
-            }));
+        const pendingRows = includePending
+            ? await this.productCategoryRepo.find({ where: { isActive: false }, order: { name: "ASC" } })
+            : [];
+
+        const toDto = (c: ProductCategoryEntity) => ({
+            id: c.id,
+            slug: c.slug,
+            name: c.name,
+            icon: c.icon || null,
+            type: c.type || (c.slug === ProductCategory.SERVICES ? "service" : "marketplace"),
+            isActive: c.isActive,
+        });
+
+        if (activeRows.length > 0) {
+            return [...activeRows.map(toDto), ...pendingRows.map(toDto)];
         }
 
-        return Object.values(ProductCategory).map((slug) => ({
+        // Fallback to in-code enum when DB has no active categories at all
+        const enumFallback = Object.values(ProductCategory).map((slug) => ({
             id: slug,
             slug,
             name: slug.charAt(0).toUpperCase() + slug.slice(1),
@@ -128,20 +138,29 @@ export class ProductService {
             type: slug === ProductCategory.SERVICES ? "service" : "marketplace",
             isActive: true,
         }));
+
+        return [...enumFallback, ...pendingRows.map(toDto)];
     }
 
     /**
      * Merchant-submitted category suggestion.
      * Created with isActive=false — admin must approve before it appears publicly.
+     * If the category already exists but is inactive (pending review), returns it silently
+     * instead of throwing so the merchant knows it is already in the queue.
      */
-    async suggestCategory(name: string, type: "service" | "marketplace"): Promise<ProductCategoryEntity> {
+    async suggestCategory(name: string, type: "service" | "marketplace"): Promise<{ category: ProductCategoryEntity; alreadyPending: boolean }> {
         const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
         const existing = await this.productCategoryRepo.findOne({ where: { slug } });
         if (existing) {
-            throw new Error("A category with that name already exists.");
+            if (existing.isActive) {
+                throw new Error("This category is already live on the platform.");
+            }
+            // Already submitted and pending admin review — silently succeed
+            return { category: existing, alreadyPending: true };
         }
         const category = this.productCategoryRepo.create({ name, slug, type, isActive: false });
-        return this.productCategoryRepo.save(category);
+        await this.productCategoryRepo.save(category);
+        return { category, alreadyPending: false };
     }
 
     // ── Create ──────────────────────────────────────────────────────

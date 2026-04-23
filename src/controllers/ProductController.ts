@@ -16,10 +16,12 @@ export class ProductController {
 
     /**
      * GET /products/categories — Get available product categories.
+     * Merchants may pass ?includePending=true to also receive their submitted-but-not-yet-approved categories.
      */
     getCategories = async (req: AuthRequest, res: Response) => {
         try {
-            const categories = await this.productService.getAvailableCategories();
+            const includePending = req.query.includePending === 'true';
+            const categories = await this.productService.getAvailableCategories(includePending);
             return res.status(200).json({ categories });
         } catch (error) {
             log.error("Error fetching categories", { error: (error as Error).message });
@@ -37,8 +39,11 @@ export class ProductController {
                 return res.status(400).json({ message: "Category name is required." });
             }
             const categoryType = type === "service" ? "service" : "marketplace";
-            const category = await this.productService.suggestCategory(name.trim(), categoryType);
-            return res.status(201).json({ category, message: "Category submitted for review. It will appear once approved by our team." });
+            const { category, alreadyPending } = await this.productService.suggestCategory(name.trim(), categoryType);
+            const message = alreadyPending
+                ? "This category is already submitted and pending review by our team."
+                : "Category submitted for review. It will appear once approved by our team.";
+            return res.status(201).json({ category, alreadyPending, message });
         } catch (error) {
             const msg = (error as Error).message;
             log.error("Error suggesting category", { error: msg });
