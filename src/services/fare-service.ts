@@ -19,16 +19,16 @@ const CURRENCY_MAP: Record<string, string> = {
  */
 const VEHICLE_DISPLAY_NAMES: Record<string, Record<string, string>> = {
     US: {
-        bike:  "Velo Go",      // No bikes in US — we call this tier "Velo Go"
-        car:   "Velo Comfort", // Standard sedan
-        suv:   "Velo XL",      // SUV / larger vehicle
-        truck: "Velo Cargo",   // Truck / heavy load
+        bike:  "Velo Go",       // Entry-level, no physical bikes
+        car:   "Velo Standard", // Standard sedan
+        suv:   "Velo Comfort",  // SUV (also shown as Velo XL on frontend — same pricing)
+        truck: "Velo Truck",    // Truck / heavy load
     },
     CA: {
         bike:  "Velo Go",
-        car:   "Velo Comfort",
-        suv:   "Velo XL",
-        truck: "Velo Cargo",
+        car:   "Velo Standard",
+        suv:   "Velo Comfort",
+        truck: "Velo Truck",
     },
     // Ghana & Nigeria keep the original brand names
     GH: {

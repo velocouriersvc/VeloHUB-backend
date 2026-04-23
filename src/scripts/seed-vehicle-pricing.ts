@@ -31,15 +31,19 @@ interface PricingRow {
     maxPassengers: number;
 }
 
-// ── US: client-specified rates (UPDATED April 22, 2026 - CLIENT REQUEST) ───────────────
-// Pricing stored as per-km (backend uses km internally)
-// Based on US Itemized Rate Card from client
-// Service fees vary by vehicle per client spec
+// ── US: CLIENT PRICING April 23 2026 ───────────────────────────────
+// Per-mile rates converted to per-km (÷ 1.60934)
+// All US vehicles share $3.00 service fee per client spec
+//   Velo Go      $30 est  | bike  | base 1.00 | $1.30/mi → $0.81/km | $0.13/min | min $10
+//   Velo Standard $44 est | car   | base 2.50 | $1.90/mi → $1.18/km | $0.21/min | min $10
+//   Velo Comfort  $85 est | suv   | base 6.00 | $3.80/mi → $2.36/km | $0.38/min | min $15
+//   Velo XL       $85 est | suv   | (same as Comfort — frontend shows as separate tier)
+//   Velo Truck   $142 est | truck | base 15.00| $6.20/mi → $3.85/km | $0.72/min | min $25
 const US_PRICING: PricingRow[] = [
-    { vehicleType: VehicleType.BIKE, country: "US", basePrice: 2.00, pricePerKm: 0.60, pricePerMin: 0.15, minimumFare: 7.00, riderServiceFee: 1.50, maxPassengers: 1 },
-    { vehicleType: VehicleType.CAR,  country: "US", basePrice: 3.50, pricePerKm: 1.40, pricePerMin: 0.35, minimumFare: 10.00, riderServiceFee: 3.00, maxPassengers: 4 },
-    { vehicleType: VehicleType.SUV,  country: "US", basePrice: 7.00, pricePerKm: 2.50, pricePerMin: 0.65, minimumFare: 20.00, riderServiceFee: 6.00, maxPassengers: 6 },
-    { vehicleType: VehicleType.TRUCK,country: "US", basePrice: 15.00, pricePerKm: 4.50, pricePerMin: 1.20, minimumFare: 40.00, riderServiceFee: 10.00, maxPassengers: 2 },
+    { vehicleType: VehicleType.BIKE,  country: "US", basePrice: 1.00,  pricePerKm: 0.81, pricePerMin: 0.13, minimumFare: 10.00, riderServiceFee: 3.00, maxPassengers: 1 },
+    { vehicleType: VehicleType.CAR,   country: "US", basePrice: 2.50,  pricePerKm: 1.18, pricePerMin: 0.21, minimumFare: 10.00, riderServiceFee: 3.00, maxPassengers: 4 },
+    { vehicleType: VehicleType.SUV,   country: "US", basePrice: 6.00,  pricePerKm: 2.36, pricePerMin: 0.38, minimumFare: 15.00, riderServiceFee: 3.00, maxPassengers: 6 },
+    { vehicleType: VehicleType.TRUCK, country: "US", basePrice: 15.00, pricePerKm: 3.85, pricePerMin: 0.72, minimumFare: 25.00, riderServiceFee: 3.00, maxPassengers: 2 },
 ];
 
 // ── Nigeria: client-specified exact rates (UPDATED April 22, 2026) ────
