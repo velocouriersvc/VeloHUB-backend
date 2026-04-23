@@ -130,6 +130,20 @@ export class ProductService {
         }));
     }
 
+    /**
+     * Merchant-submitted category suggestion.
+     * Created with isActive=false — admin must approve before it appears publicly.
+     */
+    async suggestCategory(name: string, type: "service" | "marketplace"): Promise<ProductCategoryEntity> {
+        const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
+        const existing = await this.productCategoryRepo.findOne({ where: { slug } });
+        if (existing) {
+            throw new Error("A category with that name already exists.");
+        }
+        const category = this.productCategoryRepo.create({ name, slug, type, isActive: false });
+        return this.productCategoryRepo.save(category);
+    }
+
     // ── Create ──────────────────────────────────────────────────────
 
     /**

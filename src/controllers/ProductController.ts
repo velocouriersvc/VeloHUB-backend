@@ -28,6 +28,25 @@ export class ProductController {
     };
 
     /**
+     * POST /products/categories — Merchant suggests a new category (created inactive, pending admin review).
+     */
+    suggestCategory = async (req: AuthRequest, res: Response) => {
+        try {
+            const { name, type } = req.body as { name?: string; type?: string };
+            if (!name || !name.trim()) {
+                return res.status(400).json({ message: "Category name is required." });
+            }
+            const categoryType = type === "service" ? "service" : "marketplace";
+            const category = await this.productService.suggestCategory(name.trim(), categoryType);
+            return res.status(201).json({ category, message: "Category submitted for review. It will appear once approved by our team." });
+        } catch (error) {
+            const msg = (error as Error).message;
+            log.error("Error suggesting category", { error: msg });
+            return res.status(400).json({ message: msg || "Could not submit category." });
+        }
+    };
+
+    /**
      * GET /products — List/filter products (public).
      */
     getProducts = async (req: AuthRequest, res: Response) => {

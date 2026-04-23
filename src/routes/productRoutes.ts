@@ -46,6 +46,36 @@ router.get("/categories", anyRole, productController.getCategories);
 
 /**
  * @openapi
+ * /products/categories:
+ *   post:
+ *     tags: [Products]
+ *     summary: Suggest a new product/service category
+ *     description: Merchant submits a new category for admin review. Created as inactive until approved.
+ *     security:
+ *       - ApiKeyAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [name]
+ *             properties:
+ *               name:
+ *                 type: string
+ *               type:
+ *                 type: string
+ *                 enum: [marketplace, service]
+ *     responses:
+ *       201:
+ *         description: Category submitted for review
+ *       400:
+ *         description: Validation error or duplicate
+ */
+router.post("/categories", merchantRole, productController.suggestCategory);
+
+/**
+ * @openapi
  * /products:
  *   get:
  *     tags: [Products]
