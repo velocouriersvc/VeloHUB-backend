@@ -340,7 +340,7 @@ export class ProfileService {
         };
     }
 
-    async updateUserProfile(userId: string, payload: { fullName?: string; profileImageUrl?: string | null }) {
+    async updateUserProfile(userId: string, payload: { fullName?: string; email?: string; profileImageUrl?: string | null }) {
         let userProfile = await this.userProfileRepository.findOne({ where: { userId } });
         if (!userProfile) {
             userProfile = this.userProfileRepository.create({ userId });
@@ -355,6 +355,37 @@ export class ProfileService {
         }
 
         await this.userProfileRepository.save(userProfile);
+
+        // Update email on the User entity if provided
+        if (payload.email) {
+            const user = await this.userRepository.findOne({ where: { id: userId } });
+            if (user) {
+                user.email = payload.email.trim();
+                await this.userRepository.save(user);
+            }
+        }
+
         return this.getUserProfile(userId);
+    }
+
+    async deleteMyAccount(userId: string): Promise<void> {
+        // Soft-delete: anonymise PII and mark account as deleted
+        const user = await this.userRepository.findOne({ where: { id: userId } });
+        if (!user) throw new Error('User not found');
+
+        user.email = null as any;
+        (user as any).deletedAt = new Date();
+        (user as any).isActive = false;
+        await this.userRepository.save(user);
+
+        // Remove user profile data
+        const userProfile = await this.userProfileRepository.findOne({ where: { userId } });
+        if (userProfile) {
+            userProfile.fullName = null;
+            userProfile.profileImageUrl = null;
+            await this.userProfileRepository.save(userProfile);
+        }
+
+        log.info('User self-deleted account', { userId });
     }
 }

@@ -10,6 +10,7 @@ const profileController = new ProfileController();
 router.use(apiKeyMiddleware);
 router.get("/me", requireAuth, profileController.getMyProfile);
 router.patch("/me", requireAuth, profileController.updateMyProfile);
+router.delete("/me", requireAuth, profileController.deleteMyAccount);
 
 /**
  * @openapi

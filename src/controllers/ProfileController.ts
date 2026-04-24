@@ -27,14 +27,28 @@ export class ProfileController {
             const userId = (req as any).user?.id;
             if (!userId) return res.status(401).json({ message: "User ID required" });
 
-            const { fullName, profileImageUrl } = req.body || {};
+            const { fullName, email, profileImageUrl } = req.body || {};
             const profile = await this.profileService.updateUserProfile(userId, {
                 fullName,
+                email,
                 profileImageUrl,
             });
             return res.status(200).json(profile);
         } catch (error) {
             log.error("Error updating user profile", { error: (error as Error).message });
+            return res.status(500).json({ message: "Internal server error" });
+        }
+    };
+
+    deleteMyAccount = async (req: AuthRequest, res: Response) => {
+        try {
+            const userId = (req as any).user?.id;
+            if (!userId) return res.status(401).json({ message: "User ID required" });
+
+            await this.profileService.deleteMyAccount(userId);
+            return res.status(200).json({ message: "Account deleted successfully." });
+        } catch (error) {
+            log.error("Error deleting user account", { error: (error as Error).message });
             return res.status(500).json({ message: "Internal server error" });
         }
     };
