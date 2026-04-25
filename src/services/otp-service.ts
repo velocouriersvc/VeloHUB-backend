@@ -15,12 +15,26 @@ export class OtpService {
         log.info("OTP verification requested for phone number", { phoneNumber: "[MASKED]", channel });
         authEventsTotal.inc({ event: "otp_requested", channel });
 
+        // Bypass Prelude for test numbers
+        const testNumbers = ["+233000000000", "+233000000001", "+23300000000", "+23300000001"];
+        if (testNumbers.includes(phoneNumber)) {
+            log.info("Bypassing Prelude for test phone number", { phoneNumber });
+            
+            // Store a local record for the bypass code 123456
+            await this.otpRepository.delete({ phoneNumber });
+            const otp = this.otpRepository.create({
+                phoneNumber,
+                code: "123456",
+                expiresAt: new Date(Date.now() + 30 * 60000), // 30 mins
+                channel,
+            });
+            await this.otpRepository.save(otp);
+            return "test-session-id";
+        }
+
         // Trigger Prelude's verification - they handle code generation and channel selection (SMS/WhatsApp)
         const verificationId = await this.preludeService.sendVerification(phoneNumber);
-
         // Optional: still store metadata in the DB for audit/history
-        // We store the verificationId in the code field just for record-keeping if needed,
-        // although we don't know the actual code Prelude generates.
         const expiresAt = new Date();
         expiresAt.setMinutes(expiresAt.getMinutes() + 10);
 
@@ -41,6 +55,13 @@ export class OtpService {
     }
 
     async verifyOtp(phoneNumber: string, code: string): Promise<boolean> {
+        // Bypass for test numbers
+        const testNumbers = ["+233000000000", "+233000000001", "+23300000000", "+23300000001"];
+        if (testNumbers.includes(phoneNumber) && code === "123456") {
+            log.info("OTP bypass successful for test phone number", { phoneNumber });
+            return true;
+        }
+
         // Verification is now handled entirely by Prelude
         const isVerifiedByPrelude = await this.preludeService.checkVerification(phoneNumber, code);
 
