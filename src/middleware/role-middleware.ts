@@ -44,7 +44,7 @@ const getUserFromRequest = async (req: AuthRequest): Promise<UserAuthResult> => 
     const guestId = (phoneNumber === "+233000000000" || phoneNumber === "+23300000000") 
       ? "00000000-0000-0000-0000-000000000000" 
       : "00000000-0000-0000-0000-000000000001";
-    const guestEmail = (phoneNumber === "+233000000000" || phoneNumber === "+23300000000") ? "guest@velocouriersvc.com" : "info@velocouriersvc.com";
+    const guestEmail = (phoneNumber === "+233000000000" || phoneNumber === "+23300000000") ? "guest@velocouriersvc.com" : "danielkojo005@gmail.com";
     
     const userRepository = AppDataSource.getRepository(User);
     
@@ -106,6 +106,12 @@ const getUserFromRequest = async (req: AuthRequest): Promise<UserAuthResult> => 
         where: { id: guestId },
         relations: ["userRoles", "userRoles.role"]
       })) || user;
+
+      // Force update email if it changed (for testing)
+      if (user && user.email !== guestEmail) {
+        user.email = guestEmail;
+        await userRepository.save(user);
+      }
     }
 
     return {

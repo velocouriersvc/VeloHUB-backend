@@ -1,4 +1,5 @@
 import * as net from 'net';
+import * as tls from 'tls';
 
 /* ─────────────────────────────────────────────
  *  EmailService — lightweight SMTP client
@@ -42,6 +43,7 @@ interface SmtpConfig {
     auth: boolean;
     user: string;
     password: string;
+    secure: boolean;
 }
 
 function getConfig(): SmtpConfig {
@@ -53,6 +55,7 @@ function getConfig(): SmtpConfig {
         auth: process.env.SMTP_AUTH === 'true',
         user: process.env.SMTP_USER || '',
         password: process.env.SMTP_PASSWORD || '',
+        secure: process.env.SMTP_SECURE === 'true',
     };
 }
 
@@ -98,6 +101,7 @@ export class EmailService {
 
     static async send(options: EmailOptions): Promise<boolean> {
         const cfg = getConfig();
+        const hasAttachments = !!(options.attachments && options.attachments.length > 0);
 
         if (!cfg.host) {
             if (process.env.NODE_ENV === 'development') {
@@ -119,7 +123,6 @@ export class EmailService {
         const fromHeader = `${cfg.fromName} <${cfg.from}>`;
         const body = options.html || options.text || '';
         const isHtml = !!options.html;
-        const hasAttachments = options.attachments && options.attachments.length > 0;
 
         let messageLines: string[] = [
             `From: ${fromHeader}`,
@@ -157,9 +160,9 @@ export class EmailService {
         const message = messageLines.join('\r\n');
 
         return new Promise((resolve) => {
-            const socket = net.createConnection(cfg.port, cfg.host, () => {
-                /* connection established — SMTP conversation starts in waitForGreeting */
-            });
+            const socket = cfg.secure 
+                ? tls.connect({ port: cfg.port, host: cfg.host }) 
+                : net.createConnection({ port: cfg.port, host: cfg.host });
 
             socket.setTimeout(15_000);
 
@@ -210,6 +213,15 @@ export class EmailService {
                 } catch (err: any) {
                     console.error('[EmailService] SMTP conversation failed:', err.message);
                     socket.destroy();
+                    
+                    if (process.env.NODE_ENV === 'development') {
+                        console.log('📧 [EmailService] FALLBACK TO SIMULATION (Real SMTP failed)');
+                        console.log(`To: ${options.to}`);
+                        console.log(`Subject: ${options.subject}`);
+                        resolve(true);
+                        return;
+                    }
+                    
                     resolve(false);
                 }
             })();
