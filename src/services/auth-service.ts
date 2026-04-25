@@ -1,5 +1,6 @@
 import { AppDataSource } from "../db/data-source";
 import crypto from "crypto";
+import axios from "axios";
 import { User, UserStatus } from "../models/user";
 import { OtpService } from "./otp-service";
 import { supabase } from "../utils/supabase-client";
@@ -10,6 +11,7 @@ import { UserRole, RoleStatus } from "../models/user-role";
 import { BuyerProfile } from "../models/buyer-profile";
 import { DriverProfile } from "../models/driver-profile";
 import { MerchantProfile } from "../models/merchant-profile";
+import { UserProfile } from "../models/user-profile";
 import { createServiceLogger } from "../utils/logger";
 
 const log = createServiceLogger("AuthService");
@@ -149,6 +151,120 @@ export class AuthService {
                 has_profile: hasProfile,
             }
         } as any;
+    }
+
+    private async verifyAppleToken(identityToken: string): Promise<{ sub: string; email?: string }> {
+        const parts = identityToken.split('.');
+        if (parts.length !== 3) throw new Error('Invalid token format');
+
+        const [headerB64, payloadB64, signatureB64] = parts;
+        const header = JSON.parse(Buffer.from(headerB64, 'base64url').toString());
+        const payload = JSON.parse(Buffer.from(payloadB64, 'base64url').toString());
+
+        const now = Math.floor(Date.now() / 1000);
+        if (payload.iss !== 'https://appleid.apple.com') throw new Error('Invalid issuer');
+        // Accept both bundle IDs (iOS and potential future variants)
+        const bundleId = process.env.APPLE_BUNDLE_ID || 'com.velo.marketplace';
+        if (payload.aud !== bundleId) throw new Error(`Invalid audience: ${payload.aud}`);
+        if (payload.exp < now) throw new Error('Token expired');
+
+        const { data } = await axios.get<{ keys: Array<{ kid: string; kty: string; n: string; e: string }> }>(
+            'https://appleid.apple.com/auth/keys',
+            { timeout: 5000 }
+        );
+        const jwk = data.keys.find(k => k.kid === header.kid);
+        if (!jwk) throw new Error('No matching Apple public key found');
+
+        const publicKey = crypto.createPublicKey({ key: jwk as any, format: 'jwk' });
+        const verifier = crypto.createVerify('RSA-SHA256');
+        verifier.update(`${headerB64}.${payloadB64}`);
+        const valid = verifier.verify(publicKey, Buffer.from(signatureB64, 'base64url'));
+        if (!valid) throw new Error('Token signature invalid');
+
+        return { sub: payload.sub as string, email: payload.email as string | undefined };
+    }
+
+    async appleSignIn(identityToken: string, fullName?: string, email?: string): Promise<any> {
+        const { sub: appleSubjectId, email: tokenEmail } = await this.verifyAppleToken(identityToken);
+        const resolvedEmail = tokenEmail || email || null;
+
+        // Find existing user by Apple subject ID first, then by email
+        let user = await this.userRepository.findOne({
+            where: { appleSubjectId },
+            relations: ["userRoles", "userRoles.role"]
+        });
+
+        if (!user && resolvedEmail) {
+            user = await this.userRepository.findOne({
+                where: { email: resolvedEmail },
+                relations: ["userRoles", "userRoles.role"]
+            });
+            if (user && !user.appleSubjectId) {
+                user.appleSubjectId = appleSubjectId;
+                await this.userRepository.save(user);
+            }
+        }
+
+        const isNewUser = !user;
+
+        if (!user) {
+            user = this.userRepository.create({
+                id: crypto.randomUUID(),
+                email: resolvedEmail,
+                appleSubjectId,
+                status: UserStatus.ACTIVE,
+            });
+            await this.userRepository.save(user);
+            log.info("New Apple Sign-In user created", { userId: user.id });
+        }
+
+        user.lastLoginAt = new Date();
+        await this.userRepository.save(user);
+
+        // Store full name in UserProfile if provided on first sign-in
+        if (fullName && isNewUser) {
+            const userProfileRepo = AppDataSource.getRepository(UserProfile);
+            const existing = await userProfileRepo.findOne({ where: { userId: user.id } });
+            if (!existing) {
+                await userProfileRepo.save(userProfileRepo.create({ userId: user.id, fullName }));
+            }
+        }
+
+        if (!user.userRoles?.length) {
+            await this.ensureBuyerRoleExists(user);
+            user = await this.userRepository.findOne({
+                where: { id: user.id },
+                relations: ["userRoles", "userRoles.role"]
+            }) as User;
+        }
+
+        const approvedRoles = user.userRoles
+            ?.filter((ur: UserRole) => ur.status === RoleStatus.APPROVED)
+            .map((ur: UserRole) => ur.role.name) || [];
+
+        // Resolve display name
+        let displayName: string | null = fullName || null;
+        let hasProfile = false;
+        const userProfile = await AppDataSource.getRepository(UserProfile).findOne({ where: { userId: user.id } });
+        if (userProfile?.fullName) { displayName = userProfile.fullName; hasProfile = true; }
+        if (!displayName) {
+            const buyerProfile = await AppDataSource.getRepository(BuyerProfile).findOne({ where: { userId: user.id } });
+            if (buyerProfile?.fullName) { displayName = buyerProfile.fullName; hasProfile = true; }
+        }
+
+        return {
+            message: isNewUser ? 'Account created' : 'Signed in',
+            user: {
+                id: user.id,
+                phoneNumber: user.phoneNumber,
+                email: user.email,
+                is_new_user: isNewUser,
+                has_profile: hasProfile,
+                roles: approvedRoles,
+                activeRole: user.activeRole || null,
+                full_name: displayName,
+            }
+        };
     }
 
     async syncUser(supabaseUser: SupabaseUser): Promise<SyncUserResponse> {

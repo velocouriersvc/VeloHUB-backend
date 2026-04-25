@@ -112,6 +112,47 @@ router.post("/verify-otp", authController.verifyOTP);
 
 /**
  * @openapi
+ * /auth/apple-signin:
+ *   post:
+ *     tags: [Auth]
+ *     summary: Sign in with Apple
+ *     description: |
+ *       Verifies an Apple identity token and returns the user's profile and roles.
+ *       Creates a new account if the Apple subject ID is not yet registered.
+ *       On first sign-in, Apple provides the user's name and email; subsequent logins only send the identity token.
+ *     security:
+ *       - ApiKeyAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [identityToken]
+ *             properties:
+ *               identityToken:
+ *                 type: string
+ *                 description: JWT identity token from Apple Sign-In
+ *               fullName:
+ *                 type: string
+ *                 description: User's full name (only present on first sign-in)
+ *               email:
+ *                 type: string
+ *                 description: User's email (only present on first sign-in)
+ *     responses:
+ *       200:
+ *         description: Sign-in successful
+ *       400:
+ *         description: Missing identity token
+ *       401:
+ *         description: Invalid or expired Apple identity token
+ *       500:
+ *         description: Server error
+ */
+router.post("/apple-signin", authController.appleSignIn);
+
+/**
+ * @openapi
  * /auth/sync:
  *   post:
  *     tags: [Auth]

@@ -23,6 +23,9 @@ export class User {
     @Column({ type: "varchar", length: 255, nullable: true, unique: true })
     email: string | null;
 
+    @Column({ type: "varchar", length: 255, nullable: true, unique: true })
+    appleSubjectId: string | null;
+
     @Column({
         type: "enum",
         enum: UserStatus,

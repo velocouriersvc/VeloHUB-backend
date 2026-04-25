@@ -57,6 +57,30 @@ export class AuthController {
     };
 
 
+    appleSignIn = async (req: Request, res: Response) => {
+        try {
+            const { identityToken, fullName, email } = req.body as {
+                identityToken: string;
+                fullName?: string;
+                email?: string;
+            };
+
+            if (!identityToken) {
+                return res.status(400).json({ message: "identityToken is required" });
+            }
+
+            const result = await this.authService.appleSignIn(identityToken, fullName, email);
+            return res.status(200).json(result);
+        } catch (error) {
+            log.error("Apple Sign-In failed", { error: (error as Error).message });
+            const message = (error as Error).message;
+            if (message.includes('expired') || message.includes('invalid') || message.includes('Invalid')) {
+                return res.status(401).json({ message: `Apple Sign-In failed: ${message}` });
+            }
+            return res.status(500).json({ message: "Apple Sign-In failed. Please try again." });
+        }
+    };
+
     syncUser = async (req: Request, res: Response) => {
         try {
             const authReq = req as AuthenticatedRequest;
