@@ -476,7 +476,7 @@ export class ProductService {
                 p.created_at AS "createdAt",
                 p.updated_at AS "updatedAt"
             FROM products p
-            INNER JOIN merchants m ON m.id = p.merchant_id
+            INNER JOIN users m ON m.id = p.merchant_id
             INNER JOIN LATERAL (
                 SELECT SUM((item->>'quantity')::int) AS popularity
                 FROM orders o,

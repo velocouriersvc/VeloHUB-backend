@@ -20,11 +20,18 @@ import * as net from 'net';
  *    SMTP_SECURE     – "true" for implicit TLS (port 465)
  * ───────────────────────────────────────────── */
 
+interface Attachment {
+    filename: string;
+    content: string; // Base64 encoded string
+    contentType: string;
+}
+
 interface EmailOptions {
     to: string | string[];
     subject: string;
     text?: string;
     html?: string;
+    attachments?: Attachment[];
 }
 
 interface SmtpConfig {
@@ -93,6 +100,17 @@ export class EmailService {
         const cfg = getConfig();
 
         if (!cfg.host) {
+            if (process.env.NODE_ENV === 'development') {
+                console.log('--------------------------------------------------');
+                console.log('📧 [EmailService] DEVELOPMENT MODE — SIMULATING SEND');
+                console.log(`To: ${options.to}`);
+                console.log(`Subject: ${options.subject}`);
+                if (hasAttachments) {
+                    console.log(`Attachments: ${options.attachments?.map(a => a.filename).join(', ')}`);
+                }
+                console.log('--------------------------------------------------');
+                return true;
+            }
             console.warn('[EmailService] SMTP_HOST not set — skipping email');
             return false;
         }
@@ -101,17 +119,42 @@ export class EmailService {
         const fromHeader = `${cfg.fromName} <${cfg.from}>`;
         const body = options.html || options.text || '';
         const isHtml = !!options.html;
+        const hasAttachments = options.attachments && options.attachments.length > 0;
 
-        const message = [
+        let messageLines: string[] = [
             `From: ${fromHeader}`,
             `To: ${recipients.join(', ')}`,
             `Subject: ${options.subject}`,
             `MIME-Version: 1.0`,
-            `Content-Type: ${isHtml ? 'text/html' : 'text/plain'}; charset=UTF-8`,
             `Date: ${new Date().toUTCString()}`,
-            ``,
-            body,
-        ].join('\r\n');
+        ];
+
+        if (hasAttachments) {
+            const boundary = `----=_Part_${Math.random().toString(36).substring(2)}`;
+            messageLines.push(`Content-Type: multipart/mixed; boundary="${boundary}"`, ``);
+
+            // Add body part
+            messageLines.push(`--${boundary}`);
+            messageLines.push(`Content-Type: ${isHtml ? 'text/html' : 'text/plain'}; charset=UTF-8`);
+            messageLines.push(`Content-Transfer-Encoding: 7bit`, ``);
+            messageLines.push(body);
+
+            // Add attachments
+            for (const att of options.attachments!) {
+                messageLines.push(`--${boundary}`);
+                messageLines.push(`Content-Type: ${att.contentType}; name="${att.filename}"`);
+                messageLines.push(`Content-Transfer-Encoding: base64`);
+                messageLines.push(`Content-Disposition: attachment; filename="${att.filename}"`, ``);
+                messageLines.push(att.content);
+            }
+
+            messageLines.push(`--${boundary}--`);
+        } else {
+            messageLines.push(`Content-Type: ${isHtml ? 'text/html' : 'text/plain'}; charset=UTF-8`, ``);
+            messageLines.push(body);
+        }
+
+        const message = messageLines.join('\r\n');
 
         return new Promise((resolve) => {
             const socket = net.createConnection(cfg.port, cfg.host, () => {

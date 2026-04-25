@@ -80,15 +80,18 @@ export class AuthController {
             const userRef = (req as any).user;
 
             // Guest bypass for test phone numbers
-            const guestNumbers = ["+233000000000", "+233000000001"];
+            const guestNumbers = ["+233000000000", "+233000000001", "+23300000000", "+23300000001"];
             if (userRef && guestNumbers.includes(userRef.phoneNumber)) {
+                const guestId = (userRef.phoneNumber === "+233000000000" || userRef.phoneNumber === "+23300000000") 
+                    ? "00000000-0000-0000-0000-000000000000" 
+                    : "00000000-0000-0000-0000-000000000001";
+                const guestEmail = (userRef.phoneNumber === "+233000000000" || userRef.phoneNumber === "+23300000000") ? "guest@velohub.dev" : "admin2@velohub.dev";
                 return res.status(200).json({
-                    id: userRef.phoneNumber === "+233000000000" ? "guest-id-0" : "guest-id-1",
+                    id: guestId,
                     phoneNumber: userRef.phoneNumber,
-                    email: userRef.phoneNumber === "+233000000000" ? "guest@velohub.dev" : "admin2@velohub.dev",
+                    email: guestEmail,
                     status: "active",
-                    roles: [{ name: "super_admin", allowedCountries: [], allowedCities: [] },
-                            { name: "admin", allowedCountries: [], allowedCities: [] }],
+                    roles: ["super_admin", "admin"],
                     full_name: "Guest Admin",
                     created_date: new Date()
                 });

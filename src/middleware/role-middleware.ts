@@ -1,7 +1,8 @@
 import { Request, Response, NextFunction } from "express";
 import { AppDataSource } from "../db/data-source";
-import { User } from "../models/user";
+import { User, UserStatus } from "../models/user";
 import { UserRole, RoleStatus } from "../models/user-role";
+import { Role, RoleType } from "../models/role";
 import { validatePhoneNumber } from "../utils/phone-validator";
 import { createServiceLogger } from "../utils/logger";
 
@@ -30,21 +31,85 @@ type UserAuthResult = {
 const getUserFromRequest = async (req: AuthRequest): Promise<UserAuthResult> => {
   const rawQueryPhone = req.query?.phoneNumber;
   const queryPhone = Array.isArray(rawQueryPhone) ? rawQueryPhone[0] : rawQueryPhone;
-  const phoneNumber = (req.body.phoneNumber || req.body.phone || queryPhone || req.headers['x-user-phone']) as string;
+  let phoneNumber = (req.body.phoneNumber || req.body.phone || queryPhone || req.headers['x-user-phone']) as string;
+  
+  // Clean up stringified 'undefined' or 'null' that might come from some frontend fetch implementations
+  if (phoneNumber === 'undefined' || phoneNumber === 'null') {
+    phoneNumber = '';
+  }
 
   // Guest bypass for test phone numbers
-  const guestNumbers = ["+233000000000", "+233000000001"];
+  const guestNumbers = ["+233000000000", "+233000000001", "+23300000000", "+23300000001"];
   if (guestNumbers.includes(phoneNumber)) {
+    const guestId = (phoneNumber === "+233000000000" || phoneNumber === "+23300000000") 
+      ? "00000000-0000-0000-0000-000000000000" 
+      : "00000000-0000-0000-0000-000000000001";
+    const guestEmail = (phoneNumber === "+233000000000" || phoneNumber === "+23300000000") ? "guest@velocouriersvc.com" : "info@velocouriersvc.com";
+    
+    const userRepository = AppDataSource.getRepository(User);
+    
+    // First, try to find by ID
+    let user = await userRepository.findOne({
+      where: { id: guestId },
+      relations: ["userRoles", "userRoles.role"]
+    });
+
+    // If not found by ID, try finding by phone number (in case of ID format transition)
+    if (!user) {
+      const userByPhone = await userRepository.findOne({ where: { phoneNumber } });
+      if (userByPhone) {
+        log.info("Found guest user with old ID format, migrating to UUID", { oldId: userByPhone.id, newId: guestId });
+        // Since we can't easily change a primary key, we'll delete and recreate for these test users
+        await userRepository.delete(userByPhone.id).catch(err => log.error("Failed to delete old guest user", { error: err.message }));
+      }
+    }
+
+    if (!user) {
+      try {
+        log.info("Creating guest user in database", { guestId, phoneNumber });
+        user = userRepository.create({
+          id: guestId,
+          phoneNumber: phoneNumber,
+          email: guestEmail,
+          status: UserStatus.ACTIVE,
+          country: "GH"
+        });
+        await userRepository.save(user);
+
+        // Give guest users some default roles
+        const roleRepo = AppDataSource.getRepository(Role);
+        const userRoleRepo = AppDataSource.getRepository(UserRole);
+        
+        const rolesToAssign = [RoleType.SUPER_ADMIN, RoleType.ADMIN, RoleType.BUYER, RoleType.MERCHANT, RoleType.DRIVER];
+        for (const roleName of rolesToAssign) {
+          const role = await roleRepo.findOne({ where: { name: roleName as any } });
+          if (role) {
+            const existingUR = await userRoleRepo.findOne({ where: { userId: guestId, roleId: role.id } });
+            if (!existingUR) {
+              await userRoleRepo.save(userRoleRepo.create({ 
+                userId: guestId, 
+                roleId: role.id, 
+                status: RoleStatus.APPROVED,
+                allowedCountries: [],
+                allowedCities: []
+              })).catch(err => log.warn("Failed to assign guest role", { roleName, error: err.message }));
+            }
+          }
+        }
+      } catch (err: any) {
+        // If it's a duplicate key error, someone else might have created it
+        log.warn("Guest user creation conflict or error", { guestId, error: err.message });
+      }
+
+      // Final attempt to get the user with all relations
+      user = (await userRepository.findOne({
+        where: { id: guestId },
+        relations: ["userRoles", "userRoles.role"]
+      })) || user;
+    }
+
     return {
-      user: {
-        id: phoneNumber === "+233000000000" ? "guest-id-0" : "guest-id-1",
-        phoneNumber: phoneNumber,
-        email: phoneNumber === "+233000000000" ? "guest@velo.dev" : "tester@velo.dev",
-        userRoles: [
-          { role: { name: "super_admin" }, status: RoleStatus.APPROVED, allowedCountries: [], allowedCities: [] },
-          { role: { name: "admin" }, status: RoleStatus.APPROVED, allowedCountries: [], allowedCities: [] }
-        ]
-      },
+      user,
       phoneNumber,
       phoneValidation: { valid: true, formatted: phoneNumber }
     };
@@ -115,7 +180,7 @@ export const requireAuth = async (req: AuthRequest, res: Response, next: NextFun
       id: user.id,
       phoneNumber: phoneValidation.formatted,
       email: (user as User).email,
-      roles: (user as User).userRoles?.filter(ur => ur.status === RoleStatus.APPROVED).map(ur => ({
+      roles: (user as User).userRoles?.filter(ur => ur.status === RoleStatus.APPROVED && ur.role).map(ur => ({
         name: ur.role.name,
         allowedCountries: ur.allowedCountries,
         allowedCities: ur.allowedCities
@@ -124,8 +189,14 @@ export const requireAuth = async (req: AuthRequest, res: Response, next: NextFun
 
     next();
   } catch (error) {
-    log.error("Auth check error", { error: (error as Error).message });
-    return res.status(500).json({ message: "Auth check failed" });
+    log.error("Auth check error", { 
+      error: (error as Error).message, 
+      stack: (error as Error).stack,
+      url: req.url,
+      method: req.method,
+      phone: req.headers['x-user-phone']
+    });
+    return res.status(500).json({ message: "Auth check failed", details: (error as Error).message });
   }
 };
 

@@ -42,7 +42,7 @@ const anyRole = requireRole(["buyer", "driver", "merchant", "admin"]);
  *       403:
  *         description: Invalid API key or role not approved
  */
-router.get("/categories", anyRole, productController.getCategories);
+router.get("/categories", productController.getCategories);
 
 /**
  * @openapi
@@ -119,7 +119,7 @@ router.post("/categories", merchantRole, productController.suggestCategory);
  *       403:
  *         description: Invalid API key or role not approved
  */
-router.get("/", anyRole, productController.getProducts);
+router.get("/", productController.getProducts);
 
 /**
  * @openapi
@@ -149,7 +149,7 @@ router.get("/", anyRole, productController.getProducts);
  *       403:
  *         description: Invalid API key or role not approved
  */
-router.get("/popular", anyRole, productController.getPopularProducts);
+router.get("/popular", productController.getPopularProducts);
 
 // ════════════════════════════════════════════════════════════════════
 //  MERCHANT ENDPOINTS (static paths BEFORE :id param routes)
@@ -427,7 +427,7 @@ router.delete("/options/:optionId", merchantRole, productController.deleteOption
  *       403:
  *         description: Invalid API key or role not approved
  */
-router.get("/:id", anyRole, productController.getProduct);
+router.get("/:id", productController.getProduct);
 
 /**
  * @openapi

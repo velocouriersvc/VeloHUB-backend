@@ -289,14 +289,18 @@ export class ProfileService {
     }
 
     async getUserProfile(userId: string) {
+        log.info("Fetching user profile", { userId });
         const user = await this.userRepository.findOne({
             where: { id: userId },
             relations: ["userRoles", "userRoles.role"],
         });
 
         if (!user) {
+            log.warn("User not found in getUserProfile", { userId });
             throw new Error("User not found");
         }
+
+        log.info("User found, fetching user profile entity", { userId });
 
         let userProfile = await this.userProfileRepository.findOne({ where: { userId } });
         if (!userProfile) {
