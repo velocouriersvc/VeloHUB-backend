@@ -4,13 +4,9 @@ import { PlatformSettings } from "../models/platform-settings";
 import { SurgeRule, DayType } from "../models/surge-rule";
 import { PromoCode } from "../models/promo-code";
 import { createServiceLogger } from "../utils/logger";
+import { currencyForCountry } from "../utils/currency";
 
 const log = createServiceLogger("FareService");
-
-/** Currency map by country code */
-const CURRENCY_MAP: Record<string, string> = {
-    GH: "GHS", NG: "NGN", US: "USD", CA: "CAD", IN: "INR", GB: "GBP",
-};
 
 /**
  * Country-specific display names for vehicle types.
@@ -113,7 +109,7 @@ export class FareService {
         });
         const commissionRate = settings ? Number(settings.rideCommissionRate) / 100 : 0.15;
         const maxSurge = settings ? Number(settings.maxSurgeMultiplier) : 2.50;
-        const currency = settings?.currency || CURRENCY_MAP[country] || "USD";
+        const currency = settings?.currency || currencyForCountry(country);
 
         // 3. Calculate fare components (BEFORE surge)
         const baseFare = Number(pricing.basePrice);

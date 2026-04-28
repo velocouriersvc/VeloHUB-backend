@@ -249,6 +249,7 @@ export class RideService {
                     dropoffLat: request.dropoffLat,
                     dropoffLng: request.dropoffLng,
                     fare: savedRide.finalFare,
+                    currency: savedRide.currency,
                     distanceKm: request.distanceKm,
                     durationMin: request.durationMin,
                     vehicleType: request.vehicleType,

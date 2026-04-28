@@ -34,7 +34,7 @@ import { UserProfile } from "../models/user-profile";
 import { VehiclePricing } from "../models/vehicle-pricing";
 import { PlatformWithdrawal } from "../models/platform-withdrawal";
 import { createServiceLogger } from "../utils/logger";
-import { formatCurrency } from "../utils/currency";
+import { formatCurrency, currencyForCountry } from "../utils/currency";
 import { orderEventsTotal } from "../utils/metrics";
 import { getCountryName } from "../utils/country";
 import { inferCountryFromPhone } from "../utils/phone";
@@ -2141,7 +2141,7 @@ export class AdminService {
             userId,
             NotificationType.WALLET_CREDITED,
             "Wallet Credited 💰",
-            `${formatCurrency(amount, tx.wallet?.currency || user.country === "NG" ? "NGN" : "GHS")} has been added to your wallet. ${reason}`,
+            `${formatCurrency(amount, tx.wallet?.currency || currencyForCountry(user.country))} has been added to your wallet. ${reason}`,
             { amount, reason }
         );
 

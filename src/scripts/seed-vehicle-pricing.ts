@@ -13,7 +13,7 @@ import { VehiclePricing, VehicleType } from "../models/vehicle-pricing";
  * Nigeria:
  *   Base Fare ₦600, Per Km ₦120, Per Min ₦25
  *   Minimum Fare: ₦1,200
- *   Rider Service Fee: ₦300 (stored in platform_settings)
+ *   Rider Service Fee: ₦400 (stored in platform_settings)
  *
  * Ghana / Canada / India: proportional to US base.
  */

@@ -14,9 +14,11 @@ async function seed() {
 
         for (const settings of allSettings) {
             console.log(`Updating settings for country: ${settings.country}`);
-            
-            // Default Professional Calculation Model values
-            settings.rideCommissionRate = 20.00;
+
+            // Nigeria has a client-specified ride commission rate of 15% — do not overwrite.
+            if (settings.country !== "NG") {
+                settings.rideCommissionRate = 20.00;
+            }
             settings.deliveryTotalCommissionRate = 40.00;
             settings.deliveryRidePortionRate = 50.00; // 50% of 40 = 20%
             settings.deliveryServicePortionRate = 50.00; // 50% of 40 = 20%

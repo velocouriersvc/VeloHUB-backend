@@ -3,15 +3,12 @@
  */
 
 const CURRENCY_SYMBOLS: Record<string, string> = {
-    GHS: "GH₵",
-    NGN: "₦",
-    USD: "$",
-    CAD: "C$",
-    INR: "₹",
-    EUR: "€",
-    GBP: "£",
-    KES: "KSh",
-    ZAR: "R",
+    GHS: "GH₵", NGN: "₦",  KES: "KSh", ZAR: "R",
+    USD: "$",    CAD: "C$", AUD: "A$",
+    GBP: "£",    EUR: "€",  INR: "₹",
+    // EU non-euro members
+    BGN: "лв",  CZK: "Kč", DKK: "kr", HUF: "Ft",
+    PLN: "zł",  RON: "lei", SEK: "kr",
 };
 
 /**
@@ -41,14 +38,18 @@ export function getCurrencySymbol(currencyCode: string): string {
  * Kept here as a quick fallback — the canonical source is `platform_settings`.
  */
 const COUNTRY_CURRENCY: Record<string, string> = {
-    GH: "GHS",
-    NG: "NGN",
-    US: "USD",
-    CA: "CAD",
-    IN: "INR",
-    GB: "GBP",
-    KE: "KES",
-    ZA: "ZAR",
+    GH: "GHS", NG: "NGN", KE: "KES", ZA: "ZAR",
+    US: "USD",  CA: "CAD", AU: "AUD",
+    GB: "GBP",  IN: "INR",
+    // EU — euro members
+    AT: "EUR", BE: "EUR", CY: "EUR", EE: "EUR",
+    FI: "EUR", FR: "EUR", DE: "EUR", GR: "EUR",
+    HR: "EUR", IE: "EUR", IT: "EUR", LV: "EUR",
+    LT: "EUR", LU: "EUR", MT: "EUR", NL: "EUR",
+    PT: "EUR", SK: "EUR", SI: "EUR", ES: "EUR",
+    // EU — non-euro members
+    BG: "BGN", CZ: "CZK", DK: "DKK",
+    HU: "HUF", PL: "PLN", RO: "RON", SE: "SEK",
 };
 
 export function currencyForCountry(countryCode: string): string {

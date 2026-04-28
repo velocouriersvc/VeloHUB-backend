@@ -9,7 +9,7 @@ import { NotificationType } from "../../models/notification";
 import { v4 as uuidv4 } from "uuid";
 import { createServiceLogger } from "../../utils/logger";
 import { paymentEventsTotal } from "../../utils/metrics";
-import { formatCurrency } from "../../utils/currency";
+import { formatCurrency, currencyForCountry } from "../../utils/currency";
 import { ServiceSubscription, ServiceSubscriptionStatus } from "../../models/service-subscription";
 import { BuyerProfile } from "../../models/buyer-profile";
 
@@ -143,7 +143,7 @@ export class PaymentService {
             where: { country, isActive: true },
         });
 
-        const currency = settings?.currency || "GHS";
+        const currency = settings?.currency || currencyForCountry(country);
         // defaultCommissionRate is stored as a percentage (e.g. 15 = 15%)
         const commissionRate = settings
             ? Number(settings.defaultCommissionRate) / 100

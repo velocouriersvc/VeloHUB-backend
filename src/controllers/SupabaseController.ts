@@ -404,14 +404,20 @@ export class SupabaseController {
 
                 // Currency resolution based on merchant's country
                 const country = (req as any).merchantCountries?.get(mapped.merchantId) || 'GH';
-                const countryToCurrency: any = {
-                    'GH': 'GHS',
-                    'NG': 'NGN',
-                    'KE': 'KES',
-                    'US': 'USD',
-                    'GB': 'GBP'
+                const countryToCurrency: Record<string, string> = {
+                    'GH': 'GHS', 'NG': 'NGN', 'KE': 'KES',
+                    'US': 'USD', 'CA': 'CAD', 'IN': 'INR',
+                    'GB': 'GBP', 'AU': 'AUD',
+                    // EU — most use EUR; non-euro members use own currency
+                    'AT': 'EUR', 'BE': 'EUR', 'CY': 'EUR', 'EE': 'EUR',
+                    'FI': 'EUR', 'FR': 'EUR', 'DE': 'EUR', 'GR': 'EUR',
+                    'IE': 'EUR', 'IT': 'EUR', 'LV': 'EUR', 'LT': 'EUR',
+                    'LU': 'EUR', 'MT': 'EUR', 'NL': 'EUR', 'PT': 'EUR',
+                    'SK': 'EUR', 'SI': 'EUR', 'ES': 'EUR',
+                    'BG': 'BGN', 'HR': 'EUR', 'CZ': 'CZK', 'DK': 'DKK',
+                    'HU': 'HUF', 'PL': 'PLN', 'RO': 'RON', 'SE': 'SEK',
                 };
-                mapped.currency = countryToCurrency[country] || 'GHS';
+                mapped.currency = countryToCurrency[country] || 'USD';
             }
 
             if (tableName === 'categories') {
