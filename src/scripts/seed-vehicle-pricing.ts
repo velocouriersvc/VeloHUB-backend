@@ -46,13 +46,15 @@ const US_PRICING: PricingRow[] = [
     { vehicleType: VehicleType.TRUCK, country: "US", basePrice: 15.00, pricePerKm: 3.85, pricePerMin: 0.72, minimumFare: 25.00, riderServiceFee: 3.00, maxPassengers: 2 },
 ];
 
-// ── Nigeria: client-specified exact rates (UPDATED April 22, 2026) ────
+// ── Nigeria: competitive rates (UPDATED April 30, 2026) ──────────────
+// Calibrated to match Bolt/Uber pricing for Lagos routes.
+// Target: ~₦5,100 bike | ~₦7,800 car | ~₦11,400 SUV for a 20km/40min trip.
 // Rider Service Fee: ₦400 (per client spec)
 const NG_PRICING: PricingRow[] = [
-    { vehicleType: VehicleType.BIKE, country: "NG", basePrice: 1200, pricePerKm: 650,  pricePerMin: 220, minimumFare: 5000,  riderServiceFee: 400, maxPassengers: 1 },
-    { vehicleType: VehicleType.CAR,  country: "NG", basePrice: 2600, pricePerKm: 850,  pricePerMin: 270, minimumFare: 6000,  riderServiceFee: 400, maxPassengers: 4 },
-    { vehicleType: VehicleType.SUV,  country: "NG", basePrice: 4200, pricePerKm: 1280, pricePerMin: 410, minimumFare: 11000, riderServiceFee: 400, maxPassengers: 6 },
-    { vehicleType: VehicleType.TRUCK,country: "NG", basePrice: 6800, pricePerKm: 1750, pricePerMin: 560, minimumFare: 11500, riderServiceFee: 400, maxPassengers: 2 },
+    { vehicleType: VehicleType.BIKE, country: "NG", basePrice: 500,  pricePerKm: 130, pricePerMin: 40,  minimumFare: 4500,  riderServiceFee: 400, maxPassengers: 1 },
+    { vehicleType: VehicleType.CAR,  country: "NG", basePrice: 800,  pricePerKm: 200, pricePerMin: 65,  minimumFare: 6000,  riderServiceFee: 400, maxPassengers: 4 },
+    { vehicleType: VehicleType.SUV,  country: "NG", basePrice: 1200, pricePerKm: 300, pricePerMin: 95,  minimumFare: 9000,  riderServiceFee: 400, maxPassengers: 6 },
+    { vehicleType: VehicleType.TRUCK,country: "NG", basePrice: 2000, pricePerKm: 450, pricePerMin: 140, minimumFare: 12000, riderServiceFee: 400, maxPassengers: 2 },
 ];
 
 // ── Ghana: ACTUAL production rates (CLIENT REQUEST April 22, 2026) ──
