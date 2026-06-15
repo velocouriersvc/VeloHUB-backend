@@ -5,7 +5,7 @@ import { createServiceLogger } from "../utils/logger";
 
 const log = createServiceLogger("DeliveryFeeService");
 
-// Fallbacks — used when platform_settings is missing
+// Fallbacks - used when platform_settings is missing
 const DEFAULT_BASE_FEE = 5.0;
 const DEFAULT_PER_KM_FEE = 2.0;
 
@@ -18,7 +18,7 @@ export interface DeliveryFeeResult {
 }
 
 /**
- * DeliveryFeeService — calculate delivery fee based on Haversine distance
+ * DeliveryFeeService - calculate delivery fee based on Haversine distance
  * and per-country config from `platform_settings`.
  */
 export class DeliveryFeeService {
@@ -49,7 +49,7 @@ export class DeliveryFeeService {
         }
 
         if (!merchant.latitude || !merchant.longitude) {
-            throw new Error("Merchant location not set — cannot calculate delivery fee");
+            throw new Error("Merchant location not set - cannot calculate delivery fee");
         }
 
         // 2. Calculate Haversine distance

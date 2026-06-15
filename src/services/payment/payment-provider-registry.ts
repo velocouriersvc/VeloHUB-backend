@@ -21,11 +21,11 @@ export class PaymentProviderRegistry {
         this.stripeProvider = new StripeProvider();
         this.defaultProvider = paystack;
 
-        // Ghana & Nigeria — Paystack
+        // Ghana & Nigeria - Paystack
         this.providers.set("GH", paystack);
         this.providers.set("NG", paystack);
 
-        // North America & Europe — Stripe
+        // North America & Europe - Stripe
         const stripeCountries = [
             "US", "CA", "GB", "IE", "FR", "DE", "NL", "BE",
             "AT", "CH", "ES", "IT", "PT", "SE", "DK", "NO",
@@ -76,5 +76,5 @@ export class PaymentProviderRegistry {
     }
 }
 
-/** Singleton instance — import this everywhere */
+/** Singleton instance - import this everywhere */
 export const paymentProviderRegistry = new PaymentProviderRegistry();

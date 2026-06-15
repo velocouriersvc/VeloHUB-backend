@@ -88,6 +88,49 @@ export class PaystackProvider implements PaymentProvider {
     }
 
     /**
+     * Initialize a card/redirect transaction via Paystack. Returns an authorization
+     * URL the client opens to complete payment (supports card, mobile money, bank, USSD).
+     */
+    async initiateCardPayment(request: {
+        amount: number;
+        currency?: string;
+        email: string;
+        reference: string;
+        metadata?: Record<string, any>;
+        callbackUrl?: string;
+    }): Promise<{ success: boolean; reference: string; providerRef: string; authorizationUrl?: string }> {
+        try {
+            const amountInPesewas = Math.round(request.amount * 100);
+
+            const response = await axios.post(
+                `${PAYSTACK_BASE_URL}/transaction/initialize`,
+                {
+                    email: request.email,
+                    amount: amountInPesewas,
+                    currency: request.currency || "GHS",
+                    reference: request.reference,
+                    metadata: request.metadata,
+                    callback_url: request.callbackUrl,
+                    channels: ["card", "mobile_money", "bank", "ussd"],
+                },
+                { headers: this.headers }
+            );
+
+            const data = response.data.data;
+            return {
+                success: response.data.status === true,
+                reference: request.reference,
+                providerRef: data?.reference || "",
+                authorizationUrl: data?.authorization_url,
+            };
+        } catch (error) {
+            const axErr = error as AxiosError<{ message?: string }>;
+            log.error("Paystack initialize error", { error: axErr.response?.data?.message || axErr.message });
+            return { success: false, reference: request.reference, providerRef: "" };
+        }
+    }
+
+    /**
      * Verify a payment transaction
      */
     async verifyPayment(reference: string): Promise<PaymentVerification> {
@@ -138,8 +181,8 @@ export class PaystackProvider implements PaymentProvider {
      * Detect mobile money provider from phone number.
      * Currently supports Ghana & Nigeria prefixes.
      *
-     * Ghana — MTN: 024,054,055,059 | Vodafone: 020,050 | AirtelTigo: 027,057,026,056
-     * Nigeria — MTN: 0803,0806,0703,0903 | Airtel: 0802,0708,0902 | Glo: 0805,0705,0905 | 9mobile: 0809,0909
+     * Ghana - MTN: 024,054,055,059 | Vodafone: 020,050 | AirtelTigo: 027,057,026,056
+     * Nigeria - MTN: 0803,0806,0703,0903 | Airtel: 0802,0708,0902 | Glo: 0805,0705,0905 | 9mobile: 0809,0909
      */
     private detectMomoProvider(phone: string): string {
         // Strip common country codes

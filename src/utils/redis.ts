@@ -11,7 +11,7 @@ export const redis = new Redis(redisUrl, {
     maxRetriesPerRequest: 1,
     retryStrategy(times: number) {
         if (times > 5) {
-            console.warn(`[Redis] Giving up after ${times} retries — Redis appears to be down`);
+            console.warn(`[Redis] Giving up after ${times} retries - Redis appears to be down`);
             console.warn(`[Redis] URL was: ${redisUrl}`);
             console.warn(`[Redis] Check in Headlamp: is the redis deployment running in namespace "velo"?`);
             console.warn(`[Redis] Check: kubectl -n velo get pods -l app=redis`);
@@ -52,5 +52,5 @@ redis.on("error", (err: Error) => {
 });
 
 redis.on("end", () => {
-    console.warn("[Redis] Connection ended — will not reconnect");
+    console.warn("[Redis] Connection ended - will not reconnect");
 });

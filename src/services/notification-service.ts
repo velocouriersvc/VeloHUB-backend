@@ -95,7 +95,7 @@ export class NotificationService {
     }
 
     /**
-     * Get user's notifications (for the notification screen) — enriched with icons/categories.
+     * Get user's notifications (for the notification screen) - enriched with icons/categories.
      */
     async getUserNotifications(
         userId: string,
@@ -258,7 +258,7 @@ export class NotificationService {
             channelId = "orders";
         }
 
-        // Build messages — only for valid Expo push tokens
+        // Build messages - only for valid Expo push tokens
         const messages: ExpoPushMessage[] = [];
         for (const t of tokens) {
             if (!Expo.isExpoPushToken(t.token)) {
@@ -284,7 +284,7 @@ export class NotificationService {
             try {
                 const ticketChunk: ExpoPushTicket[] = await this.expo.sendPushNotificationsAsync(chunk);
 
-                // Handle ticket errors — deactivate invalid tokens
+                // Handle ticket errors - deactivate invalid tokens
                 for (let i = 0; i < ticketChunk.length; i++) {
                     const ticket = ticketChunk[i];
                     if (ticket.status === "error") {

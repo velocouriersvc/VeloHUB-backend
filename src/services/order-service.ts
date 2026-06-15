@@ -98,7 +98,7 @@ export class OrderService {
 
     /**
      * Generate a price breakdown (quote) for the user's current cart.
-     * Does NOT create an order — just returns what checkout would cost.
+     * Does NOT create an order - just returns what checkout would cost.
      */
     async getQuote(userId: string, input: OrderQuoteInput): Promise<OrderQuoteResult> {
         // 1. Load cart
@@ -220,7 +220,7 @@ export class OrderService {
     // ── Checkout ─────────────────────────────────────────────────────
 
     /**
-     * Checkout — create an order from the user's cart.
+     * Checkout - create an order from the user's cart.
      *
      * Flow:
      *  1. Validate cart, stock, MOV
@@ -422,7 +422,7 @@ export class OrderService {
                     }
                     await this.orderRepo.save(savedOrder);
                 } catch (payError) {
-                    // Payment failed — restore stock, delete order (if not already rolled back above)
+                    // Payment failed - restore stock, delete order (if not already rolled back above)
                     if (!(payError as Error).message.startsWith("Payment failed")) {
                         log.error("Payment threw during checkout, restoring stock", {
                             orderId: savedOrder.id,
@@ -445,7 +445,7 @@ export class OrderService {
                 cart.merchantId,
                 NotificationType.ORDER_PLACED,
                 "New Order! 🛒",
-                `Order #${orderNumber} — ${formatCurrency(quote.totalAmount, currency)} (${cart.items.length} item${cart.items.length > 1 ? "s" : ""})`,
+                `Order #${orderNumber} - ${formatCurrency(quote.totalAmount, currency)} (${cart.items.length} item${cart.items.length > 1 ? "s" : ""})`,
                 {
                     orderId: savedOrder.id,
                     orderNumber,
@@ -454,7 +454,7 @@ export class OrderService {
                 }
             );
 
-            // 15. Notify customer — order placed confirmation
+            // 15. Notify customer - order placed confirmation
             await this.notificationService.notify(
                 userId,
                 NotificationType.ORDER_PLACED,
@@ -618,18 +618,37 @@ export class OrderService {
 
         if (!order) throw new Error("Order not found");
 
-        const cancellableStatuses = [OrderStatus.PENDING, OrderStatus.ACCEPTED];
+        // A customer may cancel any time *before the goods leave the merchant* -
+        // i.e. before the order is picked up / in transit / delivered. This covers
+        // in-progress orders (preparing, ready, driver-assigned), not just brand-new ones.
+        const cancellableStatuses = [
+            OrderStatus.PENDING,
+            OrderStatus.ACCEPTED,
+            OrderStatus.PREPARING,
+            OrderStatus.READY_FOR_PICKUP,
+            OrderStatus.READY_FOR_DELIVERY,
+            OrderStatus.DRIVER_ASSIGNED,
+        ];
         if (!cancellableStatuses.includes(order.status)) {
             throw new Error(
-                `Cannot cancel order in "${order.status}" status. Only pending or accepted orders can be cancelled.`
+                `Cannot cancel order in "${order.status}" status. Orders can only be cancelled before they are picked up.`
             );
         }
 
         const fromStatus = order.status;
+        const assignedDriverId = order.driverId;
+        const resolvedReason = reason || "Cancelled by customer";
+
+        // If payment was already captured, cancelling creates a refund obligation.
+        const refundDue =
+            order.paymentStatus === OrderPaymentStatus.PAID ||
+            order.paymentStatus === OrderPaymentStatus.ESCROWED;
+
         order.status = OrderStatus.CANCELLED;
         order.cancelledBy = OrderCancelledBy.CUSTOMER;
-        order.cancellationReason = reason || "Cancelled by customer";
+        order.cancellationReason = resolvedReason;
         order.cancelledAt = new Date();
+        order.driverId = null; // release any assigned driver back to the pool
 
         await this.orderRepo.save(order);
         await this.recordStatusChange(
@@ -638,7 +657,7 @@ export class OrderService {
             OrderStatus.CANCELLED,
             customerId,
             "customer",
-            reason
+            resolvedReason
         );
 
         // Emit WebSocket event for real-time tracking
@@ -649,11 +668,13 @@ export class OrderService {
         });
 
         // Restore stock
-        const stockItems = order.items.map((item) => ({
+        const stockItems = (order.items || []).map((item) => ({
             productId: item.productId,
             quantity: item.quantity,
         }));
-        await this.productService.restoreStock(stockItems);
+        if (stockItems.length > 0) {
+            await this.productService.restoreStock(stockItems);
+        }
 
         // Notify merchant
         await this.notificationService.notify(
@@ -664,8 +685,46 @@ export class OrderService {
             { orderId, status: OrderStatus.CANCELLED }
         );
 
+        // Release & notify the assigned driver, if any, so they stop heading to pickup.
+        if (assignedDriverId) {
+            await this.notificationService.notify(
+                assignedDriverId,
+                NotificationType.ORDER_CANCELLED,
+                "Delivery Cancelled ❌",
+                `Order #${order.orderNumber} was cancelled by the customer. You can pick up another delivery.`,
+                { orderId, status: OrderStatus.CANCELLED }
+            );
+        }
+
+        // Refund handling. There is no automated refund integration yet, so we record
+        // the obligation, keep the captured paymentStatus for finance reconciliation,
+        // and let the customer know a refund is being processed.
+        if (refundDue) {
+            log.warn("Paid order cancelled - refund due, requires reconciliation", {
+                orderId,
+                orderNumber: order.orderNumber,
+                amount: order.totalAmount,
+                paymentMethod: order.paymentMethod,
+                paymentReference: order.paymentReference,
+            });
+            await this.notificationService.notify(
+                customerId,
+                NotificationType.ORDER_CANCELLED,
+                "Refund on the way 💸",
+                `Your order #${order.orderNumber} was cancelled. Your payment will be refunded to your original payment method.`,
+                { orderId, status: OrderStatus.CANCELLED, refundDue: true }
+            );
+        }
+
         orderEventsTotal.inc({ status: "cancelled", type: order.deliveryType });
-        log.info("Order cancelled by customer", { orderId, customerId, reason });
+        log.info("Order cancelled by customer", {
+            orderId,
+            customerId,
+            reason: resolvedReason,
+            fromStatus,
+            driverReleased: Boolean(assignedDriverId),
+            refundDue,
+        });
 
         return order;
     }
@@ -755,7 +814,7 @@ export class OrderService {
     }
 
     /**
-     * Get the effective rate — merchant override > platform default > fallback.
+     * Get the effective rate - merchant override > platform default > fallback.
      */
     private getRate(
         merchantOverride: number | null | undefined,

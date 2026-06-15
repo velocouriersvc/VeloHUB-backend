@@ -94,11 +94,11 @@ export class SearchService {
 
             // Attach error listener BEFORE connect to prevent unhandled error events
             this.redis.on("error", () => {
-                // Silently handled — we null out redis below on connect failure
+                // Silently handled - we null out redis below on connect failure
             });
 
             this.redis.connect().catch(() => {
-                log.warn("Redis not available — search cache disabled");
+                log.warn("Redis not available - search cache disabled");
                 this.redis?.disconnect();
                 this.redis = null;
             });
@@ -108,7 +108,7 @@ export class SearchService {
     }
 
     /**
-     * Unified search — returns matching merchants and products.
+     * Unified search - returns matching merchants and products.
      */
     async search(params: SearchParams): Promise<SearchResult> {
         merchantSearchTotal.inc();

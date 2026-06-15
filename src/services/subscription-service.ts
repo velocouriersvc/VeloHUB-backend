@@ -50,7 +50,7 @@ export class SubscriptionService {
         });
 
         if (!result.success) {
-            // Payment initiation failed — clean up pending subscription
+            // Payment initiation failed - clean up pending subscription
             await this.subscriptionRepo.delete(sub.id);
             log.warn("Subscription payment failed, removed pending record", {
                 subscriptionId: sub.id,

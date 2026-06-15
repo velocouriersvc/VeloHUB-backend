@@ -21,7 +21,7 @@ export class PlatformSettings {
     @Column({ type: "decimal", precision: 10, scale: 2 })
     minimumOrderValue: number;
 
-    /** Merchant commission on order subtotal (%) — merchant keeps (100 - this) */
+    /** Merchant commission on order subtotal (%) - merchant keeps (100 - this) */
     @Column({ type: "decimal", precision: 5, scale: 2, default: 15.00 })
     defaultCommissionRate: number;
 
@@ -58,7 +58,7 @@ export class PlatformSettings {
 
     // ── Rides ───────────────────────────────────────────────────────
 
-    /** Platform commission on ride fare (%) — driver keeps (100 - this) */
+    /** Platform commission on ride fare (%) - driver keeps (100 - this) */
     @Column({ type: "decimal", precision: 5, scale: 2, default: 15.00 })
     rideCommissionRate: number;
 
@@ -83,7 +83,7 @@ export class PlatformSettings {
 
     // ── Services / Bookings ─────────────────────────────────────────
 
-    /** Platform commission on service booking (%) — provider keeps (100 - this) */
+    /** Platform commission on service booking (%) - provider keeps (100 - this) */
     @Column({ type: "decimal", precision: 5, scale: 2, default: 15.00 })
     serviceCommissionRate: number;
 

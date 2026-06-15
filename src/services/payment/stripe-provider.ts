@@ -32,7 +32,7 @@ export class StripeProvider implements PaymentProvider {
 
     /**
      * Create a Stripe PaymentIntent. This is the main entry point for
-     * card payments — the client uses the returned clientSecret to confirm
+     * card payments - the client uses the returned clientSecret to confirm
      * with the Stripe Payment Sheet or Elements.
      */
     async createPaymentIntent(params: {

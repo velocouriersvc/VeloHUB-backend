@@ -26,6 +26,11 @@ export class User {
     @Column({ type: "varchar", length: 255, nullable: true, unique: true })
     appleSubjectId: string | null;
 
+    // scrypt password hash ("salt:derived") for email+password login. Nullable so
+    // existing phone-OTP-only accounts are unaffected.
+    @Column({ type: "text", nullable: true })
+    passwordHash: string | null;
+
     @Column({
         type: "enum",
         enum: UserStatus,

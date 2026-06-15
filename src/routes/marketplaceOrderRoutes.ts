@@ -210,7 +210,7 @@ router.post("/checkout", buyerRole, validate([
 ]), orderController.checkout);
 
 // ════════════════════════════════════════════════════════════════════
-//  MY ORDERS — static routes before :id
+//  MY ORDERS - static routes before :id
 // ════════════════════════════════════════════════════════════════════
 
 /**
@@ -287,7 +287,7 @@ router.get("/", buyerRole, orderController.getMyOrders);
 router.get("/active", buyerRole, orderController.getActiveOrder);
 
 // ════════════════════════════════════════════════════════════════════
-//  ORDER DETAIL & ACTIONS — parameterized routes last
+//  ORDER DETAIL & ACTIONS - parameterized routes last
 // ════════════════════════════════════════════════════════════════════
 
 /**

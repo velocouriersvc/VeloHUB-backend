@@ -12,7 +12,7 @@ export class PaymentController {
 
     /**
      * POST /payments/webhook
-     * Handle Paystack webhook (no auth — verified by signature)
+     * Handle Paystack webhook (no auth - verified by signature)
      */
     handleWebhook = async (req: Request, res: Response) => {
         try {
@@ -36,7 +36,7 @@ export class PaymentController {
 
     /**
      * POST /payments/stripe-webhook
-     * Handle Stripe webhook (no auth — verified by stripe-signature header)
+     * Handle Stripe webhook (no auth - verified by stripe-signature header)
      */
     handleStripeWebhook = async (req: Request, res: Response) => {
         try {

@@ -57,7 +57,7 @@ class RuleBuilder {
         return this;
     }
 
-    /** Field is optional — skip subsequent checks if absent */
+    /** Field is optional - skip subsequent checks if absent */
     optional(): this {
         this._isOptional = true;
         return this;
@@ -169,7 +169,7 @@ class RuleBuilder {
         return this;
     }
 
-    /** @internal — build the final rule set */
+    /** @internal - build the final rule set */
     _build(): FieldRule & { isOptional: boolean } {
         return {
             field: this._field,

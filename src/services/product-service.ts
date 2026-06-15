@@ -19,6 +19,9 @@ export interface CreateProductInput {
     name: string;
     description?: string;
     category: string;
+    /** Upload context: 'service' (from the Add Service form) or 'marketplace' (Add Product).
+     *  Used to reject listings created under a category of the wrong type. */
+    categoryType?: "service" | "marketplace";
     price: number;
     compareAtPrice?: number;
     stockQuantity?: number;
@@ -144,7 +147,7 @@ export class ProductService {
 
     /**
      * Merchant-submitted category suggestion.
-     * Created with isActive=false — admin must approve before it appears publicly.
+     * Created with isActive=false - admin must approve before it appears publicly.
      * If the category already exists but is inactive (pending review), returns it silently
      * instead of throwing so the merchant knows it is already in the queue.
      */
@@ -155,7 +158,7 @@ export class ProductService {
             if (existing.isActive) {
                 throw new Error("This category is already live on the platform.");
             }
-            // Already submitted and pending admin review — silently succeed
+            // Already submitted and pending admin review - silently succeed
             return { category: existing, alreadyPending: true };
         }
         const category = this.productCategoryRepo.create({ name, slug, type, isActive: false });
@@ -175,12 +178,30 @@ export class ProductService {
             const optRepo = manager.getRepository(CustomizationOption);
             const statsRepo = manager.getRepository(MerchantStats);
 
-            // Ensure category exists in product_categories table
+            // Ensure category exists in product_categories table.
             const catRepo = manager.getRepository(ProductCategoryEntity);
-            const existingCat = await catRepo.findOne({ where: { slug: input.category.toLowerCase().replace(/\s+/g, '-') } });
-            if (!existingCat) {
-                const slug = input.category.toLowerCase().replace(/\s+/g, '-');
-                const categoryType = slug === ProductCategory.SERVICES ? 'service' : 'marketplace';
+            const slug = input.category.toLowerCase().replace(/\s+/g, '-');
+            const existingCat = await catRepo.findOne({ where: { slug } });
+
+            // Normalize the expected type from the upload context (Add Service vs Add Product).
+            const expectedType: "service" | "marketplace" | undefined =
+                input.categoryType === "service" ? "service"
+                : input.categoryType === "marketplace" ? "marketplace"
+                : undefined;
+
+            if (existingCat) {
+                // Reject cross-type listings: a physical product cannot be saved under a
+                // service category (or vice versa). This is what was letting blenders/toasters
+                // show up under "Services".
+                if (expectedType && existingCat.type && existingCat.type !== expectedType) {
+                    throw new Error(
+                        `Category "${input.category}" is a ${existingCat.type} category and cannot be used for a ${expectedType} listing. Please choose a ${expectedType} category.`
+                    );
+                }
+            } else {
+                // Create the category with the type from the upload context when known,
+                // otherwise fall back to the slug-based heuristic.
+                const categoryType = expectedType ?? (slug === ProductCategory.SERVICES ? 'service' : 'marketplace');
                 const newCat = catRepo.create({
                     name: input.category,
                     slug,
@@ -300,7 +321,7 @@ export class ProductService {
      * return all sub-category slugs under that type. Otherwise return the slug as-is.
      */
     private async resolveCategorySlugs(category: string): Promise<{ slugs: string[]; isType: boolean }> {
-        // Known category types — check if the param is a type rather than a slug
+        // Known category types - check if the param is a type rather than a slug
         const CATEGORY_TYPES = ["food", "grocery", "pharmacy", "marketplace", "service", "product"];
         const lower = category.toLowerCase();
 
@@ -332,6 +353,12 @@ export class ProductService {
         page?: number;
         limit?: number;
         country?: string;
+        /** Buyer location - when provided with radiusKm, only return products from
+         *  merchants within that distance (Haversine). Used to enforce the local
+         *  delivery radius (e.g. 20km) so buyers don't see far-away listings. */
+        lat?: number;
+        lng?: number;
+        radiusKm?: number;
     }): Promise<{ products: Product[]; total: number; page: number; limit: number }> {
         const page = params.page || 1;
         const limit = Math.min(params.limit || 20, 50);
@@ -358,6 +385,25 @@ export class ProductService {
 
         if (params.country) {
             qb.andWhere("merchant.country = :country", { country: params.country });
+        }
+
+        // Local-radius filter: only products whose merchant is within radiusKm of the
+        // buyer. Haversine in SQL; LEAST(1, …) guards acos() against float rounding > 1.
+        if (
+            params.lat != null && !Number.isNaN(params.lat) &&
+            params.lng != null && !Number.isNaN(params.lng) &&
+            params.radiusKm != null && params.radiusKm > 0
+        ) {
+            qb.andWhere('"merchantProfile"."latitude" IS NOT NULL')
+                .andWhere('"merchantProfile"."longitude" IS NOT NULL')
+                .andWhere(
+                    `(6371 * acos(LEAST(1,
+                        cos(radians(:userLat)) * cos(radians("merchantProfile"."latitude")) *
+                        cos(radians("merchantProfile"."longitude") - radians(:userLng)) +
+                        sin(radians(:userLat)) * sin(radians("merchantProfile"."latitude"))
+                    ))) <= :radiusKm`,
+                    { userLat: params.lat, userLng: params.lng, radiusKm: params.radiusKm }
+                );
         }
 
         if (params.category) {
@@ -389,7 +435,7 @@ export class ProductService {
     }
 
     /**
-     * Get all products for a specific merchant (merchant dashboard — includes inactive).
+     * Get all products for a specific merchant (merchant dashboard - includes inactive).
      */
     async getMerchantProducts(
         merchantId: string,
@@ -506,7 +552,7 @@ export class ProductService {
     // ── Update ──────────────────────────────────────────────────────
 
     /**
-     * Update product fields (not customizations — those have separate endpoints).
+     * Update product fields (not customizations - those have separate endpoints).
      */
     async updateProduct(
         productId: string,
@@ -822,7 +868,7 @@ export class ProductService {
             return { success: false, outOfStock };
         }
 
-        // All items in stock — decrement
+        // All items in stock - decrement
         for (const item of items) {
             const product = await this.productRepo.findOne({ where: { id: item.productId } });
             if (!product) continue;

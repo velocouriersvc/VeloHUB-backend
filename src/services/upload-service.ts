@@ -60,7 +60,7 @@ export function rewriteToPublicAssetUrl(url?: string | null): string | null {
 
 // ─── Security Config ────────────────────────────────────────────────
 
-/** Allowed MIME types — only images and PDFs */
+/** Allowed MIME types - only images and PDFs */
 const ALLOWED_MIME_TYPES: Record<string, string> = {
   "image/jpeg": ".jpg",
   "image/png": ".png",
@@ -81,7 +81,7 @@ const MAGIC_BYTES: Record<string, Buffer> = {
   "application/pdf": Buffer.from("%PDF"),
 };
 
-/** Upload categories — controls folder structure in MinIO */
+/** Upload categories - controls folder structure in MinIO */
 export type UploadCategory =
   | "id-cards"        // Ghana Card images
   | "licenses"        // Driver's license photos
@@ -219,7 +219,7 @@ export class UploadService {
     const fileCheck = validateFile(buffer, originalName, mimeType, buffer.length);
     if (!fileCheck.valid) throw new Error(fileCheck.error);
 
-    // Generate safe filename — never use the original name
+    // Generate safe filename - never use the original name
     const ext = ALLOWED_MIME_TYPES[mimeType];
     const fileId = uuid();
     const key = `${category}/${userId}/${fileId}${ext}`;

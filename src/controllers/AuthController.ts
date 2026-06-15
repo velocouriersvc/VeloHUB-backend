@@ -18,16 +18,19 @@ export class AuthController {
 
     requestOTP = async (req: Request, res: Response) => {
         try {
-            const { phoneNumber, channel = 'sms' } = req.body as RequestOtpPayload;
- 
-             if (!phoneNumber) {
-                 return res.status(400).json({ message: "Phone number is required" });
-             }
- 
-            await this.authService.requestOtp(phoneNumber, channel);
+            const { phoneNumber, channel = 'sms', email } = (req.body || {}) as { phoneNumber?: string; channel?: 'sms' | 'whatsapp' | 'email'; email?: string };
+
+            if (!phoneNumber) {
+                return res.status(400).json({ message: "Phone number is required" });
+            }
+            if (channel === 'email' && !email) {
+                return res.status(400).json({ message: "Email is required for email verification" });
+            }
+
+            await this.authService.requestOtp(phoneNumber, channel, email);
 
             return res.status(200).json({
-                message: "OTP sent successfully"
+                message: channel === 'email' ? "Verification code sent to your email" : "OTP sent successfully"
             });
         } catch (error) {
             log.error("Error requesting OTP", { error: (error as Error).message });
@@ -52,6 +55,45 @@ export class AuthController {
             return res.status(200).json(result);
         } catch (error) {
             log.error("Error verifying OTP", { error: (error as Error).message });
+            return res.status(500).json({ message: "Internal server error" });
+        }
+    };
+
+    // Email + password registration & login
+    register = async (req: Request, res: Response) => {
+        try {
+            const { firstName, lastName, email, phoneNumber, password, country } = req.body || {};
+            if (!firstName || !lastName || !email || !phoneNumber || !password) {
+                return res.status(400).json({ message: "firstName, lastName, email, phoneNumber and password are required" });
+            }
+            if (String(password).length < 6) {
+                return res.status(400).json({ message: "Password must be at least 6 characters" });
+            }
+            const result = await this.authService.registerWithPassword({ firstName, lastName, email, phoneNumber, password, country });
+            return res.status(201).json(result);
+        } catch (error) {
+            const message = (error as Error).message || "Internal server error";
+            if (/already exists/i.test(message)) {
+                return res.status(409).json({ message });
+            }
+            log.error("Error registering user", { error: message });
+            return res.status(500).json({ message: "Internal server error" });
+        }
+    };
+
+    login = async (req: Request, res: Response) => {
+        try {
+            const { email, password } = req.body || {};
+            if (!email || !password) {
+                return res.status(400).json({ message: "Email and password are required" });
+            }
+            const result = await this.authService.loginWithPassword(email, password);
+            if (!result) {
+                return res.status(401).json({ message: "Invalid email or password" });
+            }
+            return res.status(200).json(result);
+        } catch (error) {
+            log.error("Error logging in with password", { error: (error as Error).message });
             return res.status(500).json({ message: "Internal server error" });
         }
     };

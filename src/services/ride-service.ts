@@ -264,7 +264,7 @@ export class RideService {
             driversNotified: drivers.length,
         });
 
-        // Notify customer — ride request confirmed, searching for drivers
+        // Notify customer - ride request confirmed, searching for drivers
         await this.notificationService.notify(
             request.customerId,
             NotificationType.RIDE_REQUESTED,
@@ -368,10 +368,11 @@ export class RideService {
         await this.rideRepo.save(ride);
 
         // Process payment based on method
-        if (paymentMethod === PaymentMethod.MOMO || paymentMethod === PaymentMethod.WALLET) {
+        if (paymentMethod === PaymentMethod.MOMO || paymentMethod === PaymentMethod.WALLET || paymentMethod === PaymentMethod.CARD) {
             const methodMap: Record<string, PaymentMethodType> = {
                 [PaymentMethod.MOMO]: PaymentMethodType.MOMO,
                 [PaymentMethod.WALLET]: PaymentMethodType.WALLET,
+                [PaymentMethod.CARD]: PaymentMethodType.CARD,
             };
 
             const result = await this.paymentService.processRidePayment({
@@ -385,7 +386,7 @@ export class RideService {
             });
 
             if (!result.success) {
-                // Payment initiation failed — revert ride status back to accepted
+                // Payment initiation failed - revert ride status back to accepted
                 ride.status = RideStatus.ACCEPTED;
                 ride.paymentMethod = null as any;
                 await this.rideRepo.save(ride);
@@ -397,7 +398,7 @@ export class RideService {
             }
 
             if (result.success && paymentMethod === PaymentMethod.WALLET) {
-                // Wallet payment is instant — mark ride as paid
+                // Wallet payment is instant - mark ride as paid
                 ride.paymentStatus = PaymentStatus.PAID;
                 ride.status = RideStatus.PAID;
                 ride.paidAt = new Date();
@@ -413,10 +414,14 @@ export class RideService {
                 }
             }
 
-            return this.getRideOrFail(rideId);
+            // Expose the Paystack authorization URL (card / momo) so the client can
+            // open it to complete payment. Attached as a transient field on the ride.
+            const finalRide = await this.getRideOrFail(rideId);
+            (finalRide as any).authorizationUrl = result.authorizationUrl;
+            return finalRide;
         }
 
-        // Cash — mark as paid (driver collects on delivery)
+        // Cash - mark as paid (driver collects on delivery)
         ride.paymentStatus = PaymentStatus.PAID;
         ride.status = RideStatus.PAID;
         ride.paidAt = new Date();

@@ -16,7 +16,7 @@ const options: swaggerJsdoc.Options = {
 3. Every request will now include the API key header automatically.
 
 ### 📱 Phone number auth
-Most endpoints require a \`phoneNumber\` field — either in the **request body** (POST/PUT/DELETE) or as a **query parameter** (GET).
+Most endpoints require a \`phoneNumber\` field - either in the **request body** (POST/PUT/DELETE) or as a **query parameter** (GET).
 This is used for role-based access (buyer, driver, merchant). Use a real registered phone in E.164 format: \`+233501234567\`
 
 ### 🎯 Quick start
@@ -37,37 +37,37 @@ This is used for role-based access (buyer, driver, merchant). Use a real registe
       },
     ],
     tags: [
-      { name: "Health", description: "Server health & connectivity checks — **no auth required**" },
-      { name: "Auth", description: "OTP-based phone authentication — request & verify OTPs" },
+      { name: "Health", description: "Server health & connectivity checks - **no auth required**" },
+      { name: "Auth", description: "OTP-based phone authentication - request & verify OTPs" },
       { name: "Profile", description: "Setup buyer / driver / merchant profiles" },
       { name: "Rides", description: "Request rides, get estimates, manage active rides (buyer)" },
-      { name: "Driver", description: "Driver operations — go online, accept rides, update location" },
+      { name: "Driver", description: "Driver operations - go online, accept rides, update location" },
       { name: "Payments", description: "Paystack payments, webhook, verification" },
       { name: "Wallet", description: "Wallet balance & transaction history" },
       { name: "Locations", description: "Saved locations (Home, Work, etc.)" },
       { name: "Ratings", description: "Rate completed rides & marketplace orders" },
-      { name: "Places", description: "Google Places — autocomplete, details, distance, reverse geocode" },
+      { name: "Places", description: "Google Places - autocomplete, details, distance, reverse geocode" },
       { name: "Notifications", description: "In-app notifications & push token management" },
-      { name: "Uploads", description: "File uploads to MinIO — images & PDFs for ID verification" },
+      { name: "Uploads", description: "File uploads to MinIO - images & PDFs for ID verification" },
       { name: "Waitlist", description: "Join waitlist & manage countries" },
-      { name: "Products", description: "Marketplace products — browse, create, manage stock & customizations" },
+      { name: "Products", description: "Marketplace products - browse, create, manage stock & customizations" },
       { name: "Merchant", description: "Merchant profile, store settings, hours, orders & analytics" },
-      { name: "Search", description: "Unified search — merchants & products with geo filtering" },
-      { name: "Cart", description: "Shopping cart — add items, update quantities, clear" },
-      { name: "Orders", description: "Marketplace orders — quote, checkout, track, cancel" },
-      { name: "Driver - Deliveries", description: "Driver marketplace delivery operations — accept, pickup, deliver" },
-      { name: "Admin", description: "Admin — users, drivers, merchants, rides (legacy)" },
+      { name: "Search", description: "Unified search - merchants & products with geo filtering" },
+      { name: "Cart", description: "Shopping cart - add items, update quantities, clear" },
+      { name: "Orders", description: "Marketplace orders - quote, checkout, track, cancel" },
+      { name: "Driver - Deliveries", description: "Driver marketplace delivery operations - accept, pickup, deliver" },
+      { name: "Admin", description: "Admin - users, drivers, merchants, rides (legacy)" },
       { name: "Admin - Dashboard", description: "Admin dashboard overview & analytics" },
       { name: "Admin - Orders", description: "Admin order management & status overrides" },
-      { name: "Admin - Products", description: "Admin product moderation — suspend, reactivate, delete" },
+      { name: "Admin - Products", description: "Admin product moderation - suspend, reactivate, delete" },
       { name: "Admin - Merchants", description: "Admin merchant verification, rates & management" },
       { name: "Admin - Payouts", description: "Admin payout approval & rejection" },
-      { name: "Admin - Settings", description: "Platform settings per country — rates, fees, limits" },
+      { name: "Admin - Settings", description: "Platform settings per country - rates, fees, limits" },
       { name: "Admin - Reports", description: "Revenue & order distribution reports" },
       { name: "Admin - Support", description: "Driver assignment, wallet credits/debits" },
-      { name: "Dev", description: "Development/debug endpoints — **not for production**" },
-      { name: "Services", description: "Service bookings — request, track, and manage service hires" },
-      { name: "Subscriptions", description: "Service access subscriptions — manage paywall and access status" },
+      { name: "Dev", description: "Development/debug endpoints - **not for production**" },
+      { name: "Services", description: "Service bookings - request, track, and manage service hires" },
+      { name: "Subscriptions", description: "Service access subscriptions - manage paywall and access status" },
     ],
     components: {
       securitySchemes: {
@@ -513,7 +513,7 @@ This is used for role-based access (buyer, driver, merchant). Use a real registe
         },
       },
     },
-    // Global security — applies to ALL endpoints unless overridden with `security: []`
+    // Global security - applies to ALL endpoints unless overridden with `security: []`
     security: [{ ApiKeyAuth: [] }],
   },
   apis: ["./src/routes/*.ts", "./src/routes/*.js", "./dist/routes/*.js"],

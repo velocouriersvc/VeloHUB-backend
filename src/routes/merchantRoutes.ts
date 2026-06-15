@@ -541,7 +541,7 @@ router.patch("/orders/:orderId/status", merchantRole, validate([
  *                 example: "123456"
  *     responses:
  *       200:
- *         description: Pickup verified — order moved to picked_up
+ *         description: Pickup verified - order moved to picked_up
  *       400:
  *         description: Invalid code or wrong order status
  *       404:

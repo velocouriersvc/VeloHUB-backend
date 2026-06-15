@@ -27,7 +27,7 @@ export interface BuyerSetupPayload {
     full_name: string;
     email: string;
     location: string;           // Maps to region/state/province
-    ghana_card_number?: string; // Optional — required only when country_code === 'GH'
+    ghana_card_number?: string; // Optional - required only when country_code === 'GH'
     privacy_consent: boolean;
     role: string;               // Frontend sends 'customer'
     phone: string;

@@ -17,7 +17,7 @@ const VEHICLE_DISPLAY_NAMES: Record<string, Record<string, string>> = {
     US: {
         bike:  "Velo Go",       // Entry-level, no physical bikes
         car:   "Velo Standard", // Standard sedan
-        suv:   "Velo Comfort",  // SUV (also shown as Velo XL on frontend — same pricing)
+        suv:   "Velo Comfort",  // SUV (also shown as Velo XL on frontend - same pricing)
         truck: "Velo Truck",    // Truck / heavy load
     },
     CA: {

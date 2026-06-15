@@ -2,6 +2,7 @@ import { Response } from "express";
 import { AuthRequest } from "../middleware/role-middleware";
 import { CheckoutService } from "../services/checkout-service";
 import { createServiceLogger } from "../utils/logger";
+import { mapErrorToResponse } from "../utils/app-error";
 
 const log = createServiceLogger("CheckoutController");
 
@@ -23,19 +24,14 @@ export class CheckoutController {
             const result = await this.checkoutService.checkout(userId, req.body);
             return res.status(201).json({ message: "Checkout created", ...result });
         } catch (error) {
-            const message = (error as Error).message;
-            log.error("Unified checkout failed", { error: message });
-
-            if (
-                message.includes("empty") ||
-                message.includes("required") ||
-                message.includes("Out of stock") ||
-                message.includes("Payment failed")
-            ) {
-                return res.status(400).json({ message });
+            const { status, body } = mapErrorToResponse(error);
+            // Only log true server faults at error level; business 4xx are expected.
+            if (status >= 500) {
+                log.error("Unified checkout failed", { error: (error as Error).message });
+            } else {
+                log.warn("Checkout rejected", { status, code: body.code, message: body.message });
             }
-
-            return res.status(500).json({ message: "Internal server error" });
+            return res.status(status).json(body);
         }
     };
 }

@@ -54,7 +54,7 @@ export class ReportService {
                         <p>As requested, we have generated your activity report for your recent rides and transactions.</p>
                         <p>Please find the attached CSV file for details.</p>
                         <p style="color: #6b7280; font-size: 12px; margin-top: 24px;">
-                            — The VeloHub Team
+                            - The VeloHub Team
                         </p>
                     </div>
                 `,

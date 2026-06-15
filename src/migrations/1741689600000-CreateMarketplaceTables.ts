@@ -429,6 +429,6 @@ export class CreateMarketplaceTables1741689600000 implements MigrationInterface 
         await queryRunner.query(`DROP TYPE IF EXISTS "product_category_enum"`);
 
         // NOTE: Cannot remove individual values from PostgreSQL enums.
-        // The notification_type_enum additions are left in place (safe — unused values don't cause issues).
+        // The notification_type_enum additions are left in place (safe - unused values don't cause issues).
     }
 }
