@@ -625,9 +625,9 @@ router.post("/deliveries/:orderId/cancel", driverRole, deliveryController.cancel
  *     summary: Update delivery status
  *     description: |
  *       Transition delivery status through the lifecycle:
- *       - **picked_up** — Driver has picked up items from merchant
- *       - **in_transit** — Driver is on the way to customer
- *       - **delivered** — Items delivered to customer
+ *       - **picked_up** - Driver has picked up items from merchant
+ *       - **in_transit** - Driver is on the way to customer
+ *       - **delivered** - Items delivered to customer
  *
  *       Notifies customer and merchant on each transition.
  *       Requires **driver** role.
@@ -750,7 +750,7 @@ router.patch("/deliveries/:orderId/status", driverRole, validate([
  *                     platformFee:
  *                       type: number
  *       400:
- *         description: Cannot complete — not assigned or invalid state
+ *         description: Cannot complete - not assigned or invalid state
  *       404:
  *         description: Order not found
  */

@@ -408,7 +408,7 @@ export class SupabaseController {
                     'GH': 'GHS', 'NG': 'NGN', 'KE': 'KES',
                     'US': 'USD', 'CA': 'CAD', 'IN': 'INR',
                     'GB': 'GBP', 'AU': 'AUD',
-                    // EU — most use EUR; non-euro members use own currency
+                    // EU - most use EUR; non-euro members use own currency
                     'AT': 'EUR', 'BE': 'EUR', 'CY': 'EUR', 'EE': 'EUR',
                     'FI': 'EUR', 'FR': 'EUR', 'DE': 'EUR', 'GR': 'EUR',
                     'IE': 'EUR', 'IT': 'EUR', 'LV': 'EUR', 'LT': 'EUR',
@@ -547,7 +547,7 @@ export class SupabaseController {
                         table: tableName, 
                         tableIndex: currentTableIndex, 
                         totalTables: tables.length,
-                        message: `Table ${tableName} (mapped to ${localTableName}) doesn't exist locally — Skipping`,
+                        message: `Table ${tableName} (mapped to ${localTableName}) doesn't exist locally - Skipping`,
                         rowsMigrated: 0
                     });
                     continue;

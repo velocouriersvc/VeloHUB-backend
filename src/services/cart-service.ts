@@ -68,7 +68,7 @@ export class CartService {
 
     /**
      * Get or create the user's cart, returned as a rich response with product details.
-     * Always fetches directly from Postgres — no Redis cache.
+     * Always fetches directly from Postgres - no Redis cache.
      */
     async getCart(userId: string): Promise<CartResponse> {
         let cart = await this.cartRepo.findOne({
@@ -95,7 +95,7 @@ export class CartService {
     }
 
     /**
-     * @deprecated Use getCart() — Redis cache has been removed.
+     * @deprecated Use getCart() - Redis cache has been removed.
      */
     async getCartFresh(userId: string): Promise<CartResponse> {
         return this.getCart(userId);
@@ -511,7 +511,7 @@ export class CartService {
         }
     }
 
-    // ── Cache (no-op — all reads go directly to Postgres) ──
+    // ── Cache (no-op - all reads go directly to Postgres) ──
 
     async invalidateCache(_userId: string): Promise<void> {
         // No-op: Redis cache removed, all reads go to Postgres directly

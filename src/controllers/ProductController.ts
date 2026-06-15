@@ -15,7 +15,7 @@ export class ProductController {
     // ── Public Endpoints ────────────────────────────────────────────
 
     /**
-     * GET /products/categories — Get available product categories.
+     * GET /products/categories - Get available product categories.
      * Merchants may pass ?includePending=true to also receive their submitted-but-not-yet-approved categories.
      */
     getCategories = async (req: AuthRequest, res: Response) => {
@@ -30,7 +30,7 @@ export class ProductController {
     };
 
     /**
-     * POST /products/categories — Merchant suggests a new category (created inactive, pending admin review).
+     * POST /products/categories - Merchant suggests a new category (created inactive, pending admin review).
      */
     suggestCategory = async (req: AuthRequest, res: Response) => {
         try {
@@ -52,11 +52,11 @@ export class ProductController {
     };
 
     /**
-     * GET /products — List/filter products (public).
+     * GET /products - List/filter products (public).
      */
     getProducts = async (req: AuthRequest, res: Response) => {
         try {
-            const { merchantId, category, search, page, limit, country } = req.query;
+            const { merchantId, category, search, page, limit, country, lat, lng, radius } = req.query;
 
             log.info(`[getProducts] incoming request → category="${category || ''}" search="${search || ''}" merchantId="${merchantId || ''}" country="${country || ''}" page=${page || 1} limit=${limit || 20}`);
 
@@ -67,6 +67,9 @@ export class ProductController {
                 page: page ? Number(page) : undefined,
                 limit: limit ? Number(limit) : undefined,
                 country: country as string,
+                lat: lat !== undefined ? Number(lat) : undefined,
+                lng: lng !== undefined ? Number(lng) : undefined,
+                radiusKm: radius !== undefined ? Number(radius) : undefined,
             });
 
             log.info(`[getProducts] returning ${result.products.length}/${result.total} products for category="${category || 'ALL'}"`);
@@ -79,7 +82,7 @@ export class ProductController {
     };
 
     /**
-     * GET /products/:id — Get a single product with customizations (public).
+     * GET /products/:id - Get a single product with customizations (public).
      */
     getProduct = async (req: AuthRequest, res: Response) => {
         try {
@@ -98,7 +101,7 @@ export class ProductController {
     };
 
     /**
-     * GET /products/popular — Get popular products for a category.
+     * GET /products/popular - Get popular products for a category.
      */
     getPopularProducts = async (req: AuthRequest, res: Response) => {
         try {
@@ -122,7 +125,7 @@ export class ProductController {
     // ── Merchant Endpoints ──────────────────────────────────────────
 
     /**
-     * GET /products/my — Get merchant's own products (includes inactive).
+     * GET /products/my - Get merchant's own products (includes inactive).
      */
     getMyProducts = async (req: AuthRequest, res: Response) => {
         try {
@@ -144,7 +147,7 @@ export class ProductController {
     };
 
     /**
-     * POST /products — Create a new product.
+     * POST /products - Create a new product.
      */
     createProduct = async (req: AuthRequest, res: Response) => {
         try {
@@ -165,13 +168,18 @@ export class ProductController {
 
             return res.status(201).json(product);
         } catch (error) {
-            log.error("Error creating product", { error: (error as Error).message });
-            return res.status(500).json({ message: (error as Error).message || "Internal server error" });
+            const message = (error as Error).message || "Internal server error";
+            // Category-type mismatch (and similar validation errors) are client errors, not 500s.
+            if (/cannot be used for|please choose a|is required/i.test(message)) {
+                return res.status(400).json({ message });
+            }
+            log.error("Error creating product", { error: message });
+            return res.status(500).json({ message });
         }
     };
 
     /**
-     * PUT /products/:id — Update a product.
+     * PUT /products/:id - Update a product.
      */
     updateProduct = async (req: AuthRequest, res: Response) => {
         try {
@@ -197,7 +205,7 @@ export class ProductController {
     };
 
     /**
-     * DELETE /products/:id — Soft-delete a product.
+     * DELETE /products/:id - Soft-delete a product.
      */
     deleteProduct = async (req: AuthRequest, res: Response) => {
         try {
@@ -223,7 +231,7 @@ export class ProductController {
     // ── Image Endpoints ─────────────────────────────────────────────
 
     /**
-     * POST /products/:id/images — Upload a product image.
+     * POST /products/:id/images - Upload a product image.
      */
     uploadImage = async (req: AuthRequest, res: Response) => {
         try {
@@ -261,7 +269,7 @@ export class ProductController {
     };
 
     /**
-     * DELETE /products/:id/images — Remove a product image.
+     * DELETE /products/:id/images - Remove a product image.
      */
     removeImage = async (req: AuthRequest, res: Response) => {
         try {
@@ -296,7 +304,7 @@ export class ProductController {
     // ── Customization Endpoints ─────────────────────────────────────
 
     /**
-     * POST /products/:id/customizations — Add a customization group.
+     * POST /products/:id/customizations - Add a customization group.
      */
     addCustomization = async (req: AuthRequest, res: Response) => {
         try {
@@ -323,7 +331,7 @@ export class ProductController {
     };
 
     /**
-     * PUT /products/customizations/:customizationId — Update customization.
+     * PUT /products/customizations/:customizationId - Update customization.
      */
     updateCustomization = async (req: AuthRequest, res: Response) => {
         try {
@@ -344,7 +352,7 @@ export class ProductController {
     };
 
     /**
-     * DELETE /products/customizations/:customizationId — Delete customization.
+     * DELETE /products/customizations/:customizationId - Delete customization.
      */
     deleteCustomization = async (req: AuthRequest, res: Response) => {
         try {
@@ -367,7 +375,7 @@ export class ProductController {
     // ── Option Endpoints ────────────────────────────────────────────
 
     /**
-     * POST /products/customizations/:customizationId/options — Add an option.
+     * POST /products/customizations/:customizationId/options - Add an option.
      */
     addOption = async (req: AuthRequest, res: Response) => {
         try {
@@ -394,7 +402,7 @@ export class ProductController {
     };
 
     /**
-     * PUT /products/options/:optionId — Update an option.
+     * PUT /products/options/:optionId - Update an option.
      */
     updateOption = async (req: AuthRequest, res: Response) => {
         try {
@@ -415,7 +423,7 @@ export class ProductController {
     };
 
     /**
-     * DELETE /products/options/:optionId — Delete an option.
+     * DELETE /products/options/:optionId - Delete an option.
      */
     deleteOption = async (req: AuthRequest, res: Response) => {
         try {
@@ -438,7 +446,7 @@ export class ProductController {
     // ── Stock Endpoints ─────────────────────────────────────────────
 
     /**
-     * PATCH /products/stock — Bulk update stock quantities.
+     * PATCH /products/stock - Bulk update stock quantities.
      */
     updateStock = async (req: AuthRequest, res: Response) => {
         try {

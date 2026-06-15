@@ -2,7 +2,7 @@ import { AppDataSource } from "../db/data-source";
 import { PlatformSettings } from "../models/platform-settings";
 
 /**
- * VeloHUB Platform Settings — exact client-specified rates.
+ * VeloHUB Platform Settings - exact client-specified rates.
  * UPDATED: April 22, 2026
  *
  * Rider Service Fees:
@@ -50,7 +50,7 @@ const SETTINGS: Partial<PlatformSettings>[] = [
 
         // Services / Bookings
         serviceCommissionRate: 15.00,       // Provider keeps 85%
-        serviceBookingFee: 0.00,            // $0 — free to book
+        serviceBookingFee: 0.00,            // $0 - free to book
         lateCancellationFee: 5.00,
         lateCancellationFeeMax: 10.00,
         cancellationWindowMinutes: 60,      // 1hr before scheduled service
@@ -101,7 +101,7 @@ const SETTINGS: Partial<PlatformSettings>[] = [
         isActive: true,
     },
 
-    // ── Nigeria (NGN) — client-specified custom rates ───────────────
+    // ── Nigeria (NGN) - client-specified custom rates ───────────────
     {
         country: "NG",
         currency: "NGN",
@@ -118,7 +118,7 @@ const SETTINGS: Partial<PlatformSettings>[] = [
         deliveryPerKmFee: 120.00,           // ₦120/km (client specified per-km directly)
         driverDeliveryFeeShare: 75.00,
 
-        // Rides — client-specified Nigeria rates (UPDATED April 22, 2026)
+        // Rides - client-specified Nigeria rates (UPDATED April 22, 2026)
         rideCommissionRate: 15.00,
         riderServiceFee: 400.00,            // ₦400 flat (updated from ₦300)
         maxSurgeMultiplier: 1.80,           // 1.0× – 1.8× max (client specified)
@@ -135,6 +135,154 @@ const SETTINGS: Partial<PlatformSettings>[] = [
         cancellationWindowMinutes: 60,
 
         referralRewardAmount: 2000.00,
+        leaderboardLimit: 10,
+        isGlobalSurgeActive: false,
+        globalSurgeMultiplier: 1.00,
+        isActive: true,
+    },
+
+    // ── Kenya (KES) - competitive Nairobi rates ⚠️ validate before launch ──
+    {
+        country: "KE",
+        currency: "KES",
+        minimumOrderValue: 0,
+
+        defaultCommissionRate: 15.00,
+        defaultServiceFeeRate: 5.00,
+        serviceFeeMaxCap: 650.00,           // ~$5
+        smallOrderFee: 390.00,              // ~$3 if subtotal < ~$15
+        smallOrderThreshold: 2000.00,       // ~$15
+        defaultPickupFeeRate: 10.00,
+        deliveryBaseFee: 100.00,
+        deliveryPerKmFee: 45.00,
+        driverDeliveryFeeShare: 75.00,
+
+        rideCommissionRate: 15.00,
+        riderServiceFee: 50.00,
+        maxSurgeMultiplier: 2.00,
+
+        deliveryTotalCommissionRate: 40.00,
+        deliveryRidePortionRate: 50.00,
+        deliveryServicePortionRate: 50.00,
+
+        serviceCommissionRate: 15.00,
+        serviceBookingFee: 0.00,
+        lateCancellationFee: 130.00,
+        lateCancellationFeeMax: 260.00,
+        cancellationWindowMinutes: 60,
+
+        referralRewardAmount: 650.00,
+        leaderboardLimit: 10,
+        isGlobalSurgeActive: false,
+        globalSurgeMultiplier: 1.00,
+        isActive: true,
+    },
+
+    // ── South Africa (ZAR) - competitive rates ⚠️ validate before launch ──
+    {
+        country: "ZA",
+        currency: "ZAR",
+        minimumOrderValue: 0,
+
+        defaultCommissionRate: 15.00,
+        defaultServiceFeeRate: 5.00,
+        serviceFeeMaxCap: 90.00,            // ~$5
+        smallOrderFee: 55.00,               // ~$3
+        smallOrderThreshold: 270.00,        // ~$15
+        defaultPickupFeeRate: 10.00,
+        deliveryBaseFee: 25.00,
+        deliveryPerKmFee: 8.00,
+        driverDeliveryFeeShare: 75.00,
+
+        rideCommissionRate: 15.00,
+        riderServiceFee: 8.00,
+        maxSurgeMultiplier: 2.00,
+
+        deliveryTotalCommissionRate: 40.00,
+        deliveryRidePortionRate: 50.00,
+        deliveryServicePortionRate: 50.00,
+
+        serviceCommissionRate: 15.00,
+        serviceBookingFee: 0.00,
+        lateCancellationFee: 90.00,
+        lateCancellationFeeMax: 180.00,
+        cancellationWindowMinutes: 60,
+
+        referralRewardAmount: 90.00,
+        leaderboardLimit: 10,
+        isGlobalSurgeActive: false,
+        globalSurgeMultiplier: 1.00,
+        isActive: true,
+    },
+
+    // ── Tanzania (TZS) - competitive Dar es Salaam rates ⚠️ validate ──
+    {
+        country: "TZ",
+        currency: "TZS",
+        minimumOrderValue: 0,
+
+        defaultCommissionRate: 15.00,
+        defaultServiceFeeRate: 5.00,
+        serviceFeeMaxCap: 13000.00,         // ~$5
+        smallOrderFee: 7800.00,             // ~$3
+        smallOrderThreshold: 39000.00,      // ~$15
+        defaultPickupFeeRate: 10.00,
+        deliveryBaseFee: 2500.00,
+        deliveryPerKmFee: 800.00,
+        driverDeliveryFeeShare: 75.00,
+
+        rideCommissionRate: 15.00,
+        riderServiceFee: 700.00,
+        maxSurgeMultiplier: 2.00,
+
+        deliveryTotalCommissionRate: 40.00,
+        deliveryRidePortionRate: 50.00,
+        deliveryServicePortionRate: 50.00,
+
+        serviceCommissionRate: 15.00,
+        serviceBookingFee: 0.00,
+        lateCancellationFee: 13000.00,
+        lateCancellationFeeMax: 26000.00,
+        cancellationWindowMinutes: 60,
+
+        referralRewardAmount: 13000.00,
+        leaderboardLimit: 10,
+        isGlobalSurgeActive: false,
+        globalSurgeMultiplier: 1.00,
+        isActive: true,
+    },
+
+    // ── Uganda (UGX) - competitive Kampala rates ⚠️ validate ──────────
+    {
+        country: "UG",
+        currency: "UGX",
+        minimumOrderValue: 0,
+
+        defaultCommissionRate: 15.00,
+        defaultServiceFeeRate: 5.00,
+        serviceFeeMaxCap: 19000.00,         // ~$5
+        smallOrderFee: 11400.00,            // ~$3
+        smallOrderThreshold: 57000.00,      // ~$15
+        defaultPickupFeeRate: 10.00,
+        deliveryBaseFee: 3500.00,
+        deliveryPerKmFee: 1000.00,
+        driverDeliveryFeeShare: 75.00,
+
+        rideCommissionRate: 15.00,
+        riderServiceFee: 1200.00,
+        maxSurgeMultiplier: 2.00,
+
+        deliveryTotalCommissionRate: 40.00,
+        deliveryRidePortionRate: 50.00,
+        deliveryServicePortionRate: 50.00,
+
+        serviceCommissionRate: 15.00,
+        serviceBookingFee: 0.00,
+        lateCancellationFee: 19000.00,
+        lateCancellationFeeMax: 38000.00,
+        cancellationWindowMinutes: 60,
+
+        referralRewardAmount: 19000.00,
         leaderboardLimit: 10,
         isGlobalSurgeActive: false,
         globalSurgeMultiplier: 1.00,
@@ -218,7 +366,7 @@ const SETTINGS: Partial<PlatformSettings>[] = [
 
 /**
  * Seed platform_settings rows.
- * UPSERTS — existing rows are UPDATED to match the latest config.
+ * UPSERTS - existing rows are UPDATED to match the latest config.
  */
 export async function seedPlatformSettings(alreadyInitialised = false) {
     if (!alreadyInitialised) {
@@ -241,6 +389,19 @@ export async function seedPlatformSettings(alreadyInitialised = false) {
 
     console.log(`✅ platform_settings: upserted ${upserted} rows`);
 
+    // Velo operates in Africa only - deactivate any non-African markets (US/CA/IN/etc.).
+    const AFRICAN_COUNTRIES = ["GH", "NG", "KE", "ZA", "TZ", "UG"];
+    const deactivated = await repo
+        .createQueryBuilder()
+        .update()
+        .set({ isActive: false })
+        .where("country NOT IN (:...countries)", { countries: AFRICAN_COUNTRIES })
+        .andWhere("isActive = true")
+        .execute();
+    if (deactivated.affected) {
+        console.log(`✅ platform_settings: deactivated ${deactivated.affected} non-African market(s)`);
+    }
+
     if (!alreadyInitialised) {
         await AppDataSource.destroy();
     }
@@ -248,6 +409,6 @@ export async function seedPlatformSettings(alreadyInitialised = false) {
 
 if (require.main === module) {
     seedPlatformSettings(false)
-        .then(() => console.log("Done — platform_settings seeded."))
+        .then(() => console.log("Done - platform_settings seeded."))
         .catch(console.error);
 }

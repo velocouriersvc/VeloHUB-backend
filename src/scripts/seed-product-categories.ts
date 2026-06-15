@@ -72,7 +72,7 @@ export async function seedProductCategories(alreadyInitialised = false) {
 
 if (require.main === module) {
     seedProductCategories(false)
-        .then(() => console.log("Done — product_categories seeded."))
+        .then(() => console.log("Done - product_categories seeded."))
         .catch((err) => {
             console.error(err);
             process.exit(1);

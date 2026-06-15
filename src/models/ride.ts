@@ -12,6 +12,7 @@ export enum RideType {
 
 export enum PaymentMethod {
     MOMO = "momo",
+    CARD = "card",
     CASH = "cash",
     WALLET = "wallet",
 }

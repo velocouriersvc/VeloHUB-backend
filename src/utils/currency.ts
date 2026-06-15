@@ -1,9 +1,10 @@
 /**
- * Currency helpers — symbol map and formatting utility
+ * Currency helpers - symbol map and formatting utility
  */
 
 const CURRENCY_SYMBOLS: Record<string, string> = {
     GHS: "GH₵", NGN: "₦",  KES: "KSh", ZAR: "R",
+    TZS: "TSh",  UGX: "USh",
     USD: "$",    CAD: "C$", AUD: "A$",
     GBP: "£",    EUR: "€",  INR: "₹",
     // EU non-euro members
@@ -35,19 +36,20 @@ export function getCurrencySymbol(currencyCode: string): string {
 
 /**
  * Map a country code to its default currency.
- * Kept here as a quick fallback — the canonical source is `platform_settings`.
+ * Kept here as a quick fallback - the canonical source is `platform_settings`.
  */
 const COUNTRY_CURRENCY: Record<string, string> = {
     GH: "GHS", NG: "NGN", KE: "KES", ZA: "ZAR",
+    TZ: "TZS", UG: "UGX",
     US: "USD",  CA: "CAD", AU: "AUD",
     GB: "GBP",  IN: "INR",
-    // EU — euro members
+    // EU - euro members
     AT: "EUR", BE: "EUR", CY: "EUR", EE: "EUR",
     FI: "EUR", FR: "EUR", DE: "EUR", GR: "EUR",
     HR: "EUR", IE: "EUR", IT: "EUR", LV: "EUR",
     LT: "EUR", LU: "EUR", MT: "EUR", NL: "EUR",
     PT: "EUR", SK: "EUR", SI: "EUR", ES: "EUR",
-    // EU — non-euro members
+    // EU - non-euro members
     BG: "BGN", CZ: "CZK", DK: "DKK",
     HU: "HUF", PL: "PLN", RO: "RON", SE: "SEK",
 };

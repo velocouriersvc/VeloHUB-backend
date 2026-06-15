@@ -15,7 +15,7 @@ import { BuyerProfile } from "../../models/buyer-profile";
 
 const log = createServiceLogger("PaymentService");
 
-// Fallbacks — used only when platform_settings lookup fails
+// Fallbacks - used only when platform_settings lookup fails
 const DEFAULT_PLATFORM_COMMISSION = 0.2;
 const DEFAULT_DRIVER_SHARE = 0.8;
 
@@ -202,7 +202,7 @@ export class PaymentService {
                 return this.processMomoPayment(saved, reference, params, provider, currency);
 
             case PaymentMethodType.CARD:
-                return this.processCardPayment(saved, reference, params, currency);
+                return this.processCardViaPaystack(saved, reference, params, provider, currency);
 
             case PaymentMethodType.WALLET:
                 return this.processWalletPayment(saved, reference, userId, amount);
@@ -271,7 +271,7 @@ export class PaymentService {
                 return this.processMomoPayment(saved, reference, params, provider, currency);
 
             case PaymentMethodType.CARD:
-                return this.processCardPayment(saved, reference, params, currency);
+                return this.processCardViaPaystack(saved, reference, params, provider, currency);
 
             case PaymentMethodType.WALLET:
                 return this.processWalletPayment(saved, reference, userId, amount);
@@ -336,7 +336,7 @@ export class PaymentService {
                 return this.processMomoPayment(saved, reference, params, provider, currency);
 
             case PaymentMethodType.CARD:
-                return this.processCardPayment(saved, reference, params, currency);
+                return this.processCardViaPaystack(saved, reference, params, provider, currency);
 
             case PaymentMethodType.WALLET:
                 return this.processWalletPayment(saved, reference, userId, amount);
@@ -392,7 +392,7 @@ export class PaymentService {
                 return this.processMomoPayment(saved, reference, params, provider, currency);
 
             case PaymentMethodType.CARD:
-                return this.processCardPayment(saved, reference, params, currency);
+                return this.processCardViaPaystack(saved, reference, params, provider, currency);
 
             case PaymentMethodType.WALLET:
                 return this.processWalletPayment(saved, reference, userId, amount);
@@ -458,9 +458,63 @@ export class PaymentService {
     }
 
     /**
-     * Card payment via Stripe PaymentIntent.
-     * Creates a PaymentIntent and returns the clientSecret so the frontend
-     * can confirm via the Stripe Payment Sheet.
+     * Card (and redirect) payment via Paystack transaction initialize.
+     * Returns an authorization URL the client opens to complete payment.
+     * This replaces Stripe for card payments (Paystack-only).
+     */
+    private async processCardViaPaystack(
+        payment: Payment,
+        reference: string,
+        params: { email?: string; phoneNumber?: string; amount: number },
+        provider: PaymentProvider,
+        currency: string
+    ): Promise<PaymentResult> {
+        if (!provider.initiateCardPayment) {
+            throw new Error("Card payments are not supported by the active provider");
+        }
+        const email = params.email
+            || (params.phoneNumber ? `${params.phoneNumber}@velo.app` : "customer@velo.app");
+
+        const result = await provider.initiateCardPayment({
+            amount: params.amount,
+            currency,
+            email,
+            reference,
+            metadata: {
+                rideId: payment.rideId,
+                orderId: payment.orderId,
+                paymentId: payment.id,
+            },
+        });
+
+        payment.provider = provider.name;
+        payment.providerRef = result.providerRef;
+        payment.providerStatus = result.success ? "pending" : "failed";
+        if (!result.success) {
+            payment.status = PaymentRecordStatus.FAILED;
+            log.warn("Card payment initiation failed", { paymentId: payment.id });
+            paymentEventsTotal.inc({ method: "card", status: "failed" });
+        } else {
+            log.info("Card payment initiated via Paystack", { paymentId: payment.id, reference });
+            paymentEventsTotal.inc({ method: "card", status: "pending" });
+        }
+        await this.paymentRepo.save(payment);
+
+        return {
+            success: result.success,
+            paymentId: payment.id,
+            reference,
+            status: payment.status,
+            authorizationUrl: result.authorizationUrl,
+            message: result.success
+                ? "Complete your payment in the page that opens."
+                : "Payment initiation failed. Please try again.",
+        };
+    }
+
+    /**
+     * Card payment via Stripe PaymentIntent. (Deprecated: Paystack-only now.)
+     * Kept for reference; no longer routed to.
      */
     private async processCardPayment(
         payment: Payment,
@@ -510,7 +564,7 @@ export class PaymentService {
     }
 
     /**
-     * Wallet payment — instant debit
+     * Wallet payment - instant debit
      */
     private async processWalletPayment(
         payment: Payment,
@@ -523,7 +577,7 @@ export class PaymentService {
             payment.status = PaymentRecordStatus.FAILED;
             payment.providerStatus = "insufficient_balance";
             await this.paymentRepo.save(payment);
-            log.warn("Wallet payment failed — insufficient balance", { paymentId: payment.id });
+            log.warn("Wallet payment failed - insufficient balance", { paymentId: payment.id });
             paymentEventsTotal.inc({ method: "wallet", status: "failed" });
 
             return {
@@ -562,7 +616,7 @@ export class PaymentService {
     }
 
     /**
-     * Cash payment — just mark as pending, driver/merchant collects later
+     * Cash payment - just mark as pending, driver/merchant collects later
      */
     private async processCashPayment(
         payment: Payment,
@@ -579,7 +633,7 @@ export class PaymentService {
             paymentId: payment.id,
             reference,
             status: PaymentRecordStatus.PENDING,
-            message: "Cash payment — pay after service",
+            message: "Cash payment - pay after service",
         };
     }
 

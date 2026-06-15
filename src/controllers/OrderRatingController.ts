@@ -11,7 +11,7 @@ export class OrderRatingController {
     // ── Rate Order ──────────────────────────────────────────────────
 
     /**
-     * POST /ratings/order — Rate a completed marketplace order.
+     * POST /ratings/order - Rate a completed marketplace order.
      */
     rateOrder = async (req: AuthRequest, res: Response) => {
         try {
@@ -73,7 +73,7 @@ export class OrderRatingController {
     // ── Get Order Rating ────────────────────────────────────────────
 
     /**
-     * GET /ratings/order/:orderId — Get rating for a specific order.
+     * GET /ratings/order/:orderId - Get rating for a specific order.
      */
     getOrderRating = async (req: AuthRequest, res: Response) => {
         try {
@@ -92,7 +92,7 @@ export class OrderRatingController {
     // ── Merchant Reviews ────────────────────────────────────────────
 
     /**
-     * GET /ratings/merchant/:merchantId — Public reviews for a merchant.
+     * GET /ratings/merchant/:merchantId - Public reviews for a merchant.
      */
     getMerchantRatings = async (req: AuthRequest, res: Response) => {
         try {

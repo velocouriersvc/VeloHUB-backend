@@ -15,7 +15,7 @@ async function seed() {
         for (const settings of allSettings) {
             console.log(`Updating settings for country: ${settings.country}`);
 
-            // Nigeria has a client-specified ride commission rate of 15% — do not overwrite.
+            // Nigeria has a client-specified ride commission rate of 15% - do not overwrite.
             if (settings.country !== "NG") {
                 settings.rideCommissionRate = 20.00;
             }

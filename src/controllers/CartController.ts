@@ -14,7 +14,7 @@ export class CartController {
 
     
     /**
-     * GET /cart — Get the user's cart with items and merchant info.
+     * GET /cart - Get the user's cart with items and merchant info.
      */
     getCart = async (req: AuthRequest, res: Response) => {
         try {
@@ -32,7 +32,7 @@ export class CartController {
     // ── Add Item ────────────────────────────────────────────────────
 
     /**
-     * POST /cart/add — Add an item to the cart.
+     * POST /cart/add - Add an item to the cart.
      */
     addItem = async (req: AuthRequest, res: Response) => {
         try {
@@ -95,7 +95,7 @@ export class CartController {
     // ── Update Quantity ─────────────────────────────────────────────
 
     /**
-     * PATCH /cart/items/:itemId — Update quantity of a cart item.
+     * PATCH /cart/items/:itemId - Update quantity of a cart item.
      */
     updateItemQuantity = async (req: AuthRequest, res: Response) => {
         try {
@@ -135,7 +135,7 @@ export class CartController {
     // ── Remove Item ─────────────────────────────────────────────────
 
     /**
-     * DELETE /cart/items/:itemId — Remove an item from the cart.
+     * DELETE /cart/items/:itemId - Remove an item from the cart.
      */
     removeItem = async (req: AuthRequest, res: Response) => {
         try {
@@ -160,7 +160,7 @@ export class CartController {
     // ── Clear Cart ──────────────────────────────────────────────────
 
     /**
-     * DELETE /cart — Clear entire cart.
+     * DELETE /cart - Clear entire cart.
      */
     clearCart = async (req: AuthRequest, res: Response) => {
         try {

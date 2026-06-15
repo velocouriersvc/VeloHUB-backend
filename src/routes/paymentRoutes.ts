@@ -13,8 +13,8 @@ const paymentController = new PaymentController();
  *     tags: [Payments]
  *     summary: Paystack webhook
  *     description: |
- *       Called by Paystack when a payment event occurs. **No API key needed** — verified by `x-paystack-signature` header.
- *       You don't call this manually — Paystack sends events here automatically.
+ *       Called by Paystack when a payment event occurs. **No API key needed** - verified by `x-paystack-signature` header.
+ *       You don't call this manually - Paystack sends events here automatically.
  *     security: []
  *     parameters:
  *       - name: x-paystack-signature
@@ -36,7 +36,7 @@ router.post("/webhook", paymentController.handleWebhook);
  *     tags: [Payments]
  *     summary: Stripe webhook
  *     description: |
- *       Called by Stripe when a payment event occurs. **No API key needed** — verified by `stripe-signature` header.
+ *       Called by Stripe when a payment event occurs. **No API key needed** - verified by `stripe-signature` header.
  *       Handles payment_intent.succeeded and payment_intent.payment_failed events.
  *     security: []
  *     parameters:

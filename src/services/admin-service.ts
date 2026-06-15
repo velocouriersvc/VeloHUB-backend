@@ -360,7 +360,7 @@ export class AdminService {
                     .getRawMany(),
             ]);
 
-        // Pending payouts — wallet transactions with payout metadata still pending
+        // Pending payouts - wallet transactions with payout metadata still pending
         const pendingPayouts = await this.walletTxRepo
             .createQueryBuilder("tx")
             .where("tx.metadata->>'type' = :type", { type: "payout" })
@@ -1560,7 +1560,7 @@ export class AdminService {
             await this.walletService.credit(
                 tx.wallet.userId,
                 Number(tx.amount),
-                `Payout rejected — refund: ${tx.reference}`,
+                `Payout rejected - refund: ${tx.reference}`,
                 {
                     type: "payout_refund",
                     originalPayoutId: tx.id,
@@ -1731,7 +1731,7 @@ export class AdminService {
     }
 
     /**
-     * Comprehensive financial overview — real data from orders + rides + payouts
+     * Comprehensive financial overview - real data from orders + rides + payouts
      * Used by admin Earnings/Revenue page to show actual platform earnings
      */
     async getFinancialOverview(from?: string, to?: string) {

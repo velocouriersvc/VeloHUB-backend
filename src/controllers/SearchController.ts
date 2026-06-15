@@ -9,7 +9,7 @@ export class SearchController {
     private searchService = new SearchService();
 
     /**
-     * GET /search — Unified search for merchants and products.
+     * GET /search - Unified search for merchants and products.
      */
     search = async (req: AuthRequest, res: Response) => {
         try {

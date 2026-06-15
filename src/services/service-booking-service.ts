@@ -46,7 +46,7 @@ export class ServiceBookingService {
         });
         const currency = settings?.currency || "GHS";
 
-        // 2. Conflict check — reject if merchant already has an active booking overlapping this slot
+        // 2. Conflict check - reject if merchant already has an active booking overlapping this slot
         if (input.preferredDate && input.preferredTimeSlot) {
             const bookingDate = new Date(input.preferredDate).toISOString().slice(0, 10);
             const [reqStart, reqEnd] = input.preferredTimeSlot.split('-').map(t => t.trim());
@@ -76,7 +76,7 @@ export class ServiceBookingService {
             }
         }
 
-        // 2b. Duplicate check — prevent same customer from re-booking the same slot
+        // 2b. Duplicate check - prevent same customer from re-booking the same slot
         if (input.preferredDate && input.preferredTimeSlot) {
             const bookingDate = new Date(input.preferredDate).toISOString().slice(0, 10);
             const duplicate = await this.bookingRepo
@@ -137,7 +137,7 @@ export class ServiceBookingService {
         });
 
         if (!paymentResult.success) {
-            // Payment initiation failed — remove the booking
+            // Payment initiation failed - remove the booking
             await this.bookingRepo.delete(savedBooking.id);
             log.warn("Service booking payment failed, removed booking", {
                 bookingId: savedBooking.id,
@@ -155,7 +155,7 @@ export class ServiceBookingService {
             { bookingId: savedBooking.id, bookingNumber }
         );
 
-        // 6. Notify customer — booking confirmation
+        // 6. Notify customer - booking confirmation
         await this.notificationService.notify(
             input.customerId,
             NotificationType.SERVICE_REQUESTED,
@@ -211,7 +211,7 @@ export class ServiceBookingService {
             });
 
             if (hasConflict) {
-                throw new Error("Cannot accept — another booking already occupies this time slot.");
+                throw new Error("Cannot accept - another booking already occupies this time slot.");
             }
         }
 

@@ -129,7 +129,7 @@ app.get("/api/v1/db-viewer.html", (_req, res) => {
 });
 
 
-// Root — Dashboard
+// Root - Dashboard
 app.get("/", (_req: Request, res: Response) => {
   const uptime = Math.floor(process.uptime());
   const hours = Math.floor(uptime / 3600);
@@ -169,7 +169,7 @@ app.get("/", (_req: Request, res: Response) => {
 <body>
   <div class="container">
     <div class="logo">⚡ Velo API</div>
-    <div class="subtitle">Ride-hailing & delivery backend — v1.0.0</div>
+    <div class="subtitle">Ride-hailing & delivery backend - v1.0.0</div>
 
     <div class="card">
       <h3>Server</h3>
@@ -253,7 +253,7 @@ AppDataSource.initialize()
       logger.warn("MinIO bucket init failed (uploads may not work)", { error: (err as Error).message });
     }
 
-    // Seed essential lookup tables (idempotent — skips existing rows)
+    // Seed essential lookup tables (idempotent - skips existing rows)
     await runSeeds();
 
     // Initialise Socket.IO on the same HTTP server

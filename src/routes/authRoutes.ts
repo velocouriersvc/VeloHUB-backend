@@ -110,6 +110,10 @@ router.post("/request-otp", authController.requestOTP);
  */
 router.post("/verify-otp", authController.verifyOTP);
 
+// Email + password auth (new KYC registration + login)
+router.post("/register", authController.register);
+router.post("/login", authController.login);
+
 /**
  * @openapi
  * /auth/apple-signin:
@@ -243,7 +247,7 @@ router.post("/identity-session", requireRole(["driver", "merchant", "buyer"]), i
 
 /**
  * GET /auth/platform-config/:country
- * Public endpoint — returns service availability flags for the given country.
+ * Public endpoint - returns service availability flags for the given country.
  */
 router.get("/platform-config/:country", async (req, res) => {
     try {

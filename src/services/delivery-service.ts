@@ -14,7 +14,7 @@ const log = createServiceLogger("DeliveryService");
 
 // Redis keys
 const DELIVERY_LOCK_KEY = (orderId: string) => `delivery:lock:${orderId}`;
-const DELIVERY_LOCK_TTL = 15; // seconds — prevent double-accept
+const DELIVERY_LOCK_TTL = 15; // seconds - prevent double-accept
 const DELIVERY_CODE_ATTEMPTS_KEY = (orderId: string) => `delivery:code:attempts:${orderId}`;
 const MAX_CODE_ATTEMPTS = 5;
 const CODE_ATTEMPTS_TTL = 3600;
@@ -40,7 +40,7 @@ export interface AvailableDelivery {
 // ── Service ─────────────────────────────────────────────────────────
 
 /**
- * DeliveryService — Driver-facing delivery operations.
+ * DeliveryService - Driver-facing delivery operations.
  *
  * - List available deliveries nearby
  * - Accept a delivery
@@ -58,7 +58,7 @@ export class DeliveryService {
     // ── Available Deliveries ────────────────────────────────────────
 
     /**
-     * Get available deliveries — orders that are READY_FOR_PICKUP + delivery type.
+     * Get available deliveries - orders that are READY_FOR_PICKUP + delivery type.
      * Optionally filters by driver's lat/lng proximity (simple distance filter).
      */
     async getAvailableDeliveries(
@@ -73,7 +73,7 @@ export class DeliveryService {
             .where("order.deliveryType = :deliveryType", { deliveryType: DeliveryType.DELIVERY })
             .andWhere("order.status = :status", { status: OrderStatus.READY_FOR_DELIVERY })
             .andWhere("order.driverId IS NULL")
-            .orderBy("order.createdAt", "ASC"); // oldest first — FIFO
+            .orderBy("order.createdAt", "ASC"); // oldest first - FIFO
 
         const orders = await qb.getMany();
 
@@ -102,7 +102,7 @@ export class DeliveryService {
                 // Filter by radius
                 const radiusKm = params.radiusKm || 15;
                 if (estimatedDistanceKm > radiusKm) {
-                    continue; // too far — skip
+                    continue; // too far - skip
                 }
             }
 
@@ -152,7 +152,7 @@ export class DeliveryService {
             }
 
             if (order.status !== OrderStatus.READY_FOR_DELIVERY) {
-                throw new Error(`Cannot accept delivery — order status is "${order.status}"`);
+                throw new Error(`Cannot accept delivery - order status is "${order.status}"`);
             }
 
             if (order.driverId) {
@@ -217,7 +217,7 @@ export class DeliveryService {
         }
 
         if (order.status !== OrderStatus.DRIVER_ASSIGNED) {
-            throw new Error(`Cannot cancel assignment — order status is "${order.status}". You can only cancel before pickup.`);
+            throw new Error(`Cannot cancel assignment - order status is "${order.status}". You can only cancel before pickup.`);
         }
 
         const fromStatus = order.status;
@@ -364,7 +364,7 @@ export class DeliveryService {
         // Must be in DELIVERED or IN_TRANSIT status
         if (order.status !== OrderStatus.DELIVERED && order.status !== OrderStatus.IN_TRANSIT) {
             throw new Error(
-                `Cannot complete delivery — order status is "${order.status}". Must be "delivered" or "in_transit".`
+                `Cannot complete delivery - order status is "${order.status}". Must be "delivered" or "in_transit".`
             );
         }
 
@@ -416,7 +416,7 @@ export class DeliveryService {
         if (!order.deliveryCode) throw new Error("This order has no delivery code");
 
         if (order.status !== OrderStatus.IN_TRANSIT && order.status !== OrderStatus.READY_FOR_DELIVERY) {
-            throw new Error(`Cannot verify delivery code — order status is "${order.status}"`);
+            throw new Error(`Cannot verify delivery code - order status is "${order.status}"`);
         }
 
         const key = DELIVERY_CODE_ATTEMPTS_KEY(orderId);

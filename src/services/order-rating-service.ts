@@ -23,7 +23,7 @@ export interface CreateOrderRatingInput {
 // ── Service ─────────────────────────────────────────────────────────
 
 /**
- * OrderRatingService — Handles post-order ratings for merchants and drivers.
+ * OrderRatingService - Handles post-order ratings for merchants and drivers.
  *
  * - Only the customer who placed the order can rate it.
  * - Merchant rating is always required (1-5).
@@ -39,7 +39,7 @@ export class OrderRatingService {
     private notificationService = new NotificationService();
 
     /**
-     * Rate a completed order — merchant + optional driver rating.
+     * Rate a completed order - merchant + optional driver rating.
      */
     async rateOrder(customerId: string, input: CreateOrderRatingInput): Promise<OrderRating> {
         const { orderId, merchantRating, merchantComment, driverRating, driverComment } = input;
@@ -75,7 +75,7 @@ export class OrderRatingService {
                 throw new Error("Driver rating must be between 1 and 5");
             }
             if (!order.driverId) {
-                throw new Error("This order did not have a delivery driver — cannot rate driver");
+                throw new Error("This order did not have a delivery driver - cannot rate driver");
             }
         }
 
@@ -122,7 +122,7 @@ export class OrderRatingService {
             }
         );
 
-        // 9. If driver was rated, update driver stats (future — DriverStats entity for deliveries)
+        // 9. If driver was rated, update driver stats (future - DriverStats entity for deliveries)
         // For now, notify the driver
         if (order.driverId && driverRating) {
             await this.notificationService.notify(

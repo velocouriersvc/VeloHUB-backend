@@ -89,7 +89,7 @@ export class ProfileService {
 
             await queryRunner.commitTransaction();
 
-            // Notify user — profile created successfully
+            // Notify user - profile created successfully
             await this.notificationService.notify(
                 userId,
                 NotificationType.WELCOME,
@@ -168,7 +168,7 @@ export class ProfileService {
 
             await queryRunner.commitTransaction();
 
-            // Notify user — driver profile submitted for review
+            // Notify user - driver profile submitted for review
             await this.notificationService.notify(
                 userId,
                 NotificationType.PROFILE_CREATED,
@@ -245,7 +245,7 @@ export class ProfileService {
 
             await queryRunner.commitTransaction();
 
-            // Notify user — merchant profile submitted for review
+            // Notify user - merchant profile submitted for review
             await this.notificationService.notify(
                 userId,
                 NotificationType.PROFILE_CREATED,

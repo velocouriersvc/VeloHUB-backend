@@ -28,7 +28,7 @@ export class AddMultiCountrySupport1741776000000 implements MigrationInterface {
             ALTER TABLE "vehicle_pricing"
             DROP CONSTRAINT IF EXISTS "UQ_vehicle_pricing_vehicleType"
         `);
-        // TypeORM may have named it differently — try the auto-generated name too
+        // TypeORM may have named it differently - try the auto-generated name too
         await queryRunner.query(`
             DROP INDEX IF EXISTS "UQ_vehicle_pricing_vehicleType"
         `);
@@ -57,7 +57,7 @@ export class AddMultiCountrySupport1741776000000 implements MigrationInterface {
             ADD COLUMN IF NOT EXISTS "currency" VARCHAR(3) NOT NULL DEFAULT 'GHS'
         `);
 
-        // ── Payments — add CARD to enum ──
+        // ── Payments - add CARD to enum ──
         await queryRunner.query(`
             ALTER TYPE "payment_method_type_enum"
             ADD VALUE IF NOT EXISTS 'card'
@@ -74,7 +74,7 @@ export class AddMultiCountrySupport1741776000000 implements MigrationInterface {
         // ── Remove country from surge_rules ──
         await queryRunner.query(`ALTER TABLE "surge_rules" DROP COLUMN IF EXISTS "country"`);
 
-        // ── Vehicle Pricing — revert ──
+        // ── Vehicle Pricing - revert ──
         await queryRunner.query(`
             ALTER TABLE "vehicle_pricing"
             DROP CONSTRAINT IF EXISTS "UQ_vehicle_pricing_type_country"

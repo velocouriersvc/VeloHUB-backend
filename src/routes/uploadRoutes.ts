@@ -43,12 +43,12 @@ router.use(apiKeyMiddleware);
  *               file:
  *                 type: string
  *                 format: binary
- *                 description: The file to upload (max 10 MB). Allowed — JPEG, PNG, WebP, HEIC, PDF.
+ *                 description: The file to upload (max 10 MB). Allowed - JPEG, PNG, WebP, HEIC, PDF.
  *               category:
  *                 type: string
  *                 enum: [id-cards, licenses, registration, avatars, documents]
  *                 example: id-cards
- *                 description: Upload category — determines folder structure in storage
+ *                 description: Upload category - determines folder structure in storage
  *               phoneNumber:
  *                 type: string
  *                 example: "+233501234567"

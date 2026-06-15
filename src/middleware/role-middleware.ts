@@ -125,7 +125,7 @@ const getUserFromRequest = async (req: AuthRequest): Promise<UserAuthResult> => 
     return { error: { status: 400, message: "phoneNumber required in body or x-user-phone header" } };
   }
 
-  // Apple Sign-In users have no phone number — their UUID is stored as the auth identifier
+  // Apple Sign-In users have no phone number - their UUID is stored as the auth identifier
   const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
   if (UUID_REGEX.test(phoneNumber)) {
     const userRepository = AppDataSource.getRepository(User);

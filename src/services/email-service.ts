@@ -2,12 +2,12 @@ import * as net from 'net';
 import * as tls from 'tls';
 
 /* ─────────────────────────────────────────────
- *  EmailService — lightweight SMTP client
+ *  EmailService - lightweight SMTP client
  *
  *  Sends email via Postfix (port 25, no auth) when running in K8s,
  *  or via an authenticated SMTP relay (Gmail, Brevo, etc.).
  *
- *  Zero external dependencies — uses raw TCP sockets.
+ *  Zero external dependencies - uses raw TCP sockets.
  *  If you prefer nodemailer, swap the `send()` implementation.
  *
  *  Env vars (injected from ConfigMap / Secret):
@@ -106,7 +106,7 @@ export class EmailService {
         if (!cfg.host) {
             if (process.env.NODE_ENV === 'development') {
                 console.log('--------------------------------------------------');
-                console.log('📧 [EmailService] DEVELOPMENT MODE — SIMULATING SEND');
+                console.log('📧 [EmailService] DEVELOPMENT MODE - SIMULATING SEND');
                 console.log(`To: ${options.to}`);
                 console.log(`Subject: ${options.subject}`);
                 if (hasAttachments) {
@@ -115,7 +115,7 @@ export class EmailService {
                 console.log('--------------------------------------------------');
                 return true;
             }
-            console.warn('[EmailService] SMTP_HOST not set — skipping email');
+            console.warn('[EmailService] SMTP_HOST not set - skipping email');
             return false;
         }
 
@@ -238,7 +238,7 @@ export class EmailService {
     ): Promise<boolean> {
         return this.send({
             to,
-            subject: `Order Confirmed — #${orderId}`,
+            subject: `Order Confirmed - #${orderId}`,
             html: `
                 <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto;">
                     <h2 style="color: #2563eb;">Velo Courier</h2>
@@ -259,7 +259,7 @@ export class EmailService {
     ): Promise<boolean> {
         return this.send({
             to,
-            subject: `Driver Assigned — ${driverName}`,
+            subject: `Driver Assigned - ${driverName}`,
             html: `
                 <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto;">
                     <h2 style="color: #2563eb;">Velo Courier</h2>
@@ -279,7 +279,7 @@ export class EmailService {
     ): Promise<boolean> {
         return this.send({
             to,
-            subject: `Delivery Complete — #${orderId}`,
+            subject: `Delivery Complete - #${orderId}`,
             html: `
                 <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto;">
                     <h2 style="color: #2563eb;">Velo Courier</h2>
@@ -322,7 +322,7 @@ export class EmailService {
                     <p>Your account has been created. You can now book rides, order from merchants, and more.</p>
                     <p>If you have any questions, reply to this email or contact support.</p>
                     <p style="color: #6b7280; font-size: 12px; margin-top: 24px;">
-                        — The Velo Courier Team
+                        - The Velo Courier Team
                     </p>
                 </div>
             `,

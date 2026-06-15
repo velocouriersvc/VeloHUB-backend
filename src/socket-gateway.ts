@@ -28,13 +28,13 @@ export function initSocketGateway(httpServer: HttpServer): Server {
 
     const locationService = new RedisLocationService();
 
-    // ── /drivers namespace — used by driver apps ──
+    // ── /drivers namespace - used by driver apps ──
     const driversNs = io.of("/drivers");
 
     driversNs.on("connection", (socket: Socket) => {
         const driverId = socket.handshake.query.driverId as string;
         if (!driverId) {
-            log.warn("Driver socket connected without driverId — disconnecting");
+            log.warn("Driver socket connected without driverId - disconnecting");
             socket.disconnect(true);
             return;
         }
@@ -89,11 +89,11 @@ export function initSocketGateway(httpServer: HttpServer): Server {
 
         socket.on("disconnect", async () => {
             log.info("Driver disconnected", { driverId, socketId: socket.id });
-            // Don't remove location immediately — let TTL handle it
+            // Don't remove location immediately - let TTL handle it
         });
     });
 
-    // ── /rides namespace — used by customer apps ──
+    // ── /rides namespace - used by customer apps ──
     const ridesNs = io.of("/rides");
 
     ridesNs.on("connection", (socket: Socket) => {

@@ -24,7 +24,7 @@ const anyRole = requireRole(["buyer", "driver", "merchant", "admin"]);
  *   get:
  *     tags: [Products]
  *     summary: Get product categories
- *     description: Returns a list of available product categories. Public — any authenticated role.
+ *     description: Returns a list of available product categories. Public - any authenticated role.
  *     security:
  *       - ApiKeyAuth: []
  *     responses:
@@ -80,7 +80,7 @@ router.post("/categories", merchantRole, productController.suggestCategory);
  *   get:
  *     tags: [Products]
  *     summary: List products
- *     description: Returns a paginated, filterable list of active products. Public — any authenticated role.
+ *     description: Returns a paginated, filterable list of active products. Public - any authenticated role.
  *     security:
  *       - ApiKeyAuth: []
  *     parameters:
@@ -127,7 +127,7 @@ router.get("/", productController.getProducts);
  *   get:
  *     tags: [Products]
  *     summary: Get popular products for a category
- *     description: Returns the highest-ordered products for a specified category. Public — any authenticated role.
+ *     description: Returns the highest-ordered products for a specified category. Public - any authenticated role.
  *     security:
  *       - ApiKeyAuth: []
  *     parameters:

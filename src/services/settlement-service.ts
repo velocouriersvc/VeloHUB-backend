@@ -55,7 +55,7 @@ export type SettlementType =
 // ── Service ─────────────────────────────────────────────────────────
 
 /**
- * SettlementService — Handles all 4 settlement flows:
+ * SettlementService - Handles all 4 settlement flows:
  *
  * 1. Cash + Delivery:   Driver collects cash → debit driver wallet, credit merchant wallet
  * 2. Cash + Pickup:     Merchant collects cash → debit merchant wallet (platform fee only)
@@ -80,7 +80,7 @@ export class SettlementService {
     // ── Main Settlement Dispatcher ──────────────────────────────────
 
     /**
-     * Settle an order — called when:
+     * Settle an order - called when:
      *  - Pickup orders: merchant verifies pickup code (customer picks up) OR merchant marks self-pickup complete
      *  - Delivery orders: driver confirms delivery
      *
@@ -223,7 +223,7 @@ export class SettlementService {
     // ── Ride Settlement Dispatcher ──────────────────────────────────
 
     /**
-     * Settle a ride — called when driver confirms completion.
+     * Settle a ride - called when driver confirms completion.
      */
     async settleRide(
         rideId: string,
@@ -455,7 +455,7 @@ export class SettlementService {
     // ── Flow 1: Cash + Delivery ─────────────────────────────────────
     //
     // Driver collected cash from customer.
-    //  • DEBIT driver.wallet → (merchantAmount + platformFee) — driver owes platform + merchant
+    //  • DEBIT driver.wallet → (merchantAmount + platformFee) - driver owes platform + merchant
     //  • CREDIT merchant.wallet → merchantAmount
     //  • Platform keeps platformFee (already deducted from driver)
 
@@ -495,7 +495,7 @@ export class SettlementService {
         let driverDebited = false;
         let merchantCredited = false;
 
-        // Debit driver — they owe (merchantEarnings + platformFee) from the cash collected
+        // Debit driver - they owe (merchantEarnings + platformFee) from the cash collected
         if (order.driverId && driverOwes > 0) {
             try {
                 await this.walletService.debit(
@@ -511,7 +511,7 @@ export class SettlementService {
                     amount: driverOwes,
                     error: (err as Error).message,
                 });
-                // Don't fail settlement — flag it for admin review
+                // Don't fail settlement - flag it for admin review
             }
         }
 
@@ -570,7 +570,7 @@ export class SettlementService {
 
         let merchantDebited = false;
 
-        // Debit merchant — they owe platform fee from the cash they collected
+        // Debit merchant - they owe platform fee from the cash they collected
         if (platformFee > 0) {
             try {
                 await this.walletService.debit(
@@ -653,7 +653,7 @@ export class SettlementService {
             merchantCredited = true;
         }
 
-        // Credit driver (their share of delivery fee — default 75%)
+        // Credit driver (their share of delivery fee - default 75%)
         const driverDeliveryShare = Number(settings?.driverDeliveryFeeShare || 75) / 100;
         const driverDeliveryEarnings = Math.round(deliveryFee * driverDeliveryShare * 100) / 100;
 
@@ -734,7 +734,7 @@ export class SettlementService {
         settlement: SettlementResult,
         currency: string
     ): Promise<void> {
-        // Notify customer — order completed
+        // Notify customer - order completed
         await this.notificationService.notify(
             order.customerId,
             NotificationType.ORDER_COMPLETED,
@@ -743,7 +743,7 @@ export class SettlementService {
             { orderId: order.id, orderNumber: order.orderNumber, status: OrderStatus.COMPLETED }
         );
 
-        // Notify merchant — earnings credited
+        // Notify merchant - earnings credited
         if (settlement.merchantWalletCredited) {
             await this.notificationService.notify(
                 order.merchantId,
@@ -760,7 +760,7 @@ export class SettlementService {
         }
 
         
-        // Notify merchant — fee deducted (cash pickup)
+        // Notify merchant - fee deducted (cash pickup)
         if (settlement.merchantWalletDebited) {
             await this.notificationService.notify(
                 order.merchantId,
@@ -776,7 +776,7 @@ export class SettlementService {
             );
         }
 
-        // Notify driver — earnings
+        // Notify driver - earnings
         if (order.driverId && settlement.driverEarnings > 0) {
             if (settlement.driverWalletCredited) {
                 await this.notificationService.notify(
@@ -833,7 +833,7 @@ export class SettlementService {
     // ── Service Booking Settlement ──────────────────────────────────
 
     /**
-     * Settle a service booking — called when merchant marks as completed.
+     * Settle a service booking - called when merchant marks as completed.
      */
     async settleServiceBooking(
         bookingId: string,

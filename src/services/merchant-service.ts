@@ -100,7 +100,7 @@ export class MerchantService {
     }
 
     /**
-     * Update merchant profile fields — supports behavioral flags and hours dictionary.
+     * Update merchant profile fields - supports behavioral flags and hours dictionary.
      */
     async updateProfile(merchantId: string, input: any): Promise<any> {
         const profile = await this.profileRepo.findOne({ where: { userId: merchantId } });
@@ -155,7 +155,7 @@ export class MerchantService {
     // ── Dashboard ───────────────────────────────────────────────────
 
     /**
-     * Merchant dashboard — profile + stats + today's snapshot.
+     * Merchant dashboard - profile + stats + today's snapshot.
      */
     async getDashboard(merchantId: string): Promise<MerchantDashboard> {
         const profile = await this.profileRepo.findOne({
@@ -246,7 +246,7 @@ export class MerchantService {
         merchantId: string,
         hours: OperatingHoursInput[]
     ): Promise<MerchantOperatingHours[]> {
-        // Validate — must have 7 days (0-6)
+        // Validate - must have 7 days (0-6)
         const days = hours.map((h) => h.dayOfWeek);
         const uniqueDays = new Set(days);
         if (uniqueDays.size !== days.length) {
@@ -427,7 +427,7 @@ export class MerchantService {
     }
 
     /**
-     * Update order status — merchant can transition:
+     * Update order status - merchant can transition:
      * ACCEPTED → PREPARING → READY_FOR_PICKUP
      */
     async updateOrderStatus(
@@ -514,7 +514,7 @@ export class MerchantService {
     }
 
     /**
-     * Verify pickup code — driver shows code, merchant verifies.
+     * Verify pickup code - driver shows code, merchant verifies.
      */
     async verifyPickupCode(
         merchantId: string,
@@ -598,7 +598,7 @@ export class MerchantService {
     }
 
     /**
-     * Request a payout — merchant withdraws from wallet via momo/bank.
+     * Request a payout - merchant withdraws from wallet via momo/bank.
      */
     async requestPayout(
         merchantId: string,
