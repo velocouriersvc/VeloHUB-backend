@@ -60,6 +60,10 @@ jobs:
     env:
       STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
       STRIPE_WEBHOOK_SECRET: ${{ secrets.STRIPE_WEBHOOK_SECRET }}
+      # Optional: set these repo secrets to keep the GHCR package PRIVATE.
+      # If GHCR_PULL_TOKEN is empty, the package is expected to be PUBLIC.
+      GHCR_PULL_TOKEN: ${{ secrets.GHCR_PULL_TOKEN }}
+      GHCR_PULL_USER: ${{ secrets.GHCR_PULL_USER }}
     steps:
       - name: Deploy to VPS
         id: deploy
@@ -71,7 +75,7 @@ jobs:
           port: ${{ secrets.VPS_PORT }}
           request_pty: true
           command_timeout: 180s
-          envs: STRIPE_SECRET_KEY,STRIPE_WEBHOOK_SECRET
+          envs: STRIPE_SECRET_KEY,STRIPE_WEBHOOK_SECRET,GHCR_PULL_TOKEN,GHCR_PULL_USER
           script: |
             echo "=========================================="
             echo "🚀 DEPLOYMENT STARTED"
@@ -93,6 +97,24 @@ jobs:
               --from-literal=STRIPE_WEBHOOK_SECRET="$STRIPE_WEBHOOK_SECRET" \
               --dry-run=client -o yaml | sudo kubectl apply -f -
             echo "Secrets updated."
+            echo ""
+
+            # ── Step 0.5: Ensure GHCR image-pull access ──
+            # Fixes ImagePullBackOff (403) caused by a stale/expired regcred token.
+            echo "── ENSURING IMAGE PULL ACCESS ──"
+            if [ -n "$GHCR_PULL_TOKEN" ]; then
+              # Private package: recreate the pull secret from a long-lived token.
+              sudo kubectl -n velo delete secret regcred --ignore-not-found
+              sudo kubectl -n velo create secret docker-registry regcred \
+                --docker-server=ghcr.io \
+                --docker-username="${GHCR_PULL_USER:-velocouriersvc}" \
+                --docker-password="$GHCR_PULL_TOKEN"
+              echo "regcred recreated from GHCR_PULL_TOKEN (private package)."
+            else
+              # Public package: remove the stale secret so the image pulls anonymously.
+              sudo kubectl -n velo delete secret regcred --ignore-not-found
+              echo "regcred removed; expecting a PUBLIC GHCR package for anonymous pull."
+            fi
             echo ""
 
             # ── Step 1: Pre-deploy status ──
