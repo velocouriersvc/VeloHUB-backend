@@ -41,8 +41,13 @@
     ],
     "moduleNameMapper": {
       ".*/db/data-source$": "<rootDir>/tests/__mocks__/data-source.ts",
-      "^uuid$": "<rootDir>/tests/__mocks__/uuid.ts"
-    }
+      "^uuid$": "<rootDir>/tests/__mocks__/uuid.ts",
+      "^expo-server-sdk$": "<rootDir>/tests/__mocks__/expo-server-sdk.ts",
+      ".*/utils/supabase-client$": "<rootDir>/tests/__mocks__/supabase-client.ts"
+    },
+    "setupFiles": [
+      "<rootDir>/tests/setup-env.ts"
+    ]
   },
   "keywords": [],
   "author": "",

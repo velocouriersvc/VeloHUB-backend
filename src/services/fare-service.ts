@@ -5,6 +5,14 @@ import { SurgeRule, DayType } from "../models/surge-rule";
 import { PromoCode } from "../models/promo-code";
 import { createServiceLogger } from "../utils/logger";
 import { currencyForCountry } from "../utils/currency";
+import {
+    PricingVertical,
+    SERVICE_FEE_RATE,
+    PLATFORM_COMMISSION_RATE,
+    MAX_SURGE_MULTIPLIER,
+    computeRideFare,
+    round2,
+} from "../config/pricing";
 
 const log = createServiceLogger("FareService");
 
@@ -60,7 +68,8 @@ export interface FareBreakdown {
     discountAmount: number;
     finalFare: number;          // what the rider pays (subtotal after surge + service fee - discount)
     driverPayout: number;       // 85% × (base + distance + time) after surge
-    platformCommission: number; // 15% × (base + distance + time) after surge
+    rideCommission: number;     // 15% commission portion only (excludes service fee)
+    platformCommission: number; // total platform share = service fee + 15% commission
     currency: string;
     vehicleType: VehicleType;
     displayName: string;        // Country-specific label shown to the user
@@ -75,25 +84,26 @@ export class FareService {
     private promoRepo = AppDataSource.getRepository(PromoCode);
 
     /**
-     * Calculate full fare breakdown for a ride.
+     * Calculate full fare breakdown for a ride or delivery.
      *
-     * Formula (CLIENT UPDATED April 22, 2026):
-     *   Trip Fare = (Base + (Per Km × Dist) + (Per Min × Time)) × Surge
-     *   Gross Total = Trip Fare + Service Fee
-     *   Final Rider Price = MAX(Gross Total, Minimum Fare)
-     *   
-     *   VeloHUB Share = Service Fee + (15% × Trip Fare)
-     *   Driver Share = 85% × Trip Fare
-     * 
-     * NOTE: Service fee is now vehicle-specific (not country-wide)
-     * NOTE: VeloHUB gets 100% of service fee + 15% commission
+     * Formula (Dynamic Fare Architecture):
+     *   Subtotal      = (Base + (PerKm x Dist) + (PerMin x Time)) x VerticalWeights
+     *   Surged        = Subtotal x Surge            (Surge capped at maxSurgeMultiplier)
+     *   Service Fee   = Surged x 5%                 (100% to platform; fixed even at peak)
+     *   Rider Pays    = Surged x 1.05               (then floored at the minimum fare)
+     *   Driver Gets   = Surged x 85%
+     *   Platform Gets = Service Fee + (Surged x 15%)
+     *
+     * All math is delegated to the pure `computeRideFare` (src/config/pricing.ts)
+     * so it is computed in exactly one place and unit-tested against the spec.
      */
     async calculateFare(
         vehicleType: VehicleType,
         distanceKm: number,
         durationMin: number,
         promoCode?: string,
-        country: string = "GH"
+        country: string = "GH",
+        vertical: PricingVertical = PricingVertical.RIDES
     ): Promise<FareBreakdown> {
         // 1. Get vehicle pricing for this country
         const pricing = await this.pricingRepo.findOne({
@@ -103,84 +113,69 @@ export class FareService {
             throw new Error(`No pricing found for vehicle type: ${vehicleType} in country: ${country}`);
         }
 
-        // 2. Get platform settings for surge and other settings
+        // 2. Get platform settings for surge / fee / commission config
         const settings = await this.settingsRepo.findOne({
             where: { country, isActive: true },
         });
-        const commissionRate = settings ? Number(settings.rideCommissionRate) / 100 : 0.15;
-        const maxSurge = settings ? Number(settings.maxSurgeMultiplier) : 2.50;
+        const commissionRate = settings ? Number(settings.rideCommissionRate) / 100 : PLATFORM_COMMISSION_RATE;
+        const serviceFeeRate = settings ? Number(settings.defaultServiceFeeRate) / 100 : SERVICE_FEE_RATE;
+        const maxSurge = settings ? Number(settings.maxSurgeMultiplier) : MAX_SURGE_MULTIPLIER;
         const currency = settings?.currency || currencyForCountry(country);
 
-        // 3. Calculate fare components (BEFORE surge)
-        const baseFare = Number(pricing.basePrice);
-        const distanceCost = Number(pricing.pricePerKm) * distanceKm;
-        const timeCost = Number(pricing.pricePerMin) * durationMin;
-        const fareSubtotal = baseFare + distanceCost + timeCost;
-
-        // 4. Apply surge to trip fare portion only (NOT to service fee)
+        // 3. Resolve the current surge multiplier (capped inside computeRideFare)
         const rawSurge = await this.getSurgeMultiplier(country);
-        const surgeMultiplier = Math.min(rawSurge, maxSurge);
-        const surgeAmount = surgeMultiplier > 1 ? fareSubtotal * (surgeMultiplier - 1) : 0;
-        const tripFareAfterSurge = fareSubtotal * surgeMultiplier;
 
-        // 5. Get vehicle-specific service fee (NEW: from vehicle_pricing table)
-        const riderServiceFee = Number(pricing.riderServiceFee || 0);
+        // 4. Pure fare computation WITHOUT discount (we resolve promo against the
+        //    rider total below, since percentage promos need the total first).
+        const base = computeRideFare({
+            basePrice: Number(pricing.basePrice),
+            pricePerKm: Number(pricing.pricePerKm),
+            pricePerMin: Number(pricing.pricePerMin),
+            distanceKm,
+            durationMin,
+            minimumFare: Number(pricing.minimumFare),
+            surgeMultiplier: rawSurge,
+            maxSurge,
+            serviceFeeRate,
+            commissionRate,
+            vertical,
+        });
 
-        // 6. Calculate gross total BEFORE enforcing minimum
-        const grossTotalBeforeMin = tripFareAfterSurge + riderServiceFee;
-
-        // 7. Enforce minimum fare on the TOTAL (trip fare + service fee)
-        const minimumFare = Number(pricing.minimumFare);
-        const grossTotal = Math.max(grossTotalBeforeMin, minimumFare);
-        
-        // If minimum was applied, adjust the trip fare portion
-        const adjustedTripFare = grossTotal > grossTotalBeforeMin 
-            ? grossTotal - riderServiceFee 
-            : tripFareAfterSurge;
-
-        // 8. Commission split (CLIENT SPEC: VeloHUB gets service fee + 15% of trip fare)
-        const platformCommission = Math.round((riderServiceFee + (adjustedTripFare * commissionRate)) * 100) / 100;
-        const driverPayout = Math.round(adjustedTripFare * (1 - commissionRate) * 100) / 100;
-
-        // 9. Apply promo code discount (applied to the gross total)
+        // 5. Apply promo code discount against the rider total
         let discountPercent = 0;
         let discountAmount = 0;
-        const riderTotalBeforeDiscount = grossTotal;
-
         if (promoCode) {
             const promo = await this.validatePromoCode(promoCode);
             if (promo) {
                 if (promo.discountType === "fixed") {
                     discountAmount = Number(promo.discountValue);
-                    discountPercent = (discountAmount / riderTotalBeforeDiscount) * 100;
+                    discountPercent = base.riderTotal > 0 ? (discountAmount / base.riderTotal) * 100 : 0;
                 } else {
                     discountPercent = Number(promo.discountValue || promo.discountPercent);
-                    discountAmount = riderTotalBeforeDiscount * (discountPercent / 100);
+                    discountAmount = base.riderTotal * (discountPercent / 100);
                 }
                 if (promo.maxDiscountAmt && discountAmount > Number(promo.maxDiscountAmt)) {
                     discountAmount = Number(promo.maxDiscountAmt);
                 }
             }
         }
-
-        const finalFare = Math.max(
-            Math.round((riderTotalBeforeDiscount - discountAmount) * 100) / 100,
-            0
-        );
+        discountAmount = Math.min(round2(discountAmount), base.riderTotal);
+        const finalFare = round2(Math.max(base.riderTotal - discountAmount, 0));
 
         return {
-            baseFare: Math.round(baseFare * 100) / 100,
-            distanceCost: Math.round(distanceCost * 100) / 100,
-            timeCost: Math.round(timeCost * 100) / 100,
-            subtotal: Math.round(fareSubtotal * 100) / 100,
-            riderServiceFee: Math.round(riderServiceFee * 100) / 100,
-            surgeMultiplier,
-            surgeAmount: Math.round(surgeAmount * 100) / 100,
-            discountPercent,
-            discountAmount: Math.round(discountAmount * 100) / 100,
+            baseFare: base.baseFare,
+            distanceCost: base.distanceCost,
+            timeCost: base.timeCost,
+            subtotal: base.subtotal,
+            riderServiceFee: base.serviceFee,
+            surgeMultiplier: base.surgeMultiplier,
+            surgeAmount: base.surgeAmount,
+            discountPercent: round2(discountPercent),
+            discountAmount,
             finalFare,
-            driverPayout,
-            platformCommission,
+            driverPayout: base.driverPayout,
+            rideCommission: base.commissionOnly,
+            platformCommission: base.platformCommission,
             currency,
             vehicleType,
             displayName: getVehicleDisplayName(vehicleType, country),

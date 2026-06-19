@@ -5,6 +5,7 @@ import { RideSharedContact } from "../models/ride-shared-contact";
 import { VehicleType } from "../models/vehicle-pricing";
 import { PaymentMethodType } from "../models/payment";
 import { FareService, FareBreakdown } from "./fare-service";
+import { PricingVertical } from "../config/pricing";
 import { DriverMatchService, MatchedDriver } from "./driver-match-service";
 import { PaymentService } from "./payment/payment-service";
 import { NotificationService } from "./notification-service";
@@ -151,13 +152,18 @@ export class RideService {
         // Resolve country
         const country = request.country || "GH";
 
-        // Calculate fare
+        // Calculate fare. Package/courier deliveries use the PACKAGE vertical
+        // (higher base for loading/unloading); passenger rides use RIDES.
+        const vertical = request.type === RideType.DELIVERY
+            ? PricingVertical.PACKAGE
+            : PricingVertical.RIDES;
         const fareBreakdown = await this.fareService.calculateFare(
             request.vehicleType,
             request.distanceKm,
             request.durationMin,
             request.promoCode,
-            country
+            country,
+            vertical
         );
 
         // Create ride record
@@ -182,7 +188,9 @@ export class RideService {
             discountPercent: fareBreakdown.discountPercent,
             discountAmount: fareBreakdown.discountAmount,
             finalFare: fareBreakdown.finalFare,
-            commission: fareBreakdown.platformCommission,
+            // Store the 15% commission portion only; riderServiceFee is tracked
+            // separately so analytics (commission + riderServiceFee) don't double-count.
+            commission: fareBreakdown.rideCommission,
             driverPayout: fareBreakdown.driverPayout,
             passengerCount: request.passengerCount || 1,
             status: RideStatus.SEARCHING,
