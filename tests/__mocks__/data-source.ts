@@ -36,4 +36,17 @@ const stubRepo = () => ({
 
 export const AppDataSource = {
     getRepository: jest.fn(() => stubRepo()),
+    // Default: run the callback with a generic stub manager so services that use
+    // transactions don't crash. Tests that assert on transactional writes override
+    // this with a fixture-aware manager (see admin-service.approveMerchant.test).
+    transaction: jest.fn(async (cb: (manager: any) => Promise<any>) => {
+        const manager = {
+            ...stubRepo(),
+            find: jest.fn().mockResolvedValue([]),
+            create: jest.fn((_entity: any, data: any) => data),
+            save: jest.fn(async (_entity: any, inst?: any) => inst ?? _entity),
+            update: jest.fn(),
+        };
+        return cb(manager);
+    }),
 };

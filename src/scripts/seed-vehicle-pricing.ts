@@ -46,25 +46,26 @@ const US_PRICING: PricingRow[] = [
     { vehicleType: VehicleType.TRUCK, country: "US", basePrice: 15.00, pricePerKm: 3.85, pricePerMin: 0.72, minimumFare: 25.00, riderServiceFee: 3.00, maxPassengers: 2 },
 ];
 
-// ── Nigeria: competitive rates (UPDATED April 30, 2026) ──────────────
-// Calibrated to match Bolt/Uber pricing for Lagos routes.
-// Target: ~₦5,100 bike | ~₦7,800 car | ~₦11,400 SUV for a 20km/40min trip.
-// Rider Service Fee: ₦400 (per client spec)
+// ── Nigeria: Dynamic Fare Architecture (NGN) - UPDATED June 19, 2026 ──
+// Standard tier (car) is the client-spec baseline: Base ₦400, ₦110/km, ₦20/min.
+// Other tiers scale off the standard: bike 0.75x, suv 1.5x, truck 2.5x.
+// Service fee is now 5% of subtotal (NOT a flat fee) - riderServiceFee column unused.
 const NG_PRICING: PricingRow[] = [
-    { vehicleType: VehicleType.BIKE, country: "NG", basePrice: 500,  pricePerKm: 130, pricePerMin: 40,  minimumFare: 4500,  riderServiceFee: 400, maxPassengers: 1 },
-    { vehicleType: VehicleType.CAR,  country: "NG", basePrice: 800,  pricePerKm: 200, pricePerMin: 65,  minimumFare: 6000,  riderServiceFee: 400, maxPassengers: 4 },
-    { vehicleType: VehicleType.SUV,  country: "NG", basePrice: 1200, pricePerKm: 300, pricePerMin: 95,  minimumFare: 9000,  riderServiceFee: 400, maxPassengers: 6 },
-    { vehicleType: VehicleType.TRUCK,country: "NG", basePrice: 2000, pricePerKm: 450, pricePerMin: 140, minimumFare: 12000, riderServiceFee: 400, maxPassengers: 2 },
+    { vehicleType: VehicleType.BIKE, country: "NG", basePrice: 300,  pricePerKm: 82.50, pricePerMin: 15, minimumFare: 600,  riderServiceFee: 0, maxPassengers: 1 },
+    { vehicleType: VehicleType.CAR,  country: "NG", basePrice: 400,  pricePerKm: 110,   pricePerMin: 20, minimumFare: 800,  riderServiceFee: 0, maxPassengers: 4 },
+    { vehicleType: VehicleType.SUV,  country: "NG", basePrice: 600,  pricePerKm: 165,   pricePerMin: 30, minimumFare: 1200, riderServiceFee: 0, maxPassengers: 6 },
+    { vehicleType: VehicleType.TRUCK,country: "NG", basePrice: 1000, pricePerKm: 275,   pricePerMin: 50, minimumFare: 2000, riderServiceFee: 0, maxPassengers: 2 },
 ];
 
-// ── Ghana: ACTUAL production rates (CLIENT REQUEST April 22, 2026) ──
-// NEW PRICING: Dramatically reduced rates (70-80% lower than previous)
-// Service fees match base fare per client spec
+// ── Ghana: Dynamic Fare Architecture (GHS) - UPDATED June 19, 2026 ──
+// Standard tier (car) is the client-spec baseline: Base GH₵6.00, GH₵2.20/km, GH₵0.40/min.
+// Other tiers scale off the standard: bike 0.75x, suv 1.5x, truck 2.5x.
+// Service fee is now 5% of subtotal (NOT a flat fee) - riderServiceFee column unused.
 const GH_PRICING: PricingRow[] = [
-    { vehicleType: VehicleType.BIKE, country: "GH", basePrice: 3.00,  pricePerKm: 1.00, pricePerMin: 0.40, minimumFare: 10.00, riderServiceFee: 3.00, maxPassengers: 1 },
-    { vehicleType: VehicleType.CAR,  country: "GH", basePrice: 5.00,  pricePerKm: 2.00, pricePerMin: 0.80, minimumFare: 10.00, riderServiceFee: 5.00, maxPassengers: 4 },
-    { vehicleType: VehicleType.SUV,  country: "GH", basePrice: 8.00,  pricePerKm: 3.50, pricePerMin: 1.20, minimumFare: 10.00, riderServiceFee: 8.00, maxPassengers: 6 },
-    { vehicleType: VehicleType.TRUCK, country: "GH", basePrice: 15.00, pricePerKm: 5.00, pricePerMin: 2.50, minimumFare: 10.00, riderServiceFee: 15.00, maxPassengers: 2 },
+    { vehicleType: VehicleType.BIKE, country: "GH", basePrice: 4.50,  pricePerKm: 1.65, pricePerMin: 0.30, minimumFare: 8.00,  riderServiceFee: 0, maxPassengers: 1 },
+    { vehicleType: VehicleType.CAR,  country: "GH", basePrice: 6.00,  pricePerKm: 2.20, pricePerMin: 0.40, minimumFare: 10.00, riderServiceFee: 0, maxPassengers: 4 },
+    { vehicleType: VehicleType.SUV,  country: "GH", basePrice: 9.00,  pricePerKm: 3.30, pricePerMin: 0.60, minimumFare: 15.00, riderServiceFee: 0, maxPassengers: 6 },
+    { vehicleType: VehicleType.TRUCK, country: "GH", basePrice: 15.00, pricePerKm: 5.50, pricePerMin: 1.00, minimumFare: 25.00, riderServiceFee: 0, maxPassengers: 2 },
 ];
 
 // ── Kenya (KES): competitive Nairobi rates (Bolt/Uber benchmarked) ──

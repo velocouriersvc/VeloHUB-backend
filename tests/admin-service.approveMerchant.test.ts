@@ -14,10 +14,11 @@
  */
 
 import { AdminService } from "../src/services/admin-service";
-import { MerchantVerificationStatus } from "../src/models/merchant-profile";
-import { RoleStatus } from "../src/models/user-role";
-import { RoleType } from "../src/models/role";
-import { UserStatus } from "../src/models/user";
+import { AppDataSource } from "../src/db/data-source";
+import { MerchantProfile, MerchantVerificationStatus } from "../src/models/merchant-profile";
+import { UserRole, RoleStatus } from "../src/models/user-role";
+import { Role, RoleType } from "../src/models/role";
+import { User, UserStatus } from "../src/models/user";
 import { NotificationType } from "../src/models/notification";
 
 // ── helpers ──────────────────────────────────────────────────────────────────
@@ -93,6 +94,8 @@ describe("AdminService.approveMerchant", () => {
         });
 
         userRoleRepo = buildRepo({
+            // ensureUserRole looks up the existing role via findOne(UserRole, ...)
+            findOne: jest.fn().mockResolvedValue(userRole),
             find: jest.fn().mockResolvedValue([userRole]),
             save: jest.fn().mockImplementation(async (e: any) => e),
         });
@@ -129,6 +132,34 @@ describe("AdminService.approveMerchant", () => {
         (svc as any).merchantStatsRepo = merchantStatsRepo;
         (svc as any).walletService = walletServiceMock;
         (svc as any).notificationService = notificationServiceMock;
+
+        // approveMerchant now runs its writes inside AppDataSource.transaction(manager).
+        // Route the transactional manager's calls to the same wired repos/fixtures
+        // so the assertions below (on *Repo.save/create) keep working.
+        const repoForEntity = (entity: any) => {
+            if (entity === MerchantProfile) return merchantProfileRepo;
+            if (entity === User) return userRepo;
+            if (entity === UserRole) return userRoleRepo;
+            if (entity === Role) return roleRepo;
+            return buildRepo();
+        };
+        const manager = {
+            findOne: jest.fn((entity: any, opts: any) => repoForEntity(entity).findOne(opts)),
+            find: jest.fn((entity: any, opts: any) => repoForEntity(entity).find(opts)),
+            create: jest.fn((entity: any, data: any) => repoForEntity(entity).create(data)),
+            update: jest.fn(),
+            // Support both manager.save(instance) and manager.save(Entity, instance).
+            save: jest.fn((entityOrInst: any, maybeInst?: any) => {
+                if (maybeInst !== undefined) return repoForEntity(entityOrInst).save(maybeInst);
+                const inst = entityOrInst;
+                if (inst && ("isOpen" in inst || "businessName" in inst)) return merchantProfileRepo.save(inst);
+                if (inst && ("activeRole" in inst || "country" in inst)) return userRepo.save(inst);
+                if (inst && "roleId" in inst) return userRoleRepo.save(inst);
+                if (inst && "name" in inst) return roleRepo.save(inst);
+                return inst;
+            }),
+        };
+        (AppDataSource as any).transaction = jest.fn(async (cb: any) => cb(manager));
     });
 
     // ── 1. Profile status ─────────────────────────────────────────────────────
@@ -155,7 +186,8 @@ describe("AdminService.approveMerchant", () => {
     });
 
     it("creates a new APPROVED MERCHANT UserRole when one does not yet exist", async () => {
-        // No existing roles
+        // No existing role link (ensureUserRole looks it up via findOne)
+        userRoleRepo.findOne.mockResolvedValue(null);
         userRoleRepo.find.mockResolvedValue([]);
 
         await svc.approveMerchant(MERCHANT_ID, ADMIN_ID);

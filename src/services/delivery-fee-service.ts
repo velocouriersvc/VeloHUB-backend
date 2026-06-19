@@ -2,6 +2,11 @@ import { AppDataSource } from "../db/data-source";
 import { PlatformSettings } from "../models/platform-settings";
 import { MerchantProfile } from "../models/merchant-profile";
 import { createServiceLogger } from "../utils/logger";
+import {
+    PricingVertical,
+    resolveOrderVertical,
+    computeDeliveryFee,
+} from "../config/pricing";
 
 const log = createServiceLogger("DeliveryFeeService");
 
@@ -15,6 +20,9 @@ export interface DeliveryFeeResult {
     baseFee: number;
     perKmFee: number;
     estimatedDeliveryMin: number;
+    vertical: PricingVertical;
+    driverPayout: number;
+    platformCommission: number;
 }
 
 /**
@@ -37,7 +45,8 @@ export class DeliveryFeeService {
         merchantId: string,
         deliveryLat: number,
         deliveryLng: number,
-        country: string = "GH"
+        country: string = "GH",
+        vertical?: PricingVertical
     ): Promise<DeliveryFeeResult> {
         // 1. Get merchant location
         const merchant = await this.merchantRepo.findOne({
@@ -65,11 +74,21 @@ export class DeliveryFeeService {
             where: { country, isActive: true },
         });
 
-        const baseFee = settings ? Number(settings.deliveryBaseFee) : DEFAULT_BASE_FEE;
-        const perKmFee = settings ? Number(settings.deliveryPerKmFee) : DEFAULT_PER_KM_FEE;
+        const rawBaseFee = settings ? Number(settings.deliveryBaseFee) : DEFAULT_BASE_FEE;
+        const rawPerKmFee = settings ? Number(settings.deliveryPerKmFee) : DEFAULT_PER_KM_FEE;
+        const driverShareRate = settings ? Number(settings.driverDeliveryFeeShare) / 100 : 0.75;
 
-        // 4. Calculate fee: base + (distance * perKm), rounded to 2 decimal places
-        const deliveryFee = Math.round((baseFee + distanceKm * perKmFee) * 100) / 100;
+        // 4. Resolve the pricing vertical (food vs marketplace) from the merchant
+        //    category unless the caller pins it explicitly, then apply the
+        //    cross-vertical base/distance weighting via the pure helper.
+        const resolvedVertical = vertical ?? resolveOrderVertical(merchant.category);
+        const fee = computeDeliveryFee({
+            baseFee: rawBaseFee,
+            perKmFee: rawPerKmFee,
+            distanceKm,
+            vertical: resolvedVertical,
+            driverShareRate,
+        });
 
         // 5. Estimate delivery time (rough: 3 min/km + 10 min pickup/dropoff buffer)
         const estimatedDeliveryMin = Math.ceil(distanceKm * 3 + 10);
@@ -77,16 +96,20 @@ export class DeliveryFeeService {
         log.info("Delivery fee calculated", {
             merchantId,
             distanceKm: Math.round(distanceKm * 100) / 100,
-            deliveryFee,
+            deliveryFee: fee.deliveryFee,
+            vertical: resolvedVertical,
             country,
         });
 
         return {
-            deliveryFee,
+            deliveryFee: fee.deliveryFee,
             distanceKm: Math.round(distanceKm * 100) / 100,
-            baseFee,
-            perKmFee,
+            baseFee: fee.baseFee,
+            perKmFee: rawPerKmFee,
             estimatedDeliveryMin,
+            vertical: resolvedVertical,
+            driverPayout: fee.driverPayout,
+            platformCommission: fee.platformCommission,
         };
     }
 

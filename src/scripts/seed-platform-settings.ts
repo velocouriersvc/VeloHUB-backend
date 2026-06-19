@@ -41,7 +41,7 @@ const SETTINGS: Partial<PlatformSettings>[] = [
         // Rides
         rideCommissionRate: 15.00,          // VeloHUB takes 15%, driver keeps 85%
         riderServiceFee: 1.99,              // flat $1.99 on top of ride fare
-        maxSurgeMultiplier: 2.00,           // spec: 1.0x – 2.0x max
+        maxSurgeMultiplier: 1.40,            // Surge protection cap (never exceed 1.4x)
 
         // Delivery rides (order+driver combined)
         deliveryTotalCommissionRate: 40.00,
@@ -82,7 +82,7 @@ const SETTINGS: Partial<PlatformSettings>[] = [
 
         rideCommissionRate: 15.00,
         riderServiceFee: 4.00,              // ✅ ACTUAL Ghana rider service fee
-        maxSurgeMultiplier: 2.50,
+        maxSurgeMultiplier: 1.40,            // Surge protection cap (never exceed 1.4x)
 
         deliveryTotalCommissionRate: 40.00,
         deliveryRidePortionRate: 50.00,
@@ -109,7 +109,7 @@ const SETTINGS: Partial<PlatformSettings>[] = [
 
         // Delivery / Orders
         defaultCommissionRate: 15.00,
-        defaultServiceFeeRate: 4.00,        // 4% of subtotal (not 5%)
+        defaultServiceFeeRate: 5.00,        // 5% of subtotal
         serviceFeeMaxCap: 1500.00,          // capped at ₦1,500
         smallOrderFee: 800.00,              // ₦800 if subtotal < ₦12,000
         smallOrderThreshold: 12000.00,
@@ -121,7 +121,7 @@ const SETTINGS: Partial<PlatformSettings>[] = [
         // Rides - client-specified Nigeria rates (UPDATED April 22, 2026)
         rideCommissionRate: 15.00,
         riderServiceFee: 400.00,            // ₦400 flat (updated from ₦300)
-        maxSurgeMultiplier: 1.80,           // 1.0× – 1.8× max (client specified)
+        maxSurgeMultiplier: 1.40,            // Surge protection cap (never exceed 1.4x)
 
         deliveryTotalCommissionRate: 40.00,
         deliveryRidePortionRate: 50.00,
@@ -159,7 +159,7 @@ const SETTINGS: Partial<PlatformSettings>[] = [
 
         rideCommissionRate: 15.00,
         riderServiceFee: 50.00,
-        maxSurgeMultiplier: 2.00,
+        maxSurgeMultiplier: 1.40,            // Surge protection cap (never exceed 1.4x)
 
         deliveryTotalCommissionRate: 40.00,
         deliveryRidePortionRate: 50.00,
@@ -196,7 +196,7 @@ const SETTINGS: Partial<PlatformSettings>[] = [
 
         rideCommissionRate: 15.00,
         riderServiceFee: 8.00,
-        maxSurgeMultiplier: 2.00,
+        maxSurgeMultiplier: 1.40,            // Surge protection cap (never exceed 1.4x)
 
         deliveryTotalCommissionRate: 40.00,
         deliveryRidePortionRate: 50.00,
@@ -233,7 +233,7 @@ const SETTINGS: Partial<PlatformSettings>[] = [
 
         rideCommissionRate: 15.00,
         riderServiceFee: 700.00,
-        maxSurgeMultiplier: 2.00,
+        maxSurgeMultiplier: 1.40,            // Surge protection cap (never exceed 1.4x)
 
         deliveryTotalCommissionRate: 40.00,
         deliveryRidePortionRate: 50.00,
@@ -270,7 +270,7 @@ const SETTINGS: Partial<PlatformSettings>[] = [
 
         rideCommissionRate: 15.00,
         riderServiceFee: 1200.00,
-        maxSurgeMultiplier: 2.00,
+        maxSurgeMultiplier: 1.40,            // Surge protection cap (never exceed 1.4x)
 
         deliveryTotalCommissionRate: 40.00,
         deliveryRidePortionRate: 50.00,
@@ -307,7 +307,7 @@ const SETTINGS: Partial<PlatformSettings>[] = [
 
         rideCommissionRate: 15.00,
         riderServiceFee: 2.49,
-        maxSurgeMultiplier: 2.50,
+        maxSurgeMultiplier: 1.40,            // Surge protection cap (never exceed 1.4x)
 
         deliveryTotalCommissionRate: 40.00,
         deliveryRidePortionRate: 50.00,
@@ -344,7 +344,7 @@ const SETTINGS: Partial<PlatformSettings>[] = [
 
         rideCommissionRate: 15.00,
         riderServiceFee: 49.00,
-        maxSurgeMultiplier: 2.50,
+        maxSurgeMultiplier: 1.40,            // Surge protection cap (never exceed 1.4x)
 
         deliveryTotalCommissionRate: 40.00,
         deliveryRidePortionRate: 50.00,
