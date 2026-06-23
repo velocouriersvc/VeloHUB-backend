@@ -99,6 +99,29 @@ export class AuthController {
     };
 
 
+    // Set or change password for the authenticated user (lets OTP users add a password)
+    setPassword = async (req: Request, res: Response) => {
+        try {
+            const userRef = (req as any).user;
+            if (!userRef?.id) {
+                return res.status(401).json({ message: "User not authenticated" });
+            }
+            const { currentPassword, newPassword, email } = req.body || {};
+            if (!newPassword || String(newPassword).length < 6) {
+                return res.status(400).json({ message: "newPassword must be at least 6 characters" });
+            }
+            const result = await this.authService.setPassword(userRef.id, newPassword, currentPassword, email);
+            return res.status(200).json(result);
+        } catch (error) {
+            const message = (error as Error).message || "Internal server error";
+            if (/incorrect|already in use|at least 6/i.test(message)) {
+                return res.status(400).json({ message });
+            }
+            log.error("Error setting password", { error: message });
+            return res.status(500).json({ message: "Internal server error" });
+        }
+    };
+
     appleSignIn = async (req: Request, res: Response) => {
         try {
             const { identityToken, fullName, email } = req.body as {
@@ -215,6 +238,7 @@ export class AuthController {
                 activeRole: user.activeRole || null,
                 full_name: fullName || user.email || user.phoneNumber,
                 profile_image_url: profileImageUrl,
+                has_password: !!user.passwordHash,
                 created_date: user.createdAt
             });
         } catch (error) {

@@ -266,6 +266,53 @@ export class AuthService {
         } as any;
     }
 
+    /**
+     * Set or change the password for an already-authenticated user.
+     *
+     * - If the user already has a password, `currentPassword` is required and must match.
+     * - If the user has no password yet (e.g. an OTP/phone-only account), it is set
+     *   without a current password, letting existing users add email+password login
+     *   without creating a new account.
+     * Optionally records an email so the user can later log in by email.
+     */
+    async setPassword(
+        userId: string,
+        newPassword: string,
+        currentPassword?: string,
+        email?: string
+    ): Promise<{ success: boolean; hasPassword: true }> {
+        if (!newPassword || newPassword.length < 6) {
+            throw new Error("Password must be at least 6 characters");
+        }
+
+        const user = await this.userRepository.findOne({ where: { id: userId } });
+        if (!user) {
+            throw new Error("User not found");
+        }
+
+        if (user.passwordHash) {
+            if (!currentPassword || !verifyPassword(currentPassword, user.passwordHash)) {
+                throw new Error("Current password is incorrect");
+            }
+        }
+
+        // Let an OTP/phone-only user attach an email so they can log in by email later.
+        if (email && !user.email) {
+            const normalizedEmail = email.trim().toLowerCase();
+            const emailTaken = await this.userRepository.findOne({ where: { email: normalizedEmail } });
+            if (emailTaken && emailTaken.id !== user.id) {
+                throw new Error("That email is already in use by another account");
+            }
+            user.email = normalizedEmail;
+        }
+
+        user.passwordHash = hashPassword(newPassword);
+        await this.userRepository.save(user);
+
+        log.info("User password set/changed", { userId: user.id });
+        return { success: true, hasPassword: true };
+    }
+
     private async verifyAppleToken(identityToken: string): Promise<{ sub: string; email?: string }> {
         const parts = identityToken.split('.');
         if (parts.length !== 3) throw new Error('Invalid token format');
