@@ -113,6 +113,8 @@ router.post("/verify-otp", authController.verifyOTP);
 // Email + password auth (new KYC registration + login)
 router.post("/register", authController.register);
 router.post("/login", authController.login);
+// Set or change password for the signed-in user (lets OTP users add a password)
+router.post("/password", requireAuth, authController.setPassword);
 
 /**
  * @openapi
