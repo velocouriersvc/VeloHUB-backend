@@ -80,14 +80,16 @@ export class RideService {
         pickupLat: number,
         pickupLng: number,
         promoCode?: string,
-        country?: string
+        country?: string,
+        vertical: PricingVertical = PricingVertical.RIDES
     ): Promise<RideEstimate> {
         const fareBreakdown = await this.fareService.calculateFare(
             vehicleType,
             distanceKm,
             durationMin,
             promoCode,
-            country || "GH"
+            country || "GH",
+            vertical
         );
 
         // Check how many drivers are nearby
@@ -118,7 +120,8 @@ export class RideService {
         pickupLat: number,
         pickupLng: number,
         promoCode?: string,
-        country?: string
+        country?: string,
+        vertical: PricingVertical = PricingVertical.RIDES
     ): Promise<RideEstimate[]> {
         const vehicleTypes = Object.values(VehicleType);
         const estimates: RideEstimate[] = [];
@@ -132,7 +135,8 @@ export class RideService {
                     pickupLat,
                     pickupLng,
                     promoCode,
-                    country
+                    country,
+                    vertical
                 );
                 estimates.push(estimate);
             } catch {

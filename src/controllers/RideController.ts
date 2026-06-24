@@ -3,7 +3,16 @@ import { AuthRequest } from "../middleware/role-middleware";
 import { RideService } from "../services/ride-service";
 import { RideType, CancelledBy, PaymentMethod } from "../models/ride";
 import { VehicleType } from "../models/vehicle-pricing";
+import { PricingVertical } from "../config/pricing";
 import { createServiceLogger } from "../utils/logger";
+
+/** Parse an optional vertical from the request body (defaults to RIDES). */
+function parseVertical(input: unknown): PricingVertical {
+    const v = String(input || "").toLowerCase();
+    return (Object.values(PricingVertical) as string[]).includes(v)
+        ? (v as PricingVertical)
+        : PricingVertical.RIDES;
+}
 
 const log = createServiceLogger("RideController");
 
@@ -45,7 +54,8 @@ export class RideController {
                 Number(pickupLat),
                 Number(pickupLng),
                 promoCode,
-                country
+                country,
+                parseVertical(req.body.vertical)
             );
 
             return res.json({ estimates });
@@ -75,7 +85,8 @@ export class RideController {
                 Number(pickupLat),
                 Number(pickupLng),
                 promoCode,
-                country
+                country,
+                parseVertical(req.body.vertical)
             );
 
             return res.json({ estimate });

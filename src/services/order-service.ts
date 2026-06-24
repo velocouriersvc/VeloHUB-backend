@@ -169,14 +169,25 @@ export class OrderService {
                 throw new Error("Delivery latitude and longitude are required for delivery orders");
             }
 
-            const feeResult = await this.deliveryFeeService.calculateDeliveryFee(
-                cart.merchantId,
-                input.deliveryLat,
-                input.deliveryLng,
-                country
-            );
-            deliveryFee = feeResult.deliveryFee;
-            estimatedDeliveryMin = feeResult.estimatedDeliveryMin;
+            // A delivery-fee failure must never wipe the rest of the quote (subtotal,
+            // service fee, total). If it fails for any reason, fall back to a 0 fee and
+            // keep the quote usable; the failure is logged for follow-up.
+            try {
+                const feeResult = await this.deliveryFeeService.calculateDeliveryFee(
+                    cart.merchantId,
+                    input.deliveryLat,
+                    input.deliveryLng,
+                    country
+                );
+                deliveryFee = feeResult.deliveryFee;
+                estimatedDeliveryMin = feeResult.estimatedDeliveryMin;
+            } catch (err) {
+                log.warn("Delivery fee calculation failed; defaulting to 0", {
+                    merchantId: cart.merchantId,
+                    error: (err as Error).message,
+                });
+                deliveryFee = 0;
+            }
         }
 
         // 8. Promo code discount
