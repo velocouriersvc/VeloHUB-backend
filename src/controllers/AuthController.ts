@@ -122,6 +122,50 @@ export class AuthController {
         }
     };
 
+    // Forgot password: email a reset code (always 200 - never reveal if email exists)
+    forgotPassword = async (req: Request, res: Response) => {
+        try {
+            const { email } = req.body || {};
+            if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(email))) {
+                return res.status(400).json({ message: "A valid email is required" });
+            }
+            await this.authService.requestPasswordReset(email);
+            return res.status(200).json({
+                success: true,
+                message: "If an account exists for that email, a reset code has been sent.",
+            });
+        } catch (error) {
+            log.error("Error requesting password reset", { error: (error as Error).message });
+            // Still return 200 so we don't leak account existence via error timing/status.
+            return res.status(200).json({
+                success: true,
+                message: "If an account exists for that email, a reset code has been sent.",
+            });
+        }
+    };
+
+    // Reset password using the emailed code
+    resetPassword = async (req: Request, res: Response) => {
+        try {
+            const { email, code, newPassword } = req.body || {};
+            if (!email || !code || !newPassword) {
+                return res.status(400).json({ message: "email, code and newPassword are required" });
+            }
+            if (String(newPassword).length < 6) {
+                return res.status(400).json({ message: "newPassword must be at least 6 characters" });
+            }
+            const result = await this.authService.resetPassword(email, code, newPassword);
+            return res.status(200).json(result);
+        } catch (error) {
+            const message = (error as Error).message || "Internal server error";
+            if (/invalid|expired|at least 6/i.test(message)) {
+                return res.status(400).json({ message });
+            }
+            log.error("Error resetting password", { error: message });
+            return res.status(500).json({ message: "Internal server error" });
+        }
+    };
+
     appleSignIn = async (req: Request, res: Response) => {
         try {
             const { identityToken, fullName, email } = req.body as {

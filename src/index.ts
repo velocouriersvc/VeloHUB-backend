@@ -245,28 +245,34 @@ AppDataSource.initialize()
   .then(async () => {
     logger.info("Data Source has been initialized");
 
-    // Ensure MinIO bucket exists
-    try {
-      await ensureBucket();
-      logger.info("MinIO bucket ready");
-    } catch (err) {
-      logger.warn("MinIO bucket init failed (uploads may not work)", { error: (err as Error).message });
-    }
-
-    // Seed essential lookup tables (idempotent - skips existing rows)
-    await runSeeds();
-
-    // Initialise Socket.IO on the same HTTP server
+    // Open the HTTP port as soon as the DB connection is up so Kubernetes health
+    // probes pass promptly. Bucket setup and idempotent seeds are non-critical and
+    // run in the BACKGROUND so they never delay readiness - blocking on them here
+    // was pushing pod startup past the rollout timeout (probe "connection refused").
     initSocketGateway(httpServer);
 
-    // Start server
-    httpServer.listen(PORT,  async () => {
+    httpServer.listen(PORT, () => {
       logger.info(`Server is running on port ${PORT}.`);
       logger.info(`WebSocket ready on ws://localhost:${PORT} (/drivers, /rides)`);
       logger.info(`API Docs: http://localhost:${PORT}/docs`);
       logger.info(`Health: http://localhost:${PORT}/health`);
       logger.info(`Metrics: http://localhost:${PORT}/metrics`);
     });
+
+    // Non-blocking background warm-up (MinIO bucket + idempotent seeds).
+    void (async () => {
+      try {
+        await ensureBucket();
+        logger.info("MinIO bucket ready");
+      } catch (err) {
+        logger.warn("MinIO bucket init failed (uploads may not work)", { error: (err as Error).message });
+      }
+      try {
+        await runSeeds();
+      } catch (err) {
+        logger.warn("Seed scripts failed (data may need manual seeding)", { error: (err as Error).message });
+      }
+    })();
   })
   .catch((error: Error) => {
     logger.error("Error during Data Source initialization", { error: error.message });

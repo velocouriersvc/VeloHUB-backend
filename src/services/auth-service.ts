@@ -313,6 +313,60 @@ export class AuthService {
         return { success: true, hasPassword: true };
     }
 
+    /**
+     * Forgot-password step 1: email a reset code to the address on file.
+     *
+     * For users who no longer have access to their sign-up phone number. Reuses the
+     * email OTP channel, keyed by the user's phone (or id when phone-less). Always
+     * returns success so callers can't probe which emails are registered.
+     */
+    async requestPasswordReset(email: string): Promise<{ success: boolean }> {
+        const normalizedEmail = email.trim().toLowerCase();
+        const user = await this.userRepository.findOne({ where: { email: normalizedEmail } });
+
+        if (user) {
+            const otpKey = user.phoneNumber || user.id;
+            try {
+                await this.otpService.createOtp(otpKey, "email", normalizedEmail);
+                log.info("Password reset code sent", { userId: user.id });
+            } catch (err) {
+                log.warn("Failed to send password reset code", { error: (err as Error).message });
+            }
+        } else {
+            log.info("Password reset requested for unknown email (ignored)");
+        }
+
+        return { success: true };
+    }
+
+    /**
+     * Forgot-password step 2: verify the emailed code and set a new password.
+     */
+    async resetPassword(email: string, code: string, newPassword: string): Promise<{ success: boolean }> {
+        if (!newPassword || newPassword.length < 6) {
+            throw new Error("Password must be at least 6 characters");
+        }
+
+        const normalizedEmail = email.trim().toLowerCase();
+        const user = await this.userRepository.findOne({ where: { email: normalizedEmail } });
+        // Generic error so we never reveal whether the email exists.
+        if (!user) {
+            throw new Error("Invalid or expired reset code");
+        }
+
+        const otpKey = user.phoneNumber || user.id;
+        const verified = await this.otpService.verifyOtp(otpKey, code);
+        if (!verified) {
+            throw new Error("Invalid or expired reset code");
+        }
+
+        user.passwordHash = hashPassword(newPassword);
+        await this.userRepository.save(user);
+
+        log.info("Password reset successful", { userId: user.id });
+        return { success: true };
+    }
+
     private async verifyAppleToken(identityToken: string): Promise<{ sub: string; email?: string }> {
         const parts = identityToken.split('.');
         if (parts.length !== 3) throw new Error('Invalid token format');
