@@ -74,7 +74,7 @@ jobs:
           key: ${{ secrets.VPS_SSH_KEY }}
           port: ${{ secrets.VPS_PORT }}
           request_pty: true
-          command_timeout: 600s
+          command_timeout: 900s
           envs: STRIPE_SECRET_KEY,STRIPE_WEBHOOK_SECRET,GHCR_PULL_TOKEN,GHCR_PULL_USER
           script: |
             echo "=========================================="
@@ -130,7 +130,7 @@ jobs:
             # checkout, so we patch inline rather than `kubectl apply -f`.
             echo "── ENSURING STARTUP PROBE ──"
             sudo kubectl -n velo patch deployment velo-api --type='json' -p='[
-              {"op":"add","path":"/spec/template/spec/containers/0/startupProbe","value":{"httpGet":{"path":"/","port":"http"},"periodSeconds":10,"failureThreshold":30}}
+              {"op":"add","path":"/spec/template/spec/containers/0/startupProbe","value":{"httpGet":{"path":"/","port":"http"},"periodSeconds":10,"failureThreshold":60}}
             ]' || echo "startupProbe patch skipped (already set or patch unsupported)."
             echo ""
 
@@ -139,8 +139,8 @@ jobs:
             sudo kubectl -n velo rollout restart deployment/velo-api
 
             # ── Step 3: Wait for rollout ──
-            echo "── WAITING FOR ROLLOUT (timeout: 300s) ──"
-            if sudo kubectl -n velo rollout status deployment/velo-api --timeout=300s; then
+            echo "── WAITING FOR ROLLOUT (timeout: 600s) ──"
+            if sudo kubectl -n velo rollout status deployment/velo-api --timeout=600s; then
               echo ""
               echo "── POST-DEPLOY STATUS ──"
               sudo kubectl -n velo get pods -l app=velo-api -o wide

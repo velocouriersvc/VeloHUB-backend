@@ -115,6 +115,9 @@ router.post("/register", authController.register);
 router.post("/login", authController.login);
 // Set or change password for the signed-in user (lets OTP users add a password)
 router.post("/password", requireAuth, authController.setPassword);
+// Forgot-password flow: email a reset code, then reset with the code (no auth)
+router.post("/forgot-password", authController.forgotPassword);
+router.post("/reset-password", authController.resetPassword);
 
 /**
  * @openapi
