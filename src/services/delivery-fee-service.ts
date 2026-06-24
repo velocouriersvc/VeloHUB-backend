@@ -23,6 +23,8 @@ export interface DeliveryFeeResult {
     vertical: PricingVertical;
     driverPayout: number;
     platformCommission: number;
+    /** False when the merchant location was missing and a base-only fee was used. */
+    locationResolved: boolean;
 }
 
 /**
@@ -53,21 +55,27 @@ export class DeliveryFeeService {
             where: { userId: merchantId },
         });
 
-        if (!merchant) {
-            throw new Error("Merchant profile not found");
+        // 2. Resolve distance when we have both merchant and customer coordinates.
+        //    If the merchant has no saved location (data not yet backfilled), we
+        //    DO NOT fail the whole quote - we fall back to a base-fee-only delivery
+        //    (distance 0) so the order can still be priced and placed. A warning is
+        //    logged so the missing location can be fixed.
+        let distanceKm = 0;
+        let locationResolved = false;
+        if (merchant?.latitude && merchant?.longitude) {
+            distanceKm = this.haversineDistance(
+                merchant.latitude,
+                merchant.longitude,
+                deliveryLat,
+                deliveryLng
+            );
+            locationResolved = true;
+        } else {
+            log.warn("Merchant location unavailable - using base delivery fee only", {
+                merchantId,
+                hasMerchant: !!merchant,
+            });
         }
-
-        if (!merchant.latitude || !merchant.longitude) {
-            throw new Error("Merchant location not set - cannot calculate delivery fee");
-        }
-
-        // 2. Calculate Haversine distance
-        const distanceKm = this.haversineDistance(
-            merchant.latitude,
-            merchant.longitude,
-            deliveryLat,
-            deliveryLng
-        );
 
         // 3. Get fee config from platform_settings
         const settings = await this.settingsRepo.findOne({
@@ -81,7 +89,7 @@ export class DeliveryFeeService {
         // 4. Resolve the pricing vertical (food vs marketplace) from the merchant
         //    category unless the caller pins it explicitly, then apply the
         //    cross-vertical base/distance weighting via the pure helper.
-        const resolvedVertical = vertical ?? resolveOrderVertical(merchant.category);
+        const resolvedVertical = vertical ?? resolveOrderVertical(merchant?.category);
         const fee = computeDeliveryFee({
             baseFee: rawBaseFee,
             perKmFee: rawPerKmFee,
@@ -110,6 +118,7 @@ export class DeliveryFeeService {
             vertical: resolvedVertical,
             driverPayout: fee.driverPayout,
             platformCommission: fee.platformCommission,
+            locationResolved,
         };
     }
 
