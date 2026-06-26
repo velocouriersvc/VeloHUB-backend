@@ -45,6 +45,15 @@ describe("DeliveryFeeService resilience", () => {
         expect(res.deliveryFee).toBeGreaterThan(40); // base(40) + distance component
     });
 
+    it("bills a sub-1km resolved delivery as at least 1km", async () => {
+        // dropoff ~0.03km from the merchant -> floored to 1km billable
+        const svc = makeService({ category: "retail", latitude: 5.6052, longitude: -0.1668 });
+        const res = await svc.calculateDeliveryFee("m1", 5.6055, -0.1668, "GH");
+        expect(res.locationResolved).toBe(true);
+        // marketplace: base*0.7 (35) + 1km * perKm(10) = 45
+        expect(res.deliveryFee).toBe(45);
+    });
+
     it("honours an explicitly pinned vertical", async () => {
         const svc = makeService({ category: "restaurant", latitude: null, longitude: null });
         const res = await svc.calculateDeliveryFee("m1", 5.6, -0.1, "GH", PricingVertical.PACKAGE);

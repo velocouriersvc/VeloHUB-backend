@@ -7,6 +7,8 @@ const router = Router();
 const adminController = new AdminController();
 
 router.use(apiKeyMiddleware);
+// Public website contact form (anonymous): emails support + confirmation.
+router.post("/contact", adminController.contactForm);
 router.post("/", requireAuth, adminController.createSupportTicket);
 
 export default router;

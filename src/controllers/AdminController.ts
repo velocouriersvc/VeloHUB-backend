@@ -9,6 +9,7 @@ import { Zone } from "../models/zone";
 import { PlatformSettings } from "../models/platform-settings";
 import { PlatformWithdrawal } from "../models/platform-withdrawal";
 import { AdminService } from "../services/admin-service";
+import { EmailService } from "../services/email-service";
 import { AuthRequest } from "../middleware/role-middleware";
 import { createServiceLogger } from "../utils/logger";
 import { AuditLogController } from "./AuditLogController";
@@ -1453,6 +1454,52 @@ export class AdminController {
             return res.status(500).json({ message: "Internal server error" });
         }
     }
+
+    // Public website contact form. Anonymous (no auth): emails the support inbox
+    // and sends the visitor a confirmation with a tracking reference. Does not write
+    // the support_tickets table (which requires a userId).
+    contactForm = async (req: Request, res: Response) => {
+        try {
+            const { name, email, accountType, message } = req.body || {};
+            if (!name || !email || !message) {
+                return res.status(400).json({ message: "name, email and message are required" });
+            }
+            if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(email))) {
+                return res.status(400).json({ message: "A valid email is required" });
+            }
+
+            const reference = "VH-" + Date.now().toString(36).toUpperCase().slice(-6);
+            const safe = (v: unknown) => String(v ?? "").slice(0, 4000);
+            const supportInbox = process.env.SUPPORT_EMAIL || "contact@velocouriersvc.com";
+
+            // Notify the support inbox (best-effort).
+            EmailService.send({
+                to: supportInbox,
+                subject: `New contact inquiry ${reference} (${safe(accountType) || "General"})`,
+                html: `<h2>New website inquiry ${reference}</h2>
+                       <p><strong>Name:</strong> ${safe(name)}</p>
+                       <p><strong>Email:</strong> ${safe(email)}</p>
+                       <p><strong>Account type:</strong> ${safe(accountType) || "Not specified"}</p>
+                       <p><strong>Message:</strong></p><p>${safe(message)}</p>
+                       <p style="color:#64748b">Reply to: ${safe(email)}</p>`,
+            }).catch((e) => log.warn("Contact support email failed", { error: (e as Error).message }));
+
+            // Confirmation to the visitor (best-effort).
+            EmailService.send({
+                to: String(email),
+                subject: `We received your message (${reference})`,
+                html: `<p>Hi ${safe(name)},</p>
+                       <p>Thanks for contacting VeloHUB. Your reference is <strong>${reference}</strong>.
+                       Our team typically replies within one business day.</p>
+                       <p>VeloHUB Support</p>`,
+            }).catch((e) => log.warn("Contact confirmation email failed", { error: (e as Error).message }));
+
+            return res.status(200).json({ success: true, reference });
+        } catch (error) {
+            log.error("Error handling contact form", { error: (error as Error).message });
+            return res.status(500).json({ message: "Internal server error" });
+        }
+    };
 
     createSupportTicket = async (req: AuthRequest, res: Response) => {
         try {

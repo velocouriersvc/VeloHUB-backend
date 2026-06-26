@@ -2,6 +2,7 @@ import logger from "../utils/logger";
 import { seedPlatformSettings } from "./seed-platform-settings";
 import { seedVehiclePricing } from "./seed-vehicle-pricing";
 import { seedProductCategories } from "./seed-product-categories";
+import { syncNotificationTypeEnum } from "./sync-notification-enum";
 
 /**
  * Run all essential seed scripts once on server boot.
@@ -18,6 +19,9 @@ export async function runSeeds(): Promise<void> {
         await seedPlatformSettings(true);
         await seedVehiclePricing(true);
         await seedProductCategories(true);
+        // Ensure the notifications enum has every value (fixes setup 500s caused by
+        // missing enum values like "profile_created"/"welcome" on synchronize-only DBs).
+        await syncNotificationTypeEnum(true);
 
         logger.info("All seed scripts completed");
     } catch (err) {
