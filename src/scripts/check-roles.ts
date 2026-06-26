@@ -2,6 +2,7 @@
 const { Client } = require("pg");
 import dotenv from "dotenv";
 import path from "path";
+import { RoleType } from "../models/role";
 
 dotenv.config({ path: path.resolve(__dirname, "../../.env") });
 
@@ -16,16 +17,29 @@ const client = new Client({
 async function checkRoles() {
     try {
         await client.connect();
+        console.log("Connected to database for role check...");
 
-        const res = await client.query("SELECT * FROM roles WHERE name = 'driver'");
+        const rolesToEnsure = [
+            { name: RoleType.BUYER, desc: 'Standard buyer/customer role' },
+            { name: RoleType.DRIVER, desc: 'Delivery driver role' },
+            { name: RoleType.MERCHANT, desc: 'Store merchant role' },
+            { name: RoleType.ADMIN, desc: 'Platform administrator role' },
+            { name: RoleType.SUPPORT_AGENT, desc: 'Customer support role' }
+        ];
 
-        if (res.rows.length > 0) {
-            console.log("✅ Role 'driver' exists.");
-            console.log(res.rows[0]);
-        } else {
-            console.log("❌ Role 'driver' does NOT exist. Seeding it now...");
-            await client.query("INSERT INTO roles (id, name, description) VALUES (gen_random_uuid(), 'driver', 'Standard driver role')");
-            console.log("✅ Role 'driver' seeded.");
+        for (const role of rolesToEnsure) {
+            const res = await client.query("SELECT * FROM roles WHERE name = $1", [role.name]);
+
+            if (res.rows.length > 0) {
+                console.log(`✅ Role '${role.name}' exists.`);
+            } else {
+                console.log(`❌ Role '${role.name}' does NOT exist. Seeding it now...`);
+                await client.query(
+                    "INSERT INTO roles (id, name, description) VALUES (gen_random_uuid(), $1, $2)",
+                    [role.name, role.desc]
+                );
+                console.log(`✅ Role '${role.name}' seeded.`);
+            }
         }
 
     } catch (err: any) {

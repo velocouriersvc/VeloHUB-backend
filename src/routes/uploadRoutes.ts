@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { UploadController } from "../controllers/UploadController";
 import { apiKeyMiddleware } from "../middleware/api-key-middleware";
-import { requireRole } from "../middleware/role-middleware";
+import { requireRole, requireAuth } from "../middleware/role-middleware";
 import { upload } from "../middleware/upload-middleware";
 
 const router = Router();
@@ -43,12 +43,12 @@ router.use(apiKeyMiddleware);
  *               file:
  *                 type: string
  *                 format: binary
- *                 description: The file to upload (max 10 MB). Allowed — JPEG, PNG, WebP, HEIC, PDF.
+ *                 description: The file to upload (max 10 MB). Allowed - JPEG, PNG, WebP, HEIC, PDF.
  *               category:
  *                 type: string
  *                 enum: [id-cards, licenses, registration, avatars, documents]
  *                 example: id-cards
- *                 description: Upload category — determines folder structure in storage
+ *                 description: Upload category - determines folder structure in storage
  *               phoneNumber:
  *                 type: string
  *                 example: "+233501234567"
@@ -81,20 +81,20 @@ router.use(apiKeyMiddleware);
  */
 router.post(
   "/",
-  requireRole(["buyer", "driver", "merchant", "admin", "super_admin"]),
+  requireAuth,
   upload.single("file"),
   uploadController.uploadFile
 );
 
 router.delete(
   "/*",
-  requireRole(["buyer", "driver", "merchant", "admin", "super_admin"]),
+  requireAuth,
   uploadController.deleteFile
 );
 
 router.post(
   "/presigned/*",
-  requireRole(["buyer", "driver", "merchant", "admin", "super_admin"]),
+  requireAuth,
   uploadController.getPresignedUrl
 );
 

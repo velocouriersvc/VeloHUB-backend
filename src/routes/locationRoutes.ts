@@ -9,7 +9,7 @@ const locationController = new LocationController();
 // Apply API Key Middleware
 router.use(apiKeyMiddleware);
 
-// Saved locations — buyer role
+// Saved locations - buyer role
 const buyerRole = requireRole(["buyer"]);
 
 /**

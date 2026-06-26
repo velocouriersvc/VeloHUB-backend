@@ -57,8 +57,8 @@ export class ServiceBooking {
     @Column({ type: "varchar", length: 20, nullable: true })
     preferredTimeSlot: string | null;
 
-    @Column({ type: "text" })
-    serviceAddress: string;
+    @Column({ type: "text", nullable: true })
+    serviceAddress: string | null;
 
     @Column({ type: "decimal", precision: 10, scale: 7, nullable: true })
     latitude: number | null;

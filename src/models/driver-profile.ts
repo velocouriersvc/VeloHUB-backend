@@ -28,8 +28,8 @@ export class DriverProfile {
     @Column({ type: "varchar", length: 50 })
     vehicleType: string;
 
-    @Column({ type: "varchar", length: 50 })
-    plateNumber: string;
+    @Column({ type: "varchar", length: 50, nullable: true })
+    plateNumber: string | null;
 
     @Column({ type: "varchar", length: 100, nullable: true })
     region: string | null;

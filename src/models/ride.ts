@@ -12,6 +12,7 @@ export enum RideType {
 
 export enum PaymentMethod {
     MOMO = "momo",
+    CARD = "card",
     CASH = "cash",
     WALLET = "wallet",
 }
@@ -102,6 +103,9 @@ export class Ride {
 
     @Column({ type: "decimal", precision: 10, scale: 2, default: 0 })
     surgeAmount: number;
+
+    @Column({ type: "decimal", precision: 10, scale: 2, default: 0 })
+    riderServiceFee: number;
 
     @Column({ type: "decimal", precision: 5, scale: 2, default: 0 })
     discountPercent: number;

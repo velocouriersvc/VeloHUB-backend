@@ -15,6 +15,7 @@ export interface AuthUserResponse {
     id: string;
     is_new_user: boolean;
     roles: RoleType[];
+    activeRole: string | null;
 }
 
 export interface AuthResponse {

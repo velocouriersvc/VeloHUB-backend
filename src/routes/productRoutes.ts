@@ -24,7 +24,7 @@ const anyRole = requireRole(["buyer", "driver", "merchant", "admin"]);
  *   get:
  *     tags: [Products]
  *     summary: Get product categories
- *     description: Returns a list of available product categories. Public — any authenticated role.
+ *     description: Returns a list of available product categories. Public - any authenticated role.
  *     security:
  *       - ApiKeyAuth: []
  *     responses:
@@ -42,7 +42,37 @@ const anyRole = requireRole(["buyer", "driver", "merchant", "admin"]);
  *       403:
  *         description: Invalid API key or role not approved
  */
-router.get("/categories", anyRole, productController.getCategories);
+router.get("/categories", productController.getCategories);
+
+/**
+ * @openapi
+ * /products/categories:
+ *   post:
+ *     tags: [Products]
+ *     summary: Suggest a new product/service category
+ *     description: Merchant submits a new category for admin review. Created as inactive until approved.
+ *     security:
+ *       - ApiKeyAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [name]
+ *             properties:
+ *               name:
+ *                 type: string
+ *               type:
+ *                 type: string
+ *                 enum: [marketplace, service]
+ *     responses:
+ *       201:
+ *         description: Category submitted for review
+ *       400:
+ *         description: Validation error or duplicate
+ */
+router.post("/categories", merchantRole, productController.suggestCategory);
 
 /**
  * @openapi
@@ -50,7 +80,7 @@ router.get("/categories", anyRole, productController.getCategories);
  *   get:
  *     tags: [Products]
  *     summary: List products
- *     description: Returns a paginated, filterable list of active products. Public — any authenticated role.
+ *     description: Returns a paginated, filterable list of active products. Public - any authenticated role.
  *     security:
  *       - ApiKeyAuth: []
  *     parameters:
@@ -89,7 +119,37 @@ router.get("/categories", anyRole, productController.getCategories);
  *       403:
  *         description: Invalid API key or role not approved
  */
-router.get("/", anyRole, productController.getProducts);
+router.get("/", productController.getProducts);
+
+/**
+ * @openapi
+ * /products/popular:
+ *   get:
+ *     tags: [Products]
+ *     summary: Get popular products for a category
+ *     description: Returns the highest-ordered products for a specified category. Public - any authenticated role.
+ *     security:
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - name: category
+ *         in: query
+ *         description: Product category to filter by
+ *         schema:
+ *           type: string
+ *           default: food
+ *       - name: limit
+ *         in: query
+ *         description: Maximum number of popular products to return
+ *         schema:
+ *           type: integer
+ *           default: 5
+ *     responses:
+ *       200:
+ *         description: Popular product list
+ *       403:
+ *         description: Invalid API key or role not approved
+ */
+router.get("/popular", productController.getPopularProducts);
 
 // ════════════════════════════════════════════════════════════════════
 //  MERCHANT ENDPOINTS (static paths BEFORE :id param routes)
@@ -367,7 +427,7 @@ router.delete("/options/:optionId", merchantRole, productController.deleteOption
  *       403:
  *         description: Invalid API key or role not approved
  */
-router.get("/:id", anyRole, productController.getProduct);
+router.get("/:id", productController.getProduct);
 
 /**
  * @openapi

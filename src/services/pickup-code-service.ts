@@ -10,7 +10,7 @@ const MAX_VERIFY_ATTEMPTS = 5;
 const ATTEMPTS_TTL = 3600; // 1 hour
 
 /**
- * PickupCodeService — Generate & verify 6-char alphanumeric pickup codes.
+ * PickupCodeService - Generate & verify 6-char alphanumeric pickup codes.
  *
  * Codes are stored on the Order row itself. Redis is used only for
  * rate-limiting verification attempts to prevent brute-forcing.
@@ -37,7 +37,7 @@ export class PickupCodeService {
      * Verify a pickup code against the expected code.
      * Uses Redis to rate-limit verification attempts (max 5 per order per hour).
      *
-     * @returns `{ valid, attemptsRemaining }` — or throws on rate limit exceeded.
+     * @returns `{ valid, attemptsRemaining }` - or throws on rate limit exceeded.
      */
     async verify(
         orderId: string,
@@ -58,7 +58,7 @@ export class PickupCodeService {
         const valid = submittedCode.toUpperCase().trim() === expectedCode.toUpperCase().trim();
 
         if (valid) {
-            // Success — clean up attempts counter
+            // Success - clean up attempts counter
             await redis.del(key);
             log.info("Pickup code verified successfully", { orderId });
         } else {

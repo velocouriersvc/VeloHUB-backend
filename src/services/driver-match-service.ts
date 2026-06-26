@@ -5,6 +5,7 @@ import { NotificationService } from "./notification-service";
 import { VehicleType } from "../models/vehicle-pricing";
 import { createServiceLogger } from "../utils/logger";
 import { driverMatchEventsTotal } from "../utils/metrics";
+import { emitToDriver } from "../socket-gateway";
 
 const log = createServiceLogger("DriverMatchService");
 
@@ -104,7 +105,7 @@ export class DriverMatchService {
                 userId: profile.userId,
                 fullName: profile.fullName,
                 vehicleType: profile.vehicleType,
-                plateNumber: profile.plateNumber,
+                plateNumber: profile.plateNumber || "N/A",
                 lat: nearby.location.lat,
                 lng: nearby.location.lng,
                 distanceKm: nearby.distanceKm,
@@ -115,24 +116,34 @@ export class DriverMatchService {
     }
 
     /**
-     * Broadcast a ride request to a list of drivers
+     * Broadcast a ride request to a list of drivers via push + WebSocket
      */
     async broadcastRideRequest(
         rideId: string,
         pickupAddress: string,
-        driverUserIds: string[]
+        driverUserIds: string[],
+        rideData?: Record<string, any>
     ): Promise<void> {
         // Track broadcast in Redis
         await this.redisLocation.addToBroadcast(rideId, driverUserIds);
         log.info("Ride broadcasted to drivers", { rideId, driverCount: driverUserIds.length });
 
-        // Notify each driver
+        // Notify each driver via push notification + WebSocket
         for (const driverUserId of driverUserIds) {
+            // Push notification (in-app + Expo push)
             await this.notificationService.notifyNewRideRequest(
                 driverUserId,
                 pickupAddress,
                 rideId
             );
+
+            // Real-time WebSocket event to the driver's personal room
+            emitToDriver(driverUserId, "ride:new", {
+                rideId,
+                pickupAddress,
+                ...rideData,
+                ts: Date.now(),
+            });
         }
     }
 

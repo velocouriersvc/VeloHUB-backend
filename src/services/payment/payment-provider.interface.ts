@@ -1,5 +1,5 @@
 /**
- * Payment provider interface — swap out Paystack for any other provider
+ * Payment provider interface - swap out Paystack for any other provider
  * by implementing this interface.
  */
 export interface MomoPaymentRequest {
@@ -33,6 +33,24 @@ export interface PaymentProvider {
         reference: string;
         providerRef: string;
         authorizationUrl?: string; // for redirect-based flows
+    }>;
+
+    /**
+     * Initialize a card/redirect transaction (returns an authorization URL).
+     * Optional so providers that don't support it can be omitted.
+     */
+    initiateCardPayment?(request: {
+        amount: number;
+        currency?: string;
+        email: string;
+        reference: string;
+        metadata?: Record<string, any>;
+        callbackUrl?: string;
+    }): Promise<{
+        success: boolean;
+        reference: string;
+        providerRef: string;
+        authorizationUrl?: string;
     }>;
 
     /**

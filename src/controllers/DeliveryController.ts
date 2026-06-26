@@ -238,6 +238,44 @@ export class DeliveryController {
         }
     };
 
+    // ── Verify Delivery Code ────────────────────────────────────────
+
+    /**
+     * POST /driver/deliveries/:orderId/verify-delivery-code
+     * Driver submits the code given by the customer to confirm delivery.
+     */
+    verifyDeliveryCode = async (req: AuthRequest, res: Response) => {
+        try {
+            const driverId = req.user?.id;
+            if (!driverId) return res.status(401).json({ message: "User ID required" });
+
+            const { orderId } = req.params;
+            const { code } = req.body;
+
+            if (!code) return res.status(400).json({ message: "Delivery code is required" });
+
+            const result = await this.deliveryService.verifyDeliveryCode(driverId, orderId, code);
+
+            if (!result.valid) {
+                return res.status(400).json({
+                    message: "Invalid delivery code",
+                    attemptsRemaining: result.attemptsRemaining,
+                });
+            }
+
+            return res.status(200).json({
+                message: "Delivery code verified successfully",
+                order: result.order,
+            });
+        } catch (error) {
+            log.error("Error verifying delivery code", { error: (error as Error).message });
+            const msg = (error as Error).message;
+            if (msg.includes("Too many")) return res.status(429).json({ message: msg });
+            if (msg.includes("not found") || msg.includes("not assigned")) return res.status(404).json({ message: msg });
+            return res.status(400).json({ message: msg });
+        }
+    };
+
     // ── Delivery History ────────────────────────────────────────────
 
     /**

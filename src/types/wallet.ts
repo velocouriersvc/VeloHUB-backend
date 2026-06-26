@@ -19,4 +19,4 @@ export interface WalletBalanceResponse {
 }
 
 // Note: WalletTransactionResponse is defined in merchant.ts
-// and re-exported via the barrel — use it from there.
+// and re-exported via the barrel - use it from there.

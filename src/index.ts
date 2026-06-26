@@ -1,15 +1,21 @@
 import "dotenv/config";
 import express, { Request, Response } from "express";
 import cors from "cors";
+import { createServer } from "http";
 import swaggerUi from "swagger-ui-express";
 import { AppDataSource } from "./db/data-source";
 import { swaggerSpec } from "./swagger";
 import { ensureBucket } from "./utils/minio-client";
 import logger from "./utils/logger";
 import { metricsMiddleware, register } from "./utils/metrics";
+import path from "path";
+import { initSocketGateway } from "./socket-gateway";
+import { runSeeds } from "./scripts/run-seeds";
+
 
 import orderRoutes from "./routes/orderRoutes";
 import profileRoutes from "./routes/profileRoutes";
+import supportRoutes from "./routes/supportRoutes";
 import authRoutes from "./routes/authRoutes";
 import devRoutes from "./routes/devRoutes";
 import rideRoutes from "./routes/rideRoutes";
@@ -34,8 +40,12 @@ import auditLogRoutes from "./routes/auditLogRoutes";
 import serviceBookingRoutes from "./routes/service-booking-routes";
 import subscriptionRoutes from "./routes/subscription-routes";
 import identityRoutes from "./routes/identityRoutes";
+import checkoutRoutes from "./routes/checkoutRoutes";
+import supabaseRoutes from "./routes/supabaseRoutes";
+
 
 const app = express();
+const httpServer = createServer(app);
 const PORT = process.env.PORT || 3000;
 
 // Middleware
@@ -81,6 +91,7 @@ app.use(healthRoutes);
 
 app.use("/api/v1/auth", authRoutes);
 app.use("/api/v1/profile", profileRoutes);
+app.use("/api/v1/support", supportRoutes);
 app.use("/api/v1/dev", devRoutes);
 app.use("/api/v1/rides", rideRoutes);
 app.use("/api/v1/driver", driverRoutes);
@@ -103,9 +114,22 @@ app.use("/api/v1/admin/audit-logs", auditLogRoutes);
 app.use("/api/v1/services/bookings", serviceBookingRoutes);
 app.use("/api/v1/services/subscriptions", subscriptionRoutes);
 app.use("/api/v1/identity", identityRoutes);
+app.use("/api/v1/checkout", checkoutRoutes);
+app.use("/api/v1/admin/supabase", supabaseRoutes);
+
 app.use("/api/orders", orderRoutes);
 
-// Root — Dashboard
+// Explicit DB Viewer Route for local dev
+app.get("/api/v1/db-viewer", (_req, res) => {
+  res.sendFile(path.join(__dirname, "../public/db-viewer.html"));
+});
+
+app.get("/api/v1/db-viewer.html", (_req, res) => {
+  res.sendFile(path.join(__dirname, "../public/db-viewer.html"));
+});
+
+
+// Root - Dashboard
 app.get("/", (_req: Request, res: Response) => {
   const uptime = Math.floor(process.uptime());
   const hours = Math.floor(uptime / 3600);
@@ -145,7 +169,7 @@ app.get("/", (_req: Request, res: Response) => {
 <body>
   <div class="container">
     <div class="logo">⚡ Velo API</div>
-    <div class="subtitle">Ride-hailing & delivery backend — v1.0.0</div>
+    <div class="subtitle">Ride-hailing & delivery backend - v1.0.0</div>
 
     <div class="card">
       <h3>Server</h3>
@@ -221,22 +245,34 @@ AppDataSource.initialize()
   .then(async () => {
     logger.info("Data Source has been initialized");
 
-    // Ensure MinIO bucket exists
-    try {
-      await ensureBucket();
-      logger.info("MinIO bucket ready");
-    } catch (err) {
-      logger.warn("MinIO bucket init failed (uploads may not work)", { error: (err as Error).message });
-    }
+    // Open the HTTP port as soon as the DB connection is up so Kubernetes health
+    // probes pass promptly. Bucket setup and idempotent seeds are non-critical and
+    // run in the BACKGROUND so they never delay readiness - blocking on them here
+    // was pushing pod startup past the rollout timeout (probe "connection refused").
+    initSocketGateway(httpServer);
 
-    // Start server
-    app.listen(PORT,  async () => {
+    httpServer.listen(PORT, () => {
       logger.info(`Server is running on port ${PORT}.`);
-
+      logger.info(`WebSocket ready on ws://localhost:${PORT} (/drivers, /rides)`);
       logger.info(`API Docs: http://localhost:${PORT}/docs`);
       logger.info(`Health: http://localhost:${PORT}/health`);
       logger.info(`Metrics: http://localhost:${PORT}/metrics`);
     });
+
+    // Non-blocking background warm-up (MinIO bucket + idempotent seeds).
+    void (async () => {
+      try {
+        await ensureBucket();
+        logger.info("MinIO bucket ready");
+      } catch (err) {
+        logger.warn("MinIO bucket init failed (uploads may not work)", { error: (err as Error).message });
+      }
+      try {
+        await runSeeds();
+      } catch (err) {
+        logger.warn("Seed scripts failed (data may need manual seeding)", { error: (err as Error).message });
+      }
+    })();
   })
   .catch((error: Error) => {
     logger.error("Error during Data Source initialization", { error: error.message });

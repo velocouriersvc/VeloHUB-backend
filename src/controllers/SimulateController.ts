@@ -6,6 +6,7 @@ import { DriverProfile } from "../models/driver-profile";
 import { VehicleType } from "../models/vehicle-pricing";
 import { RideService } from "../services/ride-service";
 import { createServiceLogger } from "../utils/logger";
+import { currencyForCountry } from "../utils/currency";
 import crypto from "crypto";
 
 const log = createServiceLogger("SimulateController");
@@ -49,7 +50,7 @@ export class SimulateController {
                 dropoffLat: 5.6147,
                 dropoffLng: -0.1770,
                 vehicleType: vehicleType || VehicleType.CAR,
-                currency: customer.country === "NG" ? "NGN" : "GHS",
+                currency: currencyForCountry(customer.country),
                 distanceKm: 5,
                 durationMin: 15,
                 baseFare: fare || 100,

@@ -143,7 +143,7 @@ router.get("/driver/:driverId", requireRole(["buyer", "driver"]), ratingControll
  *                 type: integer
  *                 minimum: 1
  *                 maximum: 5
- *                 description: Optional — only if order had a delivery driver
+ *                 description: Optional - only if order had a delivery driver
  *               driverComment:
  *                 type: string
  *                 maxLength: 500

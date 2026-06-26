@@ -43,12 +43,15 @@ export class Product {
     @Column({ type: "text", nullable: true })
     description: string | null;
 
-    @Column({ type: "enum", enum: ProductCategory })
+    @Column({ type: "varchar", length: 100, nullable: true })
     @Index()
-    category: ProductCategory;
+    category: string | null;
 
     @Column({ type: "decimal", precision: 10, scale: 2 })
     price: number;
+
+    @Column({ type: "varchar", length: 10, default: "GHS" })
+    currency: string;
 
     @Column({ type: "decimal", precision: 10, scale: 2, nullable: true })
     compareAtPrice: number | null;

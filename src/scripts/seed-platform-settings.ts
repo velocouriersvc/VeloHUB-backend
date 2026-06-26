@@ -1,79 +1,414 @@
 import { AppDataSource } from "../db/data-source";
 import { PlatformSettings } from "../models/platform-settings";
 
-const SETTINGS = [
-    {
-        country: "GH",
-        currency: "GHS",
-        minimumOrderValue: 10.0,
-        defaultCommissionRate: 15.0,
-        defaultServiceFeeRate: 8.0,
-        defaultPickupFeeRate: 10.0,
-        deliveryBaseFee: 5.0,
-        deliveryPerKmFee: 1.5,
-    },
-    {
-        country: "NG",
-        currency: "NGN",
-        minimumOrderValue: 1500.0,
-        defaultCommissionRate: 15.0,
-        defaultServiceFeeRate: 8.0,
-        defaultPickupFeeRate: 10.0,
-        deliveryBaseFee: 500.0,
-        deliveryPerKmFee: 150.0,
-    },
+/**
+ * VeloHUB Platform Settings - exact client-specified rates.
+ * UPDATED: April 22, 2026
+ *
+ * Rider Service Fees:
+ * - USA: $1.99
+ * - Ghana: GH₵ 4.00
+ * - Nigeria: ₦400.00
+ *
+ * IMPORTANT: Delivery rates use PER-MILE values converted to per-km internally.
+ * Client quotes "$0.60/mile" → stored as ~$0.3728/km (÷ 1.60934).
+ * The delivery-fee-service calculates in km (Haversine) so we store km values.
+ *
+ * All percentages stored as whole numbers (15 = 15%).
+ * All absolute fee values stored in local currency.
+ */
+
+const MI_TO_KM = 1.60934;
+
+const SETTINGS: Partial<PlatformSettings>[] = [
+    // ── United States (USD) ─────────────────────────────────────────
     {
         country: "US",
         currency: "USD",
-        minimumOrderValue: 5.0,
-        defaultCommissionRate: 20.0,
-        defaultServiceFeeRate: 10.0,
-        defaultPickupFeeRate: 10.0,
-        deliveryBaseFee: 3.0,
-        deliveryPerKmFee: 1.0,
+        minimumOrderValue: 0,
+
+        // Delivery / Orders
+        defaultCommissionRate: 15.00,       // Merchant keeps 85%
+        defaultServiceFeeRate: 5.00,        // 5% of subtotal
+        serviceFeeMaxCap: 4.99,             // capped at $4.99
+        smallOrderFee: 2.99,                // if subtotal < $15
+        smallOrderThreshold: 15.00,
+        defaultPickupFeeRate: 10.00,
+        deliveryBaseFee: 3.49,              // $3.49 base
+        deliveryPerKmFee: +(0.60 / MI_TO_KM).toFixed(4) as any, // $0.60/mile → per km
+        driverDeliveryFeeShare: 85.00,      // Driver gets 85% of delivery fee (per formula & examples)
+
+        // Rides
+        rideCommissionRate: 15.00,          // VeloHUB takes 15%, driver keeps 85%
+        riderServiceFee: 1.99,              // flat $1.99 on top of ride fare
+        maxSurgeMultiplier: 1.40,            // Surge protection cap (never exceed 1.4x)
+
+        // Delivery rides (order+driver combined)
+        deliveryTotalCommissionRate: 40.00,
+        deliveryRidePortionRate: 50.00,
+        deliveryServicePortionRate: 50.00,
+
+        // Services / Bookings
+        serviceCommissionRate: 15.00,       // Provider keeps 85%
+        serviceBookingFee: 0.00,            // $0 - free to book
+        lateCancellationFee: 5.00,
+        lateCancellationFeeMax: 10.00,
+        cancellationWindowMinutes: 60,      // 1hr before scheduled service
+
+        // General
+        referralRewardAmount: 5.00,
+        leaderboardLimit: 10,
+        isGlobalSurgeActive: false,
+        globalSurgeMultiplier: 1.00,
+        isActive: true,
     },
+
+    // ── Ghana (GHS) ─────────────────────────────────────────────────
+    // ACTUAL production rates (client-specified, NOT auto-calculated)
+    {
+        country: "GH",
+        currency: "GHS",
+        minimumOrderValue: 0,
+
+        defaultCommissionRate: 15.00,
+        defaultServiceFeeRate: 5.00,
+        serviceFeeMaxCap: 79.84,            // ~$4.99 × 16
+        smallOrderFee: 47.84,               // ~$2.99 × 16
+        smallOrderThreshold: 240.00,        // ~$15 × 16
+        defaultPickupFeeRate: 10.00,
+        deliveryBaseFee: 55.84,             // ~$3.49 × 16
+        deliveryPerKmFee: +(9.60 / MI_TO_KM).toFixed(4) as any, // ~$0.60×16/mile → per km
+        driverDeliveryFeeShare: 75.00,
+
+        rideCommissionRate: 15.00,
+        riderServiceFee: 4.00,              // ✅ ACTUAL Ghana rider service fee
+        maxSurgeMultiplier: 1.40,            // Surge protection cap (never exceed 1.4x)
+
+        deliveryTotalCommissionRate: 40.00,
+        deliveryRidePortionRate: 50.00,
+        deliveryServicePortionRate: 50.00,
+
+        serviceCommissionRate: 15.00,
+        serviceBookingFee: 0.00,
+        lateCancellationFee: 80.00,
+        lateCancellationFeeMax: 160.00,
+        cancellationWindowMinutes: 60,
+
+        referralRewardAmount: 80.00,
+        leaderboardLimit: 10,
+        isGlobalSurgeActive: false,
+        globalSurgeMultiplier: 1.00,
+        isActive: true,
+    },
+
+    // ── Nigeria (NGN) - client-specified custom rates ───────────────
+    {
+        country: "NG",
+        currency: "NGN",
+        minimumOrderValue: 0,
+
+        // Delivery / Orders
+        defaultCommissionRate: 15.00,
+        defaultServiceFeeRate: 5.00,        // 5% of subtotal
+        serviceFeeMaxCap: 1500.00,          // capped at ₦1,500
+        smallOrderFee: 800.00,              // ₦800 if subtotal < ₦12,000
+        smallOrderThreshold: 12000.00,
+        defaultPickupFeeRate: 10.00,
+        deliveryBaseFee: 500.00,            // ₦500 base
+        deliveryPerKmFee: 120.00,           // ₦120/km (client specified per-km directly)
+        driverDeliveryFeeShare: 75.00,
+
+        // Rides - client-specified Nigeria rates (UPDATED April 22, 2026)
+        rideCommissionRate: 15.00,
+        riderServiceFee: 400.00,            // ₦400 flat (updated from ₦300)
+        maxSurgeMultiplier: 1.40,            // Surge protection cap (never exceed 1.4x)
+
+        deliveryTotalCommissionRate: 40.00,
+        deliveryRidePortionRate: 50.00,
+        deliveryServicePortionRate: 50.00,
+
+        // Services
+        serviceCommissionRate: 15.00,
+        serviceBookingFee: 0.00,
+        lateCancellationFee: 2000.00,
+        lateCancellationFeeMax: 5000.00,
+        cancellationWindowMinutes: 60,
+
+        referralRewardAmount: 2000.00,
+        leaderboardLimit: 10,
+        isGlobalSurgeActive: false,
+        globalSurgeMultiplier: 1.00,
+        isActive: true,
+    },
+
+    // ── Kenya (KES) - competitive Nairobi rates ⚠️ validate before launch ──
+    {
+        country: "KE",
+        currency: "KES",
+        minimumOrderValue: 0,
+
+        defaultCommissionRate: 15.00,
+        defaultServiceFeeRate: 5.00,
+        serviceFeeMaxCap: 650.00,           // ~$5
+        smallOrderFee: 390.00,              // ~$3 if subtotal < ~$15
+        smallOrderThreshold: 2000.00,       // ~$15
+        defaultPickupFeeRate: 10.00,
+        deliveryBaseFee: 100.00,
+        deliveryPerKmFee: 45.00,
+        driverDeliveryFeeShare: 75.00,
+
+        rideCommissionRate: 15.00,
+        riderServiceFee: 50.00,
+        maxSurgeMultiplier: 1.40,            // Surge protection cap (never exceed 1.4x)
+
+        deliveryTotalCommissionRate: 40.00,
+        deliveryRidePortionRate: 50.00,
+        deliveryServicePortionRate: 50.00,
+
+        serviceCommissionRate: 15.00,
+        serviceBookingFee: 0.00,
+        lateCancellationFee: 130.00,
+        lateCancellationFeeMax: 260.00,
+        cancellationWindowMinutes: 60,
+
+        referralRewardAmount: 650.00,
+        leaderboardLimit: 10,
+        isGlobalSurgeActive: false,
+        globalSurgeMultiplier: 1.00,
+        isActive: true,
+    },
+
+    // ── South Africa (ZAR) - competitive rates ⚠️ validate before launch ──
+    {
+        country: "ZA",
+        currency: "ZAR",
+        minimumOrderValue: 0,
+
+        defaultCommissionRate: 15.00,
+        defaultServiceFeeRate: 5.00,
+        serviceFeeMaxCap: 90.00,            // ~$5
+        smallOrderFee: 55.00,               // ~$3
+        smallOrderThreshold: 270.00,        // ~$15
+        defaultPickupFeeRate: 10.00,
+        deliveryBaseFee: 25.00,
+        deliveryPerKmFee: 8.00,
+        driverDeliveryFeeShare: 75.00,
+
+        rideCommissionRate: 15.00,
+        riderServiceFee: 8.00,
+        maxSurgeMultiplier: 1.40,            // Surge protection cap (never exceed 1.4x)
+
+        deliveryTotalCommissionRate: 40.00,
+        deliveryRidePortionRate: 50.00,
+        deliveryServicePortionRate: 50.00,
+
+        serviceCommissionRate: 15.00,
+        serviceBookingFee: 0.00,
+        lateCancellationFee: 90.00,
+        lateCancellationFeeMax: 180.00,
+        cancellationWindowMinutes: 60,
+
+        referralRewardAmount: 90.00,
+        leaderboardLimit: 10,
+        isGlobalSurgeActive: false,
+        globalSurgeMultiplier: 1.00,
+        isActive: true,
+    },
+
+    // ── Tanzania (TZS) - competitive Dar es Salaam rates ⚠️ validate ──
+    {
+        country: "TZ",
+        currency: "TZS",
+        minimumOrderValue: 0,
+
+        defaultCommissionRate: 15.00,
+        defaultServiceFeeRate: 5.00,
+        serviceFeeMaxCap: 13000.00,         // ~$5
+        smallOrderFee: 7800.00,             // ~$3
+        smallOrderThreshold: 39000.00,      // ~$15
+        defaultPickupFeeRate: 10.00,
+        deliveryBaseFee: 2500.00,
+        deliveryPerKmFee: 800.00,
+        driverDeliveryFeeShare: 75.00,
+
+        rideCommissionRate: 15.00,
+        riderServiceFee: 700.00,
+        maxSurgeMultiplier: 1.40,            // Surge protection cap (never exceed 1.4x)
+
+        deliveryTotalCommissionRate: 40.00,
+        deliveryRidePortionRate: 50.00,
+        deliveryServicePortionRate: 50.00,
+
+        serviceCommissionRate: 15.00,
+        serviceBookingFee: 0.00,
+        lateCancellationFee: 13000.00,
+        lateCancellationFeeMax: 26000.00,
+        cancellationWindowMinutes: 60,
+
+        referralRewardAmount: 13000.00,
+        leaderboardLimit: 10,
+        isGlobalSurgeActive: false,
+        globalSurgeMultiplier: 1.00,
+        isActive: true,
+    },
+
+    // ── Uganda (UGX) - competitive Kampala rates ⚠️ validate ──────────
+    {
+        country: "UG",
+        currency: "UGX",
+        minimumOrderValue: 0,
+
+        defaultCommissionRate: 15.00,
+        defaultServiceFeeRate: 5.00,
+        serviceFeeMaxCap: 19000.00,         // ~$5
+        smallOrderFee: 11400.00,            // ~$3
+        smallOrderThreshold: 57000.00,      // ~$15
+        defaultPickupFeeRate: 10.00,
+        deliveryBaseFee: 3500.00,
+        deliveryPerKmFee: 1000.00,
+        driverDeliveryFeeShare: 75.00,
+
+        rideCommissionRate: 15.00,
+        riderServiceFee: 1200.00,
+        maxSurgeMultiplier: 1.40,            // Surge protection cap (never exceed 1.4x)
+
+        deliveryTotalCommissionRate: 40.00,
+        deliveryRidePortionRate: 50.00,
+        deliveryServicePortionRate: 50.00,
+
+        serviceCommissionRate: 15.00,
+        serviceBookingFee: 0.00,
+        lateCancellationFee: 19000.00,
+        lateCancellationFeeMax: 38000.00,
+        cancellationWindowMinutes: 60,
+
+        referralRewardAmount: 19000.00,
+        leaderboardLimit: 10,
+        isGlobalSurgeActive: false,
+        globalSurgeMultiplier: 1.00,
+        isActive: true,
+    },
+
+    // ── Canada (CAD) ────────────────────────────────────────────────
     {
         country: "CA",
         currency: "CAD",
-        minimumOrderValue: 7.0,
-        defaultCommissionRate: 20.0,
-        defaultServiceFeeRate: 10.0,
-        defaultPickupFeeRate: 10.0,
-        deliveryBaseFee: 4.0,
-        deliveryPerKmFee: 1.25,
+        minimumOrderValue: 0,
+
+        defaultCommissionRate: 15.00,
+        defaultServiceFeeRate: 5.00,
+        serviceFeeMaxCap: 6.99,
+        smallOrderFee: 3.99,
+        smallOrderThreshold: 20.00,
+        defaultPickupFeeRate: 10.00,
+        deliveryBaseFee: 4.49,
+        deliveryPerKmFee: +(0.80 / MI_TO_KM).toFixed(4) as any,
+        driverDeliveryFeeShare: 75.00,
+
+        rideCommissionRate: 15.00,
+        riderServiceFee: 2.49,
+        maxSurgeMultiplier: 1.40,            // Surge protection cap (never exceed 1.4x)
+
+        deliveryTotalCommissionRate: 40.00,
+        deliveryRidePortionRate: 50.00,
+        deliveryServicePortionRate: 50.00,
+
+        serviceCommissionRate: 15.00,
+        serviceBookingFee: 0.00,
+        lateCancellationFee: 7.00,
+        lateCancellationFeeMax: 14.00,
+        cancellationWindowMinutes: 60,
+
+        referralRewardAmount: 7.00,
+        leaderboardLimit: 10,
+        isGlobalSurgeActive: false,
+        globalSurgeMultiplier: 1.00,
+        isActive: true,
     },
+
+    // ── India (INR) ─────────────────────────────────────────────────
     {
         country: "IN",
         currency: "INR",
-        minimumOrderValue: 100.0,
-        defaultCommissionRate: 12.0,
-        defaultServiceFeeRate: 5.0,
-        defaultPickupFeeRate: 8.0,
-        deliveryBaseFee: 30.0,
-        deliveryPerKmFee: 10.0,
+        minimumOrderValue: 0,
+
+        defaultCommissionRate: 15.00,
+        defaultServiceFeeRate: 5.00,
+        serviceFeeMaxCap: 399.00,
+        smallOrderFee: 249.00,
+        smallOrderThreshold: 1200.00,
+        defaultPickupFeeRate: 8.00,
+        deliveryBaseFee: 29.00,
+        deliveryPerKmFee: 10.00,
+        driverDeliveryFeeShare: 75.00,
+
+        rideCommissionRate: 15.00,
+        riderServiceFee: 49.00,
+        maxSurgeMultiplier: 1.40,            // Surge protection cap (never exceed 1.4x)
+
+        deliveryTotalCommissionRate: 40.00,
+        deliveryRidePortionRate: 50.00,
+        deliveryServicePortionRate: 50.00,
+
+        serviceCommissionRate: 15.00,
+        serviceBookingFee: 0.00,
+        lateCancellationFee: 200.00,
+        lateCancellationFeeMax: 500.00,
+        cancellationWindowMinutes: 60,
+
+        referralRewardAmount: 200.00,
+        leaderboardLimit: 10,
+        isGlobalSurgeActive: false,
+        globalSurgeMultiplier: 1.00,
+        isActive: true,
     },
 ];
 
-async function seedPlatformSettings() {
-    await AppDataSource.initialize();
-    console.log("Database initialized");
+/**
+ * Seed platform_settings rows.
+ * UPSERTS - existing rows are UPDATED to match the latest config.
+ */
+export async function seedPlatformSettings(alreadyInitialised = false) {
+    if (!alreadyInitialised) {
+        await AppDataSource.initialize();
+    }
 
     const repo = AppDataSource.getRepository(PlatformSettings);
 
+    let upserted = 0;
     for (const data of SETTINGS) {
-        const exists = await repo.findOne({ where: { country: data.country } });
-        if (exists) {
-            console.log(`⏭  ${data.country} already exists — skipping`);
-            continue;
+        const existing = await repo.findOne({ where: { country: data.country! } });
+        if (existing) {
+            Object.assign(existing, data);
+            await repo.save(existing);
+        } else {
+            await repo.save(repo.create(data));
         }
-
-        const entry = repo.create(data);
-        await repo.save(entry);
-        console.log(`✅ Seeded ${data.country} (${data.currency})`);
+        upserted++;
     }
 
-    console.log("\nDone — platform_settings seeded.");
-    await AppDataSource.destroy();
+    console.log(`✅ platform_settings: upserted ${upserted} rows`);
+
+    // Velo operates in Africa only - deactivate any non-African markets (US/CA/IN/etc.).
+    const AFRICAN_COUNTRIES = ["GH", "NG", "KE", "ZA", "TZ", "UG"];
+    const deactivated = await repo
+        .createQueryBuilder()
+        .update()
+        .set({ isActive: false })
+        .where("country NOT IN (:...countries)", { countries: AFRICAN_COUNTRIES })
+        .andWhere("isActive = true")
+        .execute();
+    if (deactivated.affected) {
+        console.log(`✅ platform_settings: deactivated ${deactivated.affected} non-African market(s)`);
+    }
+
+    if (!alreadyInitialised) {
+        await AppDataSource.destroy();
+    }
 }
 
-seedPlatformSettings().catch(console.error);
+if (require.main === module) {
+    seedPlatformSettings(false)
+        .then(() => console.log("Done - platform_settings seeded."))
+        .catch(console.error);
+}

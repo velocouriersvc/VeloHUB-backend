@@ -19,6 +19,7 @@ import { NotificationType } from "../models/notification";
 import { createServiceLogger } from "../utils/logger";
 import { formatCurrency } from "../utils/currency";
 import { settlementEventsTotal, orderEventsTotal, rideEventsTotal } from "../utils/metrics";
+import { emitOrderEvent } from "../socket-gateway";
 
 const log = createServiceLogger("SettlementService");
 
@@ -54,7 +55,7 @@ export type SettlementType =
 // ── Service ─────────────────────────────────────────────────────────
 
 /**
- * SettlementService — Handles all 4 settlement flows:
+ * SettlementService - Handles all 4 settlement flows:
  *
  * 1. Cash + Delivery:   Driver collects cash → debit driver wallet, credit merchant wallet
  * 2. Cash + Pickup:     Merchant collects cash → debit merchant wallet (platform fee only)
@@ -79,7 +80,7 @@ export class SettlementService {
     // ── Main Settlement Dispatcher ──────────────────────────────────
 
     /**
-     * Settle an order — called when:
+     * Settle an order - called when:
      *  - Pickup orders: merchant verifies pickup code (customer picks up) OR merchant marks self-pickup complete
      *  - Delivery orders: driver confirms delivery
      *
@@ -135,9 +136,10 @@ export class SettlementService {
         const subtotal = Number(order.subtotal);
         const commission = Number(order.commission);
         const serviceFee = Number(order.serviceFee);
+        const smallOrderFee = Number(order.smallOrderFee || 0);
         const deliveryFee = Number(order.deliveryFee);
         const merchantEarnings = Number(order.merchantEarnings);
-        const platformFee = commission + serviceFee;
+        const platformFee = commission + serviceFee + smallOrderFee;
 
         // Build metadata for all wallet transactions
         const txMetadata = {
@@ -190,6 +192,13 @@ export class SettlementService {
             `Order settled (${settlementType})`
         );
 
+        // 2b. Emit WebSocket event for real-time tracking
+        emitOrderEvent(orderId, "order:status", {
+            orderId,
+            status: OrderStatus.COMPLETED,
+            updatedAt: new Date().toISOString(),
+        });
+
         // 3. Update merchant stats
         await this.merchantService.recordOrderCompletion(order.merchantId, merchantEarnings);
 
@@ -214,7 +223,7 @@ export class SettlementService {
     // ── Ride Settlement Dispatcher ──────────────────────────────────
 
     /**
-     * Settle a ride — called when driver confirms completion.
+     * Settle a ride - called when driver confirms completion.
      */
     async settleRide(
         rideId: string,
@@ -254,15 +263,28 @@ export class SettlementService {
         const settlementType: SettlementType = isCash ? "cash_ride" : "online_ride";
 
         // Calculate amounts
+        // Prefer pre-computed values from fare-service (stored on ride at request time)
         const finalFare = Number(ride.finalFare);
-        
-        let commissionRate = settings?.rideCommissionRate || 20;
-        if (ride.type === RideType.DELIVERY) {
-            commissionRate = settings?.deliveryTotalCommissionRate || 40;
-        }
+        const riderServiceFee = Number(ride.riderServiceFee || 0);
+        const farePortionAfterSurge = finalFare - riderServiceFee;
 
-        const platformFee = Math.round(finalFare * (Number(commissionRate) / 100) * 100) / 100;
-        const driverEarnings = finalFare - platformFee;
+        let platformFee: number;
+        let driverEarnings: number;
+
+        if (Number(ride.commission) > 0) {
+            // Use pre-computed values from fare calculation
+            platformFee = Number(ride.commission) + riderServiceFee;
+            driverEarnings = Number(ride.driverPayout);
+        } else {
+            // Fallback: recalculate (legacy rides without pre-computed values)
+            let commissionRate = settings ? Number(settings.rideCommissionRate) : 15;
+            if (ride.type === RideType.DELIVERY) {
+                commissionRate = settings ? Number(settings.deliveryTotalCommissionRate) : 40;
+            }
+            const commissionAmount = Math.round(farePortionAfterSurge * (commissionRate / 100) * 100) / 100;
+            platformFee = commissionAmount + riderServiceFee;
+            driverEarnings = farePortionAfterSurge - commissionAmount;
+        }
 
         // Build metadata
         const txMetadata = {
@@ -272,9 +294,9 @@ export class SettlementService {
             settlementType,
             breakdown: {
                 finalFare,
+                riderServiceFee,
                 platformFee,
                 driverEarnings,
-                commissionRate
             },
         };
 
@@ -433,7 +455,7 @@ export class SettlementService {
     // ── Flow 1: Cash + Delivery ─────────────────────────────────────
     //
     // Driver collected cash from customer.
-    //  • DEBIT driver.wallet → (merchantAmount + platformFee) — driver owes platform + merchant
+    //  • DEBIT driver.wallet → (merchantAmount + platformFee) - driver owes platform + merchant
     //  • CREDIT merchant.wallet → merchantAmount
     //  • Platform keeps platformFee (already deducted from driver)
 
@@ -465,13 +487,15 @@ export class SettlementService {
         };
 
         const totalCashCollected = Number(order.totalAmount);
-        // Driver keeps deliveryFee as their earnings
-        const driverOwes = totalCashCollected - deliveryFee;
+        // Driver keeps their share of the delivery fee (default 75%)
+        const driverDeliveryShare = Number(settings?.driverDeliveryFeeShare || 75) / 100;
+        const driverDeliveryEarnings = Math.round(deliveryFee * driverDeliveryShare * 100) / 100;
+        const driverOwes = totalCashCollected - driverDeliveryEarnings;
 
         let driverDebited = false;
         let merchantCredited = false;
 
-        // Debit driver — they owe (merchantEarnings + platformFee) from the cash collected
+        // Debit driver - they owe (merchantEarnings + platformFee) from the cash collected
         if (order.driverId && driverOwes > 0) {
             try {
                 await this.walletService.debit(
@@ -487,7 +511,7 @@ export class SettlementService {
                     amount: driverOwes,
                     error: (err as Error).message,
                 });
-                // Don't fail settlement — flag it for admin review
+                // Don't fail settlement - flag it for admin review
             }
         }
 
@@ -507,7 +531,7 @@ export class SettlementService {
             orderNumber: order.orderNumber,
             settlementType: "cash_delivery",
             merchantEarnings,
-            driverEarnings: deliveryFee,
+            driverEarnings: driverDeliveryEarnings,
             platformFee,
             currency,
             merchantWalletCredited: merchantCredited,
@@ -546,7 +570,7 @@ export class SettlementService {
 
         let merchantDebited = false;
 
-        // Debit merchant — they owe platform fee from the cash they collected
+        // Debit merchant - they owe platform fee from the cash they collected
         if (platformFee > 0) {
             try {
                 await this.walletService.debit(
@@ -629,25 +653,29 @@ export class SettlementService {
             merchantCredited = true;
         }
 
-        // Credit driver (delivery fee)
-        if (order.driverId && deliveryFee > 0) {
+        // Credit driver (their share of delivery fee - default 75%)
+        const driverDeliveryShare = Number(settings?.driverDeliveryFeeShare || 75) / 100;
+        const driverDeliveryEarnings = Math.round(deliveryFee * driverDeliveryShare * 100) / 100;
+
+        if (order.driverId && driverDeliveryEarnings > 0) {
             await this.walletService.credit(
                 order.driverId,
-                deliveryFee,
+                driverDeliveryEarnings,
                 `Delivery earnings: Order #${order.orderNumber}`,
                 metadata
             );
             driverCredited = true;
         }
 
-        const platformFee = Number(order.commission) + Number(order.serviceFee);
+        const smallOrderFee = Number(order.smallOrderFee || 0);
+        const platformFee = Number(order.commission) + Number(order.serviceFee) + smallOrderFee;
 
         return {
             orderId: order.id,
             orderNumber: order.orderNumber,
             settlementType: "online_delivery",
             merchantEarnings,
-            driverEarnings: deliveryFee,
+            driverEarnings: driverDeliveryEarnings,
             platformFee,
             currency,
             merchantWalletCredited: merchantCredited,
@@ -706,7 +734,7 @@ export class SettlementService {
         settlement: SettlementResult,
         currency: string
     ): Promise<void> {
-        // Notify customer — order completed
+        // Notify customer - order completed
         await this.notificationService.notify(
             order.customerId,
             NotificationType.ORDER_COMPLETED,
@@ -715,7 +743,7 @@ export class SettlementService {
             { orderId: order.id, orderNumber: order.orderNumber, status: OrderStatus.COMPLETED }
         );
 
-        // Notify merchant — earnings credited
+        // Notify merchant - earnings credited
         if (settlement.merchantWalletCredited) {
             await this.notificationService.notify(
                 order.merchantId,
@@ -732,7 +760,7 @@ export class SettlementService {
         }
 
         
-        // Notify merchant — fee deducted (cash pickup)
+        // Notify merchant - fee deducted (cash pickup)
         if (settlement.merchantWalletDebited) {
             await this.notificationService.notify(
                 order.merchantId,
@@ -748,7 +776,7 @@ export class SettlementService {
             );
         }
 
-        // Notify driver — earnings
+        // Notify driver - earnings
         if (order.driverId && settlement.driverEarnings > 0) {
             if (settlement.driverWalletCredited) {
                 await this.notificationService.notify(
@@ -805,7 +833,7 @@ export class SettlementService {
     // ── Service Booking Settlement ──────────────────────────────────
 
     /**
-     * Settle a service booking — called when merchant marks as completed.
+     * Settle a service booking - called when merchant marks as completed.
      */
     async settleServiceBooking(
         bookingId: string,

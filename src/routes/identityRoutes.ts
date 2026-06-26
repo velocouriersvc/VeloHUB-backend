@@ -50,7 +50,7 @@ router.use(apiKeyMiddleware);
  *         content:
  *           application/json:
  *             example:
- *               sessionId: "vs_XXXXX"
+ *               id: "vs_XXXXX"
  *               clientSecret: "vsc_XXXXX"
  *               ephemeralKeySecret: "vsek_XXXXX"
  *       403:

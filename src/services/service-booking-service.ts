@@ -19,7 +19,7 @@ export interface CreateBookingInput {
     price: number;
     preferredDate: string;
     preferredTimeSlot?: string;
-    serviceAddress: string;
+    serviceAddress?: string;
     customerNotes?: string;
     paymentMethod: ServicePaymentMethod;
     phoneNumber?: string;
@@ -46,10 +46,63 @@ export class ServiceBookingService {
         });
         const currency = settings?.currency || "GHS";
 
-        // 2. Generate booking number
+        // 2. Conflict check - reject if merchant already has an active booking overlapping this slot
+        if (input.preferredDate && input.preferredTimeSlot) {
+            const bookingDate = new Date(input.preferredDate).toISOString().slice(0, 10);
+            const [reqStart, reqEnd] = input.preferredTimeSlot.split('-').map(t => t.trim());
+
+            const activeBookings = await this.bookingRepo
+                .createQueryBuilder("b")
+                .where("b.merchantId = :merchantId", { merchantId: input.merchantId })
+                .andWhere("DATE(b.preferredDate) = :date", { date: bookingDate })
+                .andWhere("b.status NOT IN (:...terminal)", {
+                    terminal: [
+                        ServiceBookingStatus.COMPLETED,
+                        ServiceBookingStatus.CANCELLED,
+                        ServiceBookingStatus.DECLINED,
+                    ],
+                })
+                .getMany();
+
+            const hasConflict = activeBookings.some((existing) => {
+                if (!existing.preferredTimeSlot) return false;
+                const [exStart, exEnd] = existing.preferredTimeSlot.split('-').map(t => t.trim());
+                // Overlap: reqStart < exEnd && exStart < reqEnd
+                return reqStart < exEnd && exStart < reqEnd;
+            });
+
+            if (hasConflict) {
+                throw new Error("This time slot is already booked. Please select a different time.");
+            }
+        }
+
+        // 2b. Duplicate check - prevent same customer from re-booking the same slot
+        if (input.preferredDate && input.preferredTimeSlot) {
+            const bookingDate = new Date(input.preferredDate).toISOString().slice(0, 10);
+            const duplicate = await this.bookingRepo
+                .createQueryBuilder("b")
+                .where("b.customerId = :customerId", { customerId: input.customerId })
+                .andWhere("b.productId = :productId", { productId: input.productId })
+                .andWhere("DATE(b.preferredDate) = :date", { date: bookingDate })
+                .andWhere("b.preferredTimeSlot = :slot", { slot: input.preferredTimeSlot })
+                .andWhere("b.status NOT IN (:...terminal)", {
+                    terminal: [
+                        ServiceBookingStatus.COMPLETED,
+                        ServiceBookingStatus.CANCELLED,
+                        ServiceBookingStatus.DECLINED,
+                    ],
+                })
+                .getOne();
+
+            if (duplicate) {
+                throw new Error("You already have a booking for this service at the selected time.");
+            }
+        }
+
+        // 3. Generate booking number
         const bookingNumber = `SRV-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${uuidv4().slice(0, 6).toUpperCase()}`;
 
-        // 3. Create booking record
+        // 4. Create booking record
         const booking = this.bookingRepo.create({
             bookingNumber,
             customerId: input.customerId,
@@ -60,7 +113,7 @@ export class ServiceBookingService {
             currency,
             preferredDate: new Date(input.preferredDate),
             preferredTimeSlot: input.preferredTimeSlot || null,
-            serviceAddress: input.serviceAddress,
+            serviceAddress: input.serviceAddress || null,
             latitude: input.latitude || null,
             longitude: input.longitude || null,
             customerNotes: input.customerNotes || null,
@@ -83,13 +136,32 @@ export class ServiceBookingService {
             email: user.email || undefined,
         });
 
+        if (!paymentResult.success) {
+            // Payment initiation failed - remove the booking
+            await this.bookingRepo.delete(savedBooking.id);
+            log.warn("Service booking payment failed, removed booking", {
+                bookingId: savedBooking.id,
+                message: paymentResult.message,
+            });
+            throw new Error(paymentResult.message || "Payment initiation failed. Please try again.");
+        }
+
         // 5. Notify merchant
         await this.notificationService.notify(
             input.merchantId,
             NotificationType.SERVICE_REQUESTED,
             "New Service Booking! 🛠️",
-            `New request for "${input.serviceTitle}" at ${input.serviceAddress}.`,
+            `New request for "${input.serviceTitle}"${input.serviceAddress ? ` at ${input.serviceAddress}` : ''}.`,
             { bookingId: savedBooking.id, bookingNumber }
+        );
+
+        // 6. Notify customer - booking confirmation
+        await this.notificationService.notify(
+            input.customerId,
+            NotificationType.SERVICE_REQUESTED,
+            "Booking Submitted! 📋",
+            `Your booking #${bookingNumber} for "${input.serviceTitle}" has been submitted. The provider will respond shortly.`,
+            { bookingId: savedBooking.id, bookingNumber, jobId: savedBooking.id }
         );
 
         log.info("Service booking created", { bookingId: savedBooking.id, bookingNumber });
@@ -111,6 +183,36 @@ export class ServiceBookingService {
         // Authorization check
         if (booking.customerId !== userId && booking.merchantId !== userId) {
             throw new Error("Unauthorized to update this booking");
+        }
+
+        // When merchant accepts, re-check for conflicts (race condition guard)
+        if (status === ServiceBookingStatus.ACCEPTED && booking.preferredDate && booking.preferredTimeSlot) {
+            const bookingDate = new Date(booking.preferredDate).toISOString().slice(0, 10);
+            const [reqStart, reqEnd] = booking.preferredTimeSlot.split('-').map(t => t.trim());
+
+            const conflicts = await this.bookingRepo
+                .createQueryBuilder("b")
+                .where("b.merchantId = :merchantId", { merchantId: booking.merchantId })
+                .andWhere("b.id != :id", { id: bookingId })
+                .andWhere("DATE(b.preferredDate) = :date", { date: bookingDate })
+                .andWhere("b.status NOT IN (:...terminal)", {
+                    terminal: [
+                        ServiceBookingStatus.COMPLETED,
+                        ServiceBookingStatus.CANCELLED,
+                        ServiceBookingStatus.DECLINED,
+                    ],
+                })
+                .getMany();
+
+            const hasConflict = conflicts.some((c) => {
+                if (!c.preferredTimeSlot) return false;
+                const [exStart, exEnd] = c.preferredTimeSlot.split('-').map(t => t.trim());
+                return reqStart < exEnd && exStart < reqEnd;
+            });
+
+            if (hasConflict) {
+                throw new Error("Cannot accept - another booking already occupies this time slot.");
+            }
         }
 
         const oldStatus = booking.status;

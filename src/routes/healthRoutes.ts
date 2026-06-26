@@ -4,6 +4,23 @@ import { redis } from "../utils/redis";
 
 const router = Router();
 
+router.get("/health/counts", async (req, res) => {
+    try {
+        const tables = [
+            "users", "user_profiles", "merchant_profiles", "driver_profiles", "buyer_profiles",
+            "audit_logs", "orders", "products", "push_tokens", "referral_codes", "referral_links", 
+            "rides", "roles", "service_bookings", "service_subscriptions", "user_roles", 
+            "wallet_transactions", "wallets"
+        ];
+        const counts: any = {};
+        for (const t of tables) {
+            const result = await AppDataSource.query(`SELECT COUNT(*) as cnt FROM ${t}`);
+            counts[t] = parseInt(result[0].cnt);
+        }
+        res.json(counts);
+    } catch(e: any) { res.status(500).send(e.message); }
+});
+
 /**
  * @openapi
  * /:

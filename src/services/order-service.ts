@@ -21,6 +21,7 @@ import { redis } from "../utils/redis";
 import { createServiceLogger } from "../utils/logger";
 import { orderEventsTotal, cartEventsTotal } from "../utils/metrics";
 import { formatCurrency } from "../utils/currency";
+import { emitOrderEvent } from "../socket-gateway";
 import { v4 as uuidv4 } from "uuid";
 import { In } from "typeorm";
 
@@ -43,6 +44,7 @@ export interface OrderQuoteInput {
 export interface OrderQuoteResult {
     subtotal: number;
     serviceFee: number;
+    smallOrderFee: number;
     commission: number;
     deliveryFee: number;
     discount: number;
@@ -70,6 +72,7 @@ export interface CheckoutResult {
     payment: {
         reference: string;
         authorizationUrl?: string;
+        clientSecret?: string;
         status: string;
     } | null;
 }
@@ -95,7 +98,7 @@ export class OrderService {
 
     /**
      * Generate a price breakdown (quote) for the user's current cart.
-     * Does NOT create an order — just returns what checkout would cost.
+     * Does NOT create an order - just returns what checkout would cost.
      */
     async getQuote(userId: string, input: OrderQuoteInput): Promise<OrderQuoteResult> {
         // 1. Load cart
@@ -138,11 +141,24 @@ export class OrderService {
             where: { userId: cart.merchantId },
         });
         const commissionRate = this.getRate(merchant?.commissionRate, settings?.serviceCommissionRate, 15) / 100;
-        const serviceFeeRate = this.getRate(merchant?.serviceFeeRate, settings?.defaultServiceFeeRate, 8) / 100;
+        const serviceFeeRate = this.getRate(merchant?.serviceFeeRate, settings?.defaultServiceFeeRate, 5) / 100;
 
         // 6. Calculate fees
         const commission = Math.round(subtotal * commissionRate * 100) / 100;
-        const serviceFee = Math.round(subtotal * serviceFeeRate * 100) / 100;
+        let serviceFee = Math.round(subtotal * serviceFeeRate * 100) / 100;
+
+        // Cap service fee
+        const serviceFeeMaxCap = settings ? Number(settings.serviceFeeMaxCap) : 4.99;
+        if (serviceFeeMaxCap > 0 && serviceFee > serviceFeeMaxCap) {
+            serviceFee = serviceFeeMaxCap;
+        }
+
+        // Small order fee
+        const smallOrderThreshold = settings ? Number(settings.smallOrderThreshold) : 15;
+        const smallOrderFeeAmount = settings ? Number(settings.smallOrderFee) : 2.99;
+        const smallOrderFee = subtotal < smallOrderThreshold
+            ? Math.round(smallOrderFeeAmount * 100) / 100
+            : 0;
 
         // 7. Delivery fee (only for delivery type)
         let deliveryFee = 0;
@@ -153,14 +169,25 @@ export class OrderService {
                 throw new Error("Delivery latitude and longitude are required for delivery orders");
             }
 
-            const feeResult = await this.deliveryFeeService.calculateDeliveryFee(
-                cart.merchantId,
-                input.deliveryLat,
-                input.deliveryLng,
-                country
-            );
-            deliveryFee = feeResult.deliveryFee;
-            estimatedDeliveryMin = feeResult.estimatedDeliveryMin;
+            // A delivery-fee failure must never wipe the rest of the quote (subtotal,
+            // service fee, total). If it fails for any reason, fall back to a 0 fee and
+            // keep the quote usable; the failure is logged for follow-up.
+            try {
+                const feeResult = await this.deliveryFeeService.calculateDeliveryFee(
+                    cart.merchantId,
+                    input.deliveryLat,
+                    input.deliveryLng,
+                    country
+                );
+                deliveryFee = feeResult.deliveryFee;
+                estimatedDeliveryMin = feeResult.estimatedDeliveryMin;
+            } catch (err) {
+                log.warn("Delivery fee calculation failed; defaulting to 0", {
+                    merchantId: cart.merchantId,
+                    error: (err as Error).message,
+                });
+                deliveryFee = 0;
+            }
         }
 
         // 8. Promo code discount
@@ -182,12 +209,13 @@ export class OrderService {
         }
 
         // 9. Total & merchant earnings
-        const totalAmount = Math.round((subtotal + serviceFee + deliveryFee - discount) * 100) / 100;
+        const totalAmount = Math.round((subtotal + serviceFee + smallOrderFee + deliveryFee - discount) * 100) / 100;
         const merchantEarnings = Math.round((subtotal - commission) * 100) / 100;
 
         return {
             subtotal: Math.round(subtotal * 100) / 100,
             serviceFee,
+            smallOrderFee,
             commission,
             deliveryFee,
             discount,
@@ -203,7 +231,7 @@ export class OrderService {
     // ── Checkout ─────────────────────────────────────────────────────
 
     /**
-     * Checkout — create an order from the user's cart.
+     * Checkout - create an order from the user's cart.
      *
      * Flow:
      *  1. Validate cart, stock, MOV
@@ -284,10 +312,14 @@ export class OrderService {
             const settings = await this.getSettings(country);
             const currency = settings?.currency || "GHS";
 
-            // 8. Generate pickup code for pickup orders
+            // 8. Generate pickup and delivery codes for delivery orders
             let pickupCode: string | null = null;
-            if (input.deliveryType === DeliveryType.PICKUP) {
+            let deliveryCode: string | null = null;
+            if (input.deliveryType === DeliveryType.PICKUP || input.deliveryType === DeliveryType.DELIVERY) {
                 pickupCode = this.pickupCodeService.generate();
+            }
+            if (input.deliveryType === DeliveryType.DELIVERY) {
+                deliveryCode = this.pickupCodeService.generate();
             }
 
             // 9. Create order
@@ -300,6 +332,7 @@ export class OrderService {
                 currency,
                 subtotal: quote.subtotal,
                 serviceFee: quote.serviceFee,
+                smallOrderFee: quote.smallOrderFee,
                 commission: quote.commission,
                 deliveryFee: quote.deliveryFee,
                 discountAmount: quote.discount,
@@ -313,7 +346,9 @@ export class OrderService {
                 deliveryLat: input.deliveryLat || null,
                 deliveryLng: input.deliveryLng || null,
                 pickupCode,
+                deliveryCode,
                 pickupCodeVerifiedAt: null,
+                deliveryCodeVerifiedAt: null,
                 status: OrderStatus.PENDING,
                 cancelledBy: null,
                 cancellationReason: null,
@@ -334,6 +369,13 @@ export class OrderService {
                 "Order placed"
             );
 
+            // 10b. Emit WebSocket event for real-time tracking
+            emitOrderEvent(savedOrder.id, "order:status", {
+                orderId: savedOrder.id,
+                status: OrderStatus.PENDING,
+                updatedAt: new Date().toISOString(),
+            });
+
             // 11. Increment promo usage
             if (quote.promoCodeId) {
                 await this.promoRepo.increment(
@@ -351,15 +393,36 @@ export class OrderService {
                         orderId: savedOrder.id,
                         userId,
                         amount: quote.totalAmount,
+                        subtotal: quote.subtotal,
+                        serviceFee: quote.serviceFee,
+                        smallOrderFee: quote.smallOrderFee,
+                        deliveryFee: quote.deliveryFee,
                         method: input.paymentMethod as any,
                         country,
                         phoneNumber: input.phoneNumber || user?.phoneNumber || undefined,
                         email: user?.email || undefined,
                     });
 
+                    // ── Gate: if payment initiation failed, roll back ──
+                    if (!pmtResult.success) {
+                        log.error("Payment initiation failed during checkout, rolling back order", {
+                            orderId: savedOrder.id,
+                            paymentId: pmtResult.paymentId,
+                            paymentStatus: pmtResult.status,
+                            message: pmtResult.message,
+                        });
+                        await this.productService.restoreStock(stockItems);
+                        await this.historyRepo.delete({ orderId: savedOrder.id });
+                        await this.orderRepo.delete(savedOrder.id);
+                        throw new Error(
+                            `Payment failed: ${pmtResult.message || "Could not initiate payment. Please try again."}`
+                        );
+                    }
+
                     paymentResult = {
                         reference: pmtResult.reference,
                         authorizationUrl: pmtResult.authorizationUrl,
+                        clientSecret: pmtResult.clientSecret,
                         status: pmtResult.status,
                     };
 
@@ -370,15 +433,17 @@ export class OrderService {
                     }
                     await this.orderRepo.save(savedOrder);
                 } catch (payError) {
-                    // Payment failed — restore stock, delete order
-                    log.error("Payment failed during checkout, restoring stock", {
-                        orderId: savedOrder.id,
-                        error: (payError as Error).message,
-                    });
-                    await this.productService.restoreStock(stockItems);
-                    await this.historyRepo.delete({ orderId: savedOrder.id });
-                    await this.orderRepo.delete(savedOrder.id);
-                    throw new Error(`Payment failed: ${(payError as Error).message}`);
+                    // Payment failed - restore stock, delete order (if not already rolled back above)
+                    if (!(payError as Error).message.startsWith("Payment failed")) {
+                        log.error("Payment threw during checkout, restoring stock", {
+                            orderId: savedOrder.id,
+                            error: (payError as Error).message,
+                        });
+                        await this.productService.restoreStock(stockItems);
+                        await this.historyRepo.delete({ orderId: savedOrder.id });
+                        await this.orderRepo.delete(savedOrder.id);
+                    }
+                    throw payError instanceof Error ? payError : new Error(`Payment failed: ${payError}`);
                 }
             }
 
@@ -391,7 +456,7 @@ export class OrderService {
                 cart.merchantId,
                 NotificationType.ORDER_PLACED,
                 "New Order! 🛒",
-                `Order #${orderNumber} — ${formatCurrency(quote.totalAmount, currency)} (${cart.items.length} item${cart.items.length > 1 ? "s" : ""})`,
+                `Order #${orderNumber} - ${formatCurrency(quote.totalAmount, currency)} (${cart.items.length} item${cart.items.length > 1 ? "s" : ""})`,
                 {
                     orderId: savedOrder.id,
                     orderNumber,
@@ -400,17 +465,36 @@ export class OrderService {
                 }
             );
 
-            // 15. Notify customer with pickup code (if pickup order)
+            // 15. Notify customer - order placed confirmation
+            await this.notificationService.notify(
+                userId,
+                NotificationType.ORDER_PLACED,
+                "Order Placed! 🛍️",
+                `Your order #${orderNumber} has been placed and is awaiting confirmation from the merchant.`,
+                {
+                    orderId: savedOrder.id,
+                    orderNumber,
+                    totalAmount: quote.totalAmount,
+                    deliveryType: input.deliveryType,
+                }
+            );
+
+            // 16. Notify customer with pickup or delivery codes
             if (pickupCode) {
+                const codeMessage = input.deliveryType === DeliveryType.DELIVERY && deliveryCode
+                    ? `Order #${orderNumber} placed! Pickup code: ${pickupCode}. Delivery code: ${deliveryCode}. Show pickup code to the merchant and give the delivery code to your driver on arrival.`
+                    : `Order #${orderNumber} placed! Your pickup code is: ${pickupCode}`;
+
                 await this.notificationService.notify(
                     userId,
                     NotificationType.PICKUP_CODE_GENERATED,
-                    "Your Pickup Code 📦",
-                    `Order #${orderNumber} placed! Your pickup code is: ${pickupCode}`,
+                    input.deliveryType === DeliveryType.DELIVERY ? "Your Delivery Codes 🔐" : "Your Pickup Code 📦",
+                    codeMessage,
                     {
                         orderId: savedOrder.id,
                         orderNumber,
                         pickupCode,
+                        deliveryCode: deliveryCode || null,
                     }
                 );
             }
@@ -445,6 +529,32 @@ export class OrderService {
     }
 
     // ── Customer Order Queries ───────────────────────────────────────
+
+    /**
+     * Get customer's active/ongoing order (not completed or cancelled).
+     */
+    async getActiveOrder(customerId: string): Promise<Order | null> {
+        const activeStatuses = [
+            OrderStatus.PENDING,
+            OrderStatus.ACCEPTED,
+            OrderStatus.PREPARING,
+            OrderStatus.READY_FOR_PICKUP,
+            OrderStatus.READY_FOR_DELIVERY,
+            OrderStatus.DRIVER_ASSIGNED,
+            OrderStatus.PICKED_UP,
+            OrderStatus.IN_TRANSIT,
+        ];
+
+        return this.orderRepo.findOne({
+            where: activeStatuses.map((status) => ({ customerId, status })),
+            relations: {
+                merchant: { merchantProfile: true },
+                driver: { driverProfile: true },
+                statusHistory: true,
+            },
+            order: { createdAt: "DESC" },
+        });
+    }
 
     /**
      * Get customer's orders with pagination.
@@ -519,18 +629,37 @@ export class OrderService {
 
         if (!order) throw new Error("Order not found");
 
-        const cancellableStatuses = [OrderStatus.PENDING, OrderStatus.ACCEPTED];
+        // A customer may cancel any time *before the goods leave the merchant* -
+        // i.e. before the order is picked up / in transit / delivered. This covers
+        // in-progress orders (preparing, ready, driver-assigned), not just brand-new ones.
+        const cancellableStatuses = [
+            OrderStatus.PENDING,
+            OrderStatus.ACCEPTED,
+            OrderStatus.PREPARING,
+            OrderStatus.READY_FOR_PICKUP,
+            OrderStatus.READY_FOR_DELIVERY,
+            OrderStatus.DRIVER_ASSIGNED,
+        ];
         if (!cancellableStatuses.includes(order.status)) {
             throw new Error(
-                `Cannot cancel order in "${order.status}" status. Only pending or accepted orders can be cancelled.`
+                `Cannot cancel order in "${order.status}" status. Orders can only be cancelled before they are picked up.`
             );
         }
 
         const fromStatus = order.status;
+        const assignedDriverId = order.driverId;
+        const resolvedReason = reason || "Cancelled by customer";
+
+        // If payment was already captured, cancelling creates a refund obligation.
+        const refundDue =
+            order.paymentStatus === OrderPaymentStatus.PAID ||
+            order.paymentStatus === OrderPaymentStatus.ESCROWED;
+
         order.status = OrderStatus.CANCELLED;
         order.cancelledBy = OrderCancelledBy.CUSTOMER;
-        order.cancellationReason = reason || "Cancelled by customer";
+        order.cancellationReason = resolvedReason;
         order.cancelledAt = new Date();
+        order.driverId = null; // release any assigned driver back to the pool
 
         await this.orderRepo.save(order);
         await this.recordStatusChange(
@@ -539,15 +668,24 @@ export class OrderService {
             OrderStatus.CANCELLED,
             customerId,
             "customer",
-            reason
+            resolvedReason
         );
 
+        // Emit WebSocket event for real-time tracking
+        emitOrderEvent(orderId, "order:status", {
+            orderId,
+            status: OrderStatus.CANCELLED,
+            updatedAt: new Date().toISOString(),
+        });
+
         // Restore stock
-        const stockItems = order.items.map((item) => ({
+        const stockItems = (order.items || []).map((item) => ({
             productId: item.productId,
             quantity: item.quantity,
         }));
-        await this.productService.restoreStock(stockItems);
+        if (stockItems.length > 0) {
+            await this.productService.restoreStock(stockItems);
+        }
 
         // Notify merchant
         await this.notificationService.notify(
@@ -558,8 +696,46 @@ export class OrderService {
             { orderId, status: OrderStatus.CANCELLED }
         );
 
+        // Release & notify the assigned driver, if any, so they stop heading to pickup.
+        if (assignedDriverId) {
+            await this.notificationService.notify(
+                assignedDriverId,
+                NotificationType.ORDER_CANCELLED,
+                "Delivery Cancelled ❌",
+                `Order #${order.orderNumber} was cancelled by the customer. You can pick up another delivery.`,
+                { orderId, status: OrderStatus.CANCELLED }
+            );
+        }
+
+        // Refund handling. There is no automated refund integration yet, so we record
+        // the obligation, keep the captured paymentStatus for finance reconciliation,
+        // and let the customer know a refund is being processed.
+        if (refundDue) {
+            log.warn("Paid order cancelled - refund due, requires reconciliation", {
+                orderId,
+                orderNumber: order.orderNumber,
+                amount: order.totalAmount,
+                paymentMethod: order.paymentMethod,
+                paymentReference: order.paymentReference,
+            });
+            await this.notificationService.notify(
+                customerId,
+                NotificationType.ORDER_CANCELLED,
+                "Refund on the way 💸",
+                `Your order #${order.orderNumber} was cancelled. Your payment will be refunded to your original payment method.`,
+                { orderId, status: OrderStatus.CANCELLED, refundDue: true }
+            );
+        }
+
         orderEventsTotal.inc({ status: "cancelled", type: order.deliveryType });
-        log.info("Order cancelled by customer", { orderId, customerId, reason });
+        log.info("Order cancelled by customer", {
+            orderId,
+            customerId,
+            reason: resolvedReason,
+            fromStatus,
+            driverReleased: Boolean(assignedDriverId),
+            refundDue,
+        });
 
         return order;
     }
@@ -649,7 +825,7 @@ export class OrderService {
     }
 
     /**
-     * Get the effective rate — merchant override > platform default > fallback.
+     * Get the effective rate - merchant override > platform default > fallback.
      */
     private getRate(
         merchantOverride: number | null | undefined,

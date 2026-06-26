@@ -16,7 +16,7 @@ export class MerchantController {
     // ── Dashboard ───────────────────────────────────────────────────
 
     /**
-     * GET /merchant/dashboard — Merchant dashboard overview.
+     * GET /merchant/dashboard - Merchant dashboard overview.
      */
     getDashboard = async (req: AuthRequest, res: Response) => {
         try {
@@ -38,7 +38,7 @@ export class MerchantController {
     // ── Profile ─────────────────────────────────────────────────────
 
     /**
-     * GET /merchant/profile — Get merchant profile.
+     * GET /merchant/profile - Get merchant profile.
      */
     getProfile = async (req: AuthRequest, res: Response) => {
         try {
@@ -58,7 +58,7 @@ export class MerchantController {
     };
 
     /**
-     * PUT /merchant/profile — Update merchant profile.
+     * PUT /merchant/profile - Update merchant profile.
      */
     updateProfile = async (req: AuthRequest, res: Response) => {
         try {
@@ -78,7 +78,7 @@ export class MerchantController {
     };
 
     /**
-     * POST /merchant/profile/cover-image — Upload cover image.
+     * POST /merchant/profile/cover-image - Upload cover image.
      */
     uploadCoverImage = async (req: AuthRequest, res: Response) => {
         try {
@@ -110,7 +110,7 @@ export class MerchantController {
     };
 
     /**
-     * PATCH /merchant/toggle-open — Toggle merchant open/close status.
+     * PATCH /merchant/toggle-open - Toggle merchant open/close status.
      */
     toggleOpen = async (req: AuthRequest, res: Response) => {
         try {
@@ -137,7 +137,7 @@ export class MerchantController {
     // ── Operating Hours ─────────────────────────────────────────────
 
     /**
-     * GET /merchant/hours — Get operating hours.
+     * GET /merchant/hours - Get operating hours.
      */
     getOperatingHours = async (req: AuthRequest, res: Response) => {
         try {
@@ -153,7 +153,7 @@ export class MerchantController {
     };
 
     /**
-     * PUT /merchant/hours — Set all operating hours (upsert 7 days).
+     * PUT /merchant/hours - Set all operating hours (upsert 7 days).
      */
     setOperatingHours = async (req: AuthRequest, res: Response) => {
         try {
@@ -181,7 +181,7 @@ export class MerchantController {
     };
 
     /**
-     * PATCH /merchant/hours/:dayOfWeek — Update a single day's hours.
+     * PATCH /merchant/hours/:dayOfWeek - Update a single day's hours.
      */
     updateDayHours = async (req: AuthRequest, res: Response) => {
         try {
@@ -204,7 +204,7 @@ export class MerchantController {
     // ── Orders ──────────────────────────────────────────────────────
 
     /**
-     * GET /merchant/orders — List merchant's orders.
+     * GET /merchant/orders - List merchant's orders.
      */
     getOrders = async (req: AuthRequest, res: Response) => {
         try {
@@ -226,7 +226,7 @@ export class MerchantController {
     };
 
     /**
-     * PATCH /merchant/orders/:orderId/accept — Accept a pending order.
+     * PATCH /merchant/orders/:orderId/accept - Accept a pending order.
      */
     acceptOrder = async (req: AuthRequest, res: Response) => {
         try {
@@ -252,7 +252,7 @@ export class MerchantController {
     };
 
     /**
-     * PATCH /merchant/orders/:orderId/reject — Reject a pending order.
+     * PATCH /merchant/orders/:orderId/reject - Reject a pending order.
      */
     rejectOrder = async (req: AuthRequest, res: Response) => {
         try {
@@ -282,7 +282,7 @@ export class MerchantController {
     };
 
     /**
-     * PATCH /merchant/orders/:orderId/status — Update order status.
+     * PATCH /merchant/orders/:orderId/status - Update order status.
      */
     updateOrderStatus = async (req: AuthRequest, res: Response) => {
         try {
@@ -312,7 +312,7 @@ export class MerchantController {
     };
 
     /**
-     * POST /merchant/orders/:orderId/verify-pickup — Verify pickup code.
+     * POST /merchant/orders/:orderId/verify-pickup - Verify pickup code.
      */
     verifyPickupCode = async (req: AuthRequest, res: Response) => {
         try {
@@ -347,7 +347,7 @@ export class MerchantController {
     };
 
     /**
-     * POST /merchant/orders/:orderId/complete-pickup — Verify pickup code + trigger settlement.
+     * POST /merchant/orders/:orderId/complete-pickup - Verify pickup code + trigger settlement.
      */
     completePickupOrder = async (req: AuthRequest, res: Response) => {
         try {
@@ -391,7 +391,7 @@ export class MerchantController {
     };
 
     /**
-     * POST /merchant/request-payout — Request wallet payout.
+     * POST /merchant/request-payout - Request wallet payout.
      */
     requestPayout = async (req: AuthRequest, res: Response) => {
         try {
@@ -430,7 +430,7 @@ export class MerchantController {
     // ── Finances ────────────────────────────────────────────────────
 
     /**
-     * GET /merchant/finances — Financial overview.
+     * GET /merchant/finances - Financial overview.
      */
     getFinances = async (req: AuthRequest, res: Response) => {
         try {
@@ -446,7 +446,7 @@ export class MerchantController {
     };
 
     /**
-     * GET /merchant/transactions — Full transaction history.
+     * GET /merchant/transactions - Full transaction history.
      */
     getTransactions = async (req: AuthRequest, res: Response) => {
         try {
@@ -467,7 +467,7 @@ export class MerchantController {
     // ── Stats ───────────────────────────────────────────────────────
 
     /**
-     * GET /merchant/stats — Merchant stats.
+     * GET /merchant/stats - Merchant stats.
      */
     getStats = async (req: AuthRequest, res: Response) => {
         try {
@@ -482,7 +482,7 @@ export class MerchantController {
         }
     };
     /**
-     * POST /merchant/:slugOrId/view — Increment store view count (public).
+     * POST /merchant/:slugOrId/view - Increment store view count (public).
      */
     viewProfile = async (req: AuthRequest, res: Response) => {
         try {
@@ -496,7 +496,7 @@ export class MerchantController {
     };
 
     /**
-     * GET /merchant/:slugOrId — Get public merchant profile (public).
+     * GET /merchant/:slugOrId - Get public merchant profile (public).
      */
     getPublicProfile = async (req: AuthRequest, res: Response) => {
         try {
@@ -508,6 +508,12 @@ export class MerchantController {
             if (!profile) {
                 profile = await AppDataSource.getRepository(MerchantProfile).findOne({
                     where: { id: slugOrId },
+                    relations: { user: true },
+                });
+            }
+            if (!profile) {
+                profile = await AppDataSource.getRepository(MerchantProfile).findOne({
+                    where: { userId: slugOrId },
                     relations: { user: true },
                 });
             }

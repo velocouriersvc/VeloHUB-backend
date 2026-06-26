@@ -73,7 +73,7 @@ export class UploadController {
         return res.status(401).json({ message: "User ID required" });
       }
 
-      // The key comes as a wildcard param — e.g. id-cards/userId/uuid.jpg
+      // The key comes as a wildcard param - e.g. id-cards/userId/uuid.jpg
       const key = req.params[0] || req.params.key;
       if (!key) {
         return res.status(400).json({ message: "File key is required" });

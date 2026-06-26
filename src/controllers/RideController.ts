@@ -3,9 +3,35 @@ import { AuthRequest } from "../middleware/role-middleware";
 import { RideService } from "../services/ride-service";
 import { RideType, CancelledBy, PaymentMethod } from "../models/ride";
 import { VehicleType } from "../models/vehicle-pricing";
+import { PricingVertical } from "../config/pricing";
 import { createServiceLogger } from "../utils/logger";
 
+/** Parse an optional vertical from the request body (defaults to RIDES). */
+function parseVertical(input: unknown): PricingVertical {
+    const v = String(input || "").toLowerCase();
+    return (Object.values(PricingVertical) as string[]).includes(v)
+        ? (v as PricingVertical)
+        : PricingVertical.RIDES;
+}
+
 const log = createServiceLogger("RideController");
+
+/**
+ * Map frontend vehicle type names to backend enum values.
+ * Frontend sends: motorbike | car | van
+ * Backend enum:   bike     | car | suv | truck
+ */
+function mapVehicleType(input: string): VehicleType {
+    const map: Record<string, VehicleType> = {
+        motorbike: VehicleType.BIKE,
+        bike: VehicleType.BIKE,
+        car: VehicleType.CAR,
+        suv: VehicleType.SUV,
+        van: VehicleType.TRUCK,
+        truck: VehicleType.TRUCK,
+    };
+    return map[input?.toLowerCase()] || VehicleType.CAR;
+}
 
 export class RideController {
     private rideService = new RideService();
@@ -16,7 +42,7 @@ export class RideController {
      */
     getEstimates = async (req: AuthRequest, res: Response) => {
         try {
-            const { distanceKm, durationMin, pickupLat, pickupLng, promoCode } = req.body;
+            const { distanceKm, durationMin, pickupLat, pickupLng, promoCode, country } = req.body;
 
             if (!distanceKm || !durationMin || !pickupLat || !pickupLng) {
                 return res.status(400).json({ message: "distanceKm, durationMin, pickupLat, pickupLng are required" });
@@ -27,7 +53,9 @@ export class RideController {
                 Number(durationMin),
                 Number(pickupLat),
                 Number(pickupLng),
-                promoCode
+                promoCode,
+                country,
+                parseVertical(req.body.vertical)
             );
 
             return res.json({ estimates });
@@ -43,8 +71,8 @@ export class RideController {
      */
     getEstimate = async (req: AuthRequest, res: Response) => {
         try {
-            const vehicleType = req.params.vehicleType as VehicleType;
-            const { distanceKm, durationMin, pickupLat, pickupLng, promoCode } = req.body;
+            const vehicleType = mapVehicleType(req.params.vehicleType);
+            const { distanceKm, durationMin, pickupLat, pickupLng, promoCode, country } = req.body;
 
             if (!distanceKm || !durationMin || !pickupLat || !pickupLng) {
                 return res.status(400).json({ message: "distanceKm, durationMin, pickupLat, pickupLng are required" });
@@ -56,7 +84,9 @@ export class RideController {
                 Number(durationMin),
                 Number(pickupLat),
                 Number(pickupLng),
-                promoCode
+                promoCode,
+                country,
+                parseVertical(req.body.vertical)
             );
 
             return res.json({ estimate });
@@ -80,6 +110,7 @@ export class RideController {
                 dropoffAddress, dropoffLat, dropoffLng,
                 vehicleType, distanceKm, durationMin,
                 passengerCount, promoCode, stops, sharedContacts,
+                country,
             } = req.body;
 
             if (!pickupAddress || !pickupLat || !dropoffAddress || !dropoffLat || !vehicleType || !distanceKm || !durationMin) {
@@ -95,11 +126,12 @@ export class RideController {
                 dropoffAddress,
                 dropoffLat: Number(dropoffLat),
                 dropoffLng: Number(dropoffLng),
-                vehicleType,
+                vehicleType: mapVehicleType(vehicleType),
                 distanceKm: Number(distanceKm),
                 durationMin: Number(durationMin),
                 passengerCount,
                 promoCode,
+                country,
                 stops,
                 sharedContacts,
             });
@@ -214,6 +246,30 @@ export class RideController {
             return res.json(result);
         } catch (error) {
             log.error("Error getting ride history", { error: (error as Error).message });
+            return res.status(500).json({ message: "Internal server error" });
+        }
+    };
+
+    /**
+     * POST /rides/nearby-drivers
+     * Get nearby drivers for the map overlay
+     */
+    getNearbyDrivers = async (req: AuthRequest, res: Response) => {
+        try {
+            const { lat, lng, radiusKm } = req.body;
+            if (!lat || !lng) {
+                return res.status(400).json({ message: "lat and lng are required" });
+            }
+
+            const locationService = new (await import("../services/redis-location-service")).RedisLocationService();
+            const nearby = await locationService.findNearbyDrivers(
+                Number(lat),
+                Number(lng),
+                Number(radiusKm) || 10,
+            );
+            return res.json({ drivers: nearby });
+        } catch (error) {
+            log.error("Error getting nearby drivers", { error: (error as Error).message });
             return res.status(500).json({ message: "Internal server error" });
         }
     };

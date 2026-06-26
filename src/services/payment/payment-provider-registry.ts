@@ -1,5 +1,6 @@
 import { PaymentProvider } from "./payment-provider.interface";
 import { PaystackProvider } from "./paystack-provider";
+import { StripeProvider } from "./stripe-provider";
 import { createServiceLogger } from "../../utils/logger";
 
 const log = createServiceLogger("PaymentProviderRegistry");
@@ -7,25 +8,32 @@ const log = createServiceLogger("PaymentProviderRegistry");
 /**
  * Registry that maps countries to payment providers.
  *
- * Currently every country routes through Paystack — when a new provider
- * (Flutterwave, Stripe, Razorpay …) is added, register it here by
- * country code and the rest of the stack resolves automatically.
+ * Paystack handles GH & NG (mobile money + cards).
+ * Stripe handles US, CA, GB, and EU countries (card payments).
  */
 export class PaymentProviderRegistry {
     private providers: Map<string, PaymentProvider> = new Map();
     private defaultProvider: PaymentProvider;
+    private stripeProvider: StripeProvider;
 
     constructor() {
         const paystack = new PaystackProvider();
+        this.stripeProvider = new StripeProvider();
         this.defaultProvider = paystack;
 
-        // Ghana & Nigeria — Paystack
+        // Ghana & Nigeria - Paystack
         this.providers.set("GH", paystack);
         this.providers.set("NG", paystack);
 
-        // TODO: US/CA/IN — add Stripe / Razorpay when ready
-        // this.providers.set("US", new StripeProvider());
-        // this.providers.set("IN", new RazorpayProvider());
+        // North America & Europe - Stripe
+        const stripeCountries = [
+            "US", "CA", "GB", "IE", "FR", "DE", "NL", "BE",
+            "AT", "CH", "ES", "IT", "PT", "SE", "DK", "NO",
+            "FI", "AU", "NZ", "SG", "JP",
+        ];
+        for (const code of stripeCountries) {
+            this.providers.set(code, this.stripeProvider);
+        }
 
         log.info("Payment provider registry initialised", {
             countries: Array.from(this.providers.keys()),
@@ -58,7 +66,15 @@ export class PaymentProviderRegistry {
         });
         return result;
     }
+
+    /**
+     * Get the Stripe provider instance directly.
+     * Used when the frontend requests a PaymentIntent for card payments.
+     */
+    getStripeProvider(): StripeProvider {
+        return this.stripeProvider;
+    }
 }
 
-/** Singleton instance — import this everywhere */
+/** Singleton instance - import this everywhere */
 export const paymentProviderRegistry = new PaymentProviderRegistry();

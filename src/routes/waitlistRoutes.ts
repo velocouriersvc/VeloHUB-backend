@@ -60,21 +60,18 @@ router.post("/join", apiKeyMiddleware, waitlistController.joinWaitlist);
  *         content:
  *           application/json:
  *             schema:
- *               type: object
- *               properties:
- *                 countries:
- *                   type: array
- *                   items:
- *                     type: object
- *                     properties:
- *                       id:
- *                         type: string
- *                       name:
- *                         type: string
- *                       code:
- *                         type: string
- *                       isActive:
- *                         type: boolean
+ *               type: array
+ *               items:
+ *                 type: object
+ *                 properties:
+ *                   id:
+ *                     type: string
+ *                   name:
+ *                     type: string
+ *                   code:
+ *                     type: string
+ *                   isActive:
+ *                     type: boolean
  *       403:
  *         description: Invalid API key
  */

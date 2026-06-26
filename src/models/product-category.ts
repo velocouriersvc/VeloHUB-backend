@@ -14,7 +14,7 @@ export class ProductCategory {
     @Column({ type: "varchar", length: 255, nullable: true })
     icon: string;
 
-    @Column({ type: "varchar", length: 50, default: "product" }) // 'product', 'service', 'marketplace'
+    @Column({ type: "varchar", length: 50, default: "marketplace" }) // 'product', 'service', 'marketplace'
     type: string;
 
     @Column({ type: "boolean", default: true })

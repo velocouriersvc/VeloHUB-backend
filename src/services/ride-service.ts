@@ -5,15 +5,18 @@ import { RideSharedContact } from "../models/ride-shared-contact";
 import { VehicleType } from "../models/vehicle-pricing";
 import { PaymentMethodType } from "../models/payment";
 import { FareService, FareBreakdown } from "./fare-service";
+import { PricingVertical } from "../config/pricing";
 import { DriverMatchService, MatchedDriver } from "./driver-match-service";
 import { PaymentService } from "./payment/payment-service";
 import { NotificationService } from "./notification-service";
+import { NotificationType } from "../models/notification";
 import { RedisLocationService } from "./redis-location-service";
 import { PreludeService } from "./prelude-service";
 import { createServiceLogger } from "../utils/logger";
 import { rideEventsTotal } from "../utils/metrics";
 import { PlatformSettings } from "../models/platform-settings";
 import { SettlementService } from "./settlement-service";
+import { emitRideEvent } from "../socket-gateway";
 
 const log = createServiceLogger("RideService");
 
@@ -31,6 +34,7 @@ export interface RideRequest {
     durationMin: number;
     passengerCount?: number;
     promoCode?: string;
+    country?: string;
     stops?: Array<{ address: string; lat: number; lng: number; stopOrder: number }>;
     sharedContacts?: Array<{ name: string; phone: string }>;
 }
@@ -75,13 +79,17 @@ export class RideService {
         durationMin: number,
         pickupLat: number,
         pickupLng: number,
-        promoCode?: string
+        promoCode?: string,
+        country?: string,
+        vertical: PricingVertical = PricingVertical.RIDES
     ): Promise<RideEstimate> {
         const fareBreakdown = await this.fareService.calculateFare(
             vehicleType,
             distanceKm,
             durationMin,
-            promoCode
+            promoCode,
+            country || "GH",
+            vertical
         );
 
         // Check how many drivers are nearby
@@ -111,7 +119,9 @@ export class RideService {
         durationMin: number,
         pickupLat: number,
         pickupLng: number,
-        promoCode?: string
+        promoCode?: string,
+        country?: string,
+        vertical: PricingVertical = PricingVertical.RIDES
     ): Promise<RideEstimate[]> {
         const vehicleTypes = Object.values(VehicleType);
         const estimates: RideEstimate[] = [];
@@ -124,7 +134,9 @@ export class RideService {
                     durationMin,
                     pickupLat,
                     pickupLng,
-                    promoCode
+                    promoCode,
+                    country,
+                    vertical
                 );
                 estimates.push(estimate);
             } catch {
@@ -141,12 +153,21 @@ export class RideService {
      * Step 1: Customer requests a ride
      */
     async requestRide(request: RideRequest): Promise<Ride> {
-        // Calculate fare
+        // Resolve country
+        const country = request.country || "GH";
+
+        // Calculate fare. Package/courier deliveries use the PACKAGE vertical
+        // (higher base for loading/unloading); passenger rides use RIDES.
+        const vertical = request.type === RideType.DELIVERY
+            ? PricingVertical.PACKAGE
+            : PricingVertical.RIDES;
         const fareBreakdown = await this.fareService.calculateFare(
             request.vehicleType,
             request.distanceKm,
             request.durationMin,
-            request.promoCode
+            request.promoCode,
+            country,
+            vertical
         );
 
         // Create ride record
@@ -160,15 +181,21 @@ export class RideService {
             dropoffLat: request.dropoffLat,
             dropoffLng: request.dropoffLng,
             vehicleType: request.vehicleType,
+            currency: fareBreakdown.currency,
             distanceKm: request.distanceKm,
             durationMin: request.durationMin,
             baseFare: fareBreakdown.baseFare,
             subtotal: fareBreakdown.subtotal,
             surgeMultiplier: fareBreakdown.surgeMultiplier,
             surgeAmount: fareBreakdown.surgeAmount,
+            riderServiceFee: fareBreakdown.riderServiceFee,
             discountPercent: fareBreakdown.discountPercent,
             discountAmount: fareBreakdown.discountAmount,
             finalFare: fareBreakdown.finalFare,
+            // Store the 15% commission portion only; riderServiceFee is tracked
+            // separately so analytics (commission + riderServiceFee) don't double-count.
+            commission: fareBreakdown.rideCommission,
+            driverPayout: fareBreakdown.driverPayout,
             passengerCount: request.passengerCount || 1,
             status: RideStatus.SEARCHING,
         });
@@ -223,9 +250,63 @@ export class RideService {
             await this.driverMatchService.broadcastRideRequest(
                 savedRide.id,
                 request.pickupAddress,
-                driverUserIds
+                driverUserIds,
+                {
+                    rideId: savedRide.id,
+                    type: savedRide.type,
+                    pickupAddress: request.pickupAddress,
+                    dropoffAddress: request.dropoffAddress,
+                    pickupLat: request.pickupLat,
+                    pickupLng: request.pickupLng,
+                    dropoffLat: request.dropoffLat,
+                    dropoffLng: request.dropoffLng,
+                    fare: savedRide.finalFare,
+                    currency: savedRide.currency,
+                    distanceKm: request.distanceKm,
+                    durationMin: request.durationMin,
+                    vehicleType: request.vehicleType,
+                }
             );
         }
+
+        // Real-time: emit ride:searching event
+        emitRideEvent(savedRide.id, "ride:status", {
+            rideId: savedRide.id,
+            status: RideStatus.SEARCHING,
+            driversNotified: drivers.length,
+        });
+
+        // Notify customer - ride request confirmed, searching for drivers
+        await this.notificationService.notify(
+            request.customerId,
+            NotificationType.RIDE_REQUESTED,
+            "Ride Requested! 🔍",
+            drivers.length > 0
+                ? `Looking for a driver near you. ${drivers.length} driver${drivers.length > 1 ? "s" : ""} notified.`
+                : "Looking for available drivers in your area...",
+            { rideId: savedRide.id, screen: "rides", deepLink: `velohub://rides?rideId=${savedRide.id}` }
+        );
+
+        // Auto-cancel ride after 3 minutes if no driver accepts
+        setTimeout(async () => {
+            try {
+                const ride = await this.rideRepo.findOne({ where: { id: savedRide.id } });
+                if (ride && ride.status === RideStatus.SEARCHING) {
+                    log.info("Auto-cancelling ride due to no driver acceptance", { rideId: savedRide.id });
+                    await this.cancelRide(savedRide.id, CancelledBy.SYSTEM, "No driver available");
+                    
+                    // Emit cancellation event
+                    emitRideEvent(savedRide.id, "ride:status", {
+                        rideId: savedRide.id,
+                        status: RideStatus.CANCELLED,
+                        cancelledBy: CancelledBy.SYSTEM,
+                        reason: "No driver available",
+                    });
+                }
+            } catch (error) {
+                log.error("Error auto-cancelling ride", { rideId: savedRide.id, error: (error as Error).message });
+            }
+        }, 180000); // 3 minutes
 
         return savedRide;
     }
@@ -267,6 +348,14 @@ export class RideService {
             rideId
         );
 
+        // Real-time: emit ride:accepted
+        emitRideEvent(rideId, "ride:status", {
+            rideId,
+            status: RideStatus.ACCEPTED,
+            driverId: driverUserId,
+            driverName,
+        });
+
         return updatedRide;
     }
 
@@ -291,23 +380,37 @@ export class RideService {
         await this.rideRepo.save(ride);
 
         // Process payment based on method
-        if (paymentMethod === PaymentMethod.MOMO || paymentMethod === PaymentMethod.WALLET) {
+        if (paymentMethod === PaymentMethod.MOMO || paymentMethod === PaymentMethod.WALLET || paymentMethod === PaymentMethod.CARD) {
             const methodMap: Record<string, PaymentMethodType> = {
                 [PaymentMethod.MOMO]: PaymentMethodType.MOMO,
                 [PaymentMethod.WALLET]: PaymentMethodType.WALLET,
+                [PaymentMethod.CARD]: PaymentMethodType.CARD,
             };
 
             const result = await this.paymentService.processRidePayment({
                 rideId,
                 userId: ride.customerId,
                 amount: Number(ride.finalFare),
+                riderServiceFee: Number(ride.riderServiceFee || 0),
                 method: methodMap[paymentMethod],
                 phoneNumber,
                 email,
             });
 
+            if (!result.success) {
+                // Payment initiation failed - revert ride status back to accepted
+                ride.status = RideStatus.ACCEPTED;
+                ride.paymentMethod = null as any;
+                await this.rideRepo.save(ride);
+                log.warn("Ride payment initiation failed, reverted to ACCEPTED", {
+                    rideId,
+                    message: result.message,
+                });
+                throw new Error(result.message || "Payment initiation failed. Please try again.");
+            }
+
             if (result.success && paymentMethod === PaymentMethod.WALLET) {
-                // Wallet payment is instant — mark ride as paid
+                // Wallet payment is instant - mark ride as paid
                 ride.paymentStatus = PaymentStatus.PAID;
                 ride.status = RideStatus.PAID;
                 ride.paidAt = new Date();
@@ -323,10 +426,14 @@ export class RideService {
                 }
             }
 
-            return this.getRideOrFail(rideId);
+            // Expose the Paystack authorization URL (card / momo) so the client can
+            // open it to complete payment. Attached as a transient field on the ride.
+            const finalRide = await this.getRideOrFail(rideId);
+            (finalRide as any).authorizationUrl = result.authorizationUrl;
+            return finalRide;
         }
 
-        // Cash — mark as paid (driver collects on delivery)
+        // Cash - mark as paid (driver collects on delivery)
         ride.paymentStatus = PaymentStatus.PAID;
         ride.status = RideStatus.PAID;
         ride.paidAt = new Date();
@@ -375,6 +482,8 @@ export class RideService {
         await this.redisLocation.setRideTracking(rideId, { status: RideStatus.DRIVER_ENROUTE });
         await this.notificationService.notifyDriverEnroute(ride.customerId, driverName, rideId);
 
+        emitRideEvent(rideId, "ride:status", { rideId, status: RideStatus.DRIVER_ENROUTE, driverName });
+
         return updated;
     }
 
@@ -394,6 +503,8 @@ export class RideService {
 
         await this.redisLocation.setRideTracking(rideId, { status: RideStatus.ARRIVED });
         await this.notificationService.notifyDriverArrived(ride.customerId, driverName, rideId);
+
+        emitRideEvent(rideId, "ride:status", { rideId, status: RideStatus.ARRIVED, driverName });
 
         return updated;
     }
@@ -415,6 +526,8 @@ export class RideService {
 
         await this.redisLocation.setRideTracking(rideId, { status: RideStatus.ONGOING });
         await this.notificationService.notifyRideStarted(ride.customerId, rideId);
+
+        emitRideEvent(rideId, "ride:status", { rideId, status: RideStatus.ONGOING });
 
         // Notify shared contacts that ride has started
         await this.notifySharedContacts(rideId, ride);
@@ -448,6 +561,8 @@ export class RideService {
             await this.redisLocation.setDriverStatus(updated.driverId, "online");
         }
 
+        emitRideEvent(rideId, "ride:status", { rideId, status: RideStatus.COMPLETED });
+
         return updated;
     }
 
@@ -475,12 +590,16 @@ export class RideService {
         rideEventsTotal.inc({ event: "cancelled" });
 
         // Notify the other party
-        const cancelledByLabel = cancelledBy === CancelledBy.CUSTOMER ? "Customer" : "Driver";
+        const cancelledByLabel = cancelledBy === CancelledBy.CUSTOMER ? "Customer" : 
+                                cancelledBy === CancelledBy.DRIVER ? "Driver" : "System";
         const cancelMessage = reason || `Ride cancelled by ${cancelledByLabel}`;
 
         if (cancelledBy === CancelledBy.CUSTOMER && ride.driverId) {
             await this.notificationService.notifyRideCancelled(ride.driverId, cancelMessage, rideId);
         } else if (cancelledBy === CancelledBy.DRIVER) {
+            await this.notificationService.notifyRideCancelled(ride.customerId, cancelMessage, rideId);
+        } else if (cancelledBy === CancelledBy.SYSTEM) {
+            // Notify customer about system cancellation
             await this.notificationService.notifyRideCancelled(ride.customerId, cancelMessage, rideId);
         }
 
@@ -494,6 +613,8 @@ export class RideService {
             await this.redisLocation.setDriverStatus(ride.driverId, "online");
         }
 
+        emitRideEvent(rideId, "ride:status", { rideId, status: RideStatus.CANCELLED, cancelledBy, reason });
+
         return updated;
     }
 
@@ -505,7 +626,7 @@ export class RideService {
     async getRideById(rideId: string): Promise<Ride | null> {
         return this.rideRepo.findOne({
             where: { id: rideId },
-            relations: ["stops", "sharedContacts"],
+            relations: ["stops", "sharedContacts", "driver", "driver.driverProfile"],
         });
     }
 
@@ -519,6 +640,7 @@ export class RideService {
     ): Promise<{ rides: Ride[]; total: number }> {
         const [rides, total] = await this.rideRepo.findAndCount({
             where: { customerId },
+            relations: ["driver", "driver.driverProfile"],
             order: { createdAt: "DESC" },
             take: limit,
             skip: offset,
@@ -537,6 +659,7 @@ export class RideService {
     ): Promise<{ rides: Ride[]; total: number }> {
         const [rides, total] = await this.rideRepo.findAndCount({
             where: { driverId },
+            relations: ["driver", "driver.driverProfile"],
             order: { createdAt: "DESC" },
             take: limit,
             skip: offset,
@@ -557,6 +680,8 @@ export class RideService {
             })
             .leftJoinAndSelect("ride.stops", "stops")
             .leftJoinAndSelect("ride.sharedContacts", "contacts")
+            .leftJoinAndSelect("ride.driver", "driver")
+            .leftJoinAndSelect("driver.driverProfile", "driverProfile")
             .getOne();
     }
 
@@ -571,6 +696,8 @@ export class RideService {
                 finalStatuses: [RideStatus.COMPLETED, RideStatus.CANCELLED],
             })
             .leftJoinAndSelect("ride.stops", "stops")
+            .leftJoinAndSelect("ride.driver", "driver")
+            .leftJoinAndSelect("driver.driverProfile", "driverProfile")
             .getOne();
     }
 
