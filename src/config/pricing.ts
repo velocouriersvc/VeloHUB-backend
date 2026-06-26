@@ -42,6 +42,14 @@ export const DRIVER_PAYOUT_RATE = 1 - PLATFORM_COMMISSION_RATE;
  */
 export const MAX_SURGE_MULTIPLIER = 1.4;
 
+/**
+ * Minimum billable distance (km). Very short trips (e.g. pickup ~= dropoff, or a
+ * 0.1 km route) are billed as if they were this distance, so a delivery always
+ * reflects at least a standard 1 km of travel before the per-vehicle minimum fare
+ * is applied. Keeps short deliveries fairly priced instead of near-zero.
+ */
+export const MIN_BILLABLE_DISTANCE_KM = 1;
+
 // ── Cross-vertical pricing matrix ────────────────────────────────────────
 
 export enum PricingVertical {
@@ -175,8 +183,11 @@ export function computeRideFare(input: RideFareInput): RideFareResult {
     const commissionRate = input.commissionRate ?? PLATFORM_COMMISSION_RATE;
     const surge = clampSurge(input.surgeMultiplier ?? 1, input.maxSurge ?? MAX_SURGE_MULTIPLIER);
 
+    // Floor the billable distance so near-zero trips still pay for a standard 1 km.
+    const billableKm = Math.max(input.distanceKm, MIN_BILLABLE_DISTANCE_KM);
+
     const baseFare = round2(input.basePrice * profile.baseMultiplier);
-    const distanceCost = round2(input.pricePerKm * profile.perKmMultiplier * input.distanceKm);
+    const distanceCost = round2(input.pricePerKm * profile.perKmMultiplier * billableKm);
     const timeCost = round2(input.pricePerMin * profile.perMinMultiplier * input.durationMin);
     const subtotal = round2(baseFare + distanceCost + timeCost);
 

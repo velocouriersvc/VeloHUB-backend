@@ -6,6 +6,7 @@ import {
     PricingVertical,
     resolveOrderVertical,
     computeDeliveryFee,
+    MIN_BILLABLE_DISTANCE_KM,
 } from "../config/pricing";
 
 const log = createServiceLogger("DeliveryFeeService");
@@ -90,10 +91,16 @@ export class DeliveryFeeService {
         //    category unless the caller pins it explicitly, then apply the
         //    cross-vertical base/distance weighting via the pure helper.
         const resolvedVertical = vertical ?? resolveOrderVertical(merchant?.category);
+        // For a real (resolved) distance, bill at least the minimum billable distance
+        // so sub-1km deliveries aren't under-charged. When the location is unknown we
+        // keep distance 0 (base-only fallback).
+        const billableKm = locationResolved
+            ? Math.max(distanceKm, MIN_BILLABLE_DISTANCE_KM)
+            : distanceKm;
         const fee = computeDeliveryFee({
             baseFee: rawBaseFee,
             perKmFee: rawPerKmFee,
-            distanceKm,
+            distanceKm: billableKm,
             vertical: resolvedVertical,
             driverShareRate,
         });

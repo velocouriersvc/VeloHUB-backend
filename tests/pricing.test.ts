@@ -78,6 +78,22 @@ describe("Dynamic Fare Architecture", () => {
         });
     });
 
+    describe("Minimum billable distance (1km floor)", () => {
+        const base = { basePrice: 6.0, pricePerKm: 2.2, pricePerMin: 0.4, durationMin: 3, minimumFare: 0 };
+
+        it("bills a sub-1km trip as 1km", () => {
+            const short = computeRideFare({ ...base, distanceKm: 0.1 });
+            const oneKm = computeRideFare({ ...base, distanceKm: 1 });
+            expect(short.distanceCost).toBe(oneKm.distanceCost);
+            expect(short.distanceCost).toBe(round2(2.2 * 1)); // 2.20, not 0.22
+        });
+
+        it("does not change trips of 1km or more", () => {
+            const f = computeRideFare({ ...base, distanceKm: 8, durationMin: 15 });
+            expect(f.distanceCost).toBe(round2(2.2 * 8)); // 17.60
+        });
+    });
+
     describe("Minimum fare floor", () => {
         it("floors a tiny trip and keeps the 15/85 identity", () => {
             const fare = computeRideFare({

@@ -89,14 +89,18 @@ export class ProfileService {
 
             await queryRunner.commitTransaction();
 
-            // Notify user - profile created successfully
-            await this.notificationService.notify(
-                userId,
-                NotificationType.WELCOME,
-                "Welcome to VeloHub! 🎉",
-                "Your profile has been set up. Start ordering from local stores and restaurants!",
-                { role: RoleType.BUYER }
-            );
+            // Notify user - best-effort; never fail a committed setup on notification.
+            try {
+                await this.notificationService.notify(
+                    userId,
+                    NotificationType.WELCOME,
+                    "Welcome to VeloHub! 🎉",
+                    "Your profile has been set up. Start ordering from local stores and restaurants!",
+                    { role: RoleType.BUYER }
+                );
+            } catch (notifyErr) {
+                log.warn("Buyer setup notification failed (non-fatal)", { userId, error: (notifyErr as Error).message });
+            }
 
             log.info("Buyer profile setup completed", { userId });
             return savedProfile;
@@ -168,14 +172,19 @@ export class ProfileService {
 
             await queryRunner.commitTransaction();
 
-            // Notify user - driver profile submitted for review
-            await this.notificationService.notify(
-                userId,
-                NotificationType.PROFILE_CREATED,
-                "Driver Application Submitted! 🚗",
-                "Your driver profile is under review. We'll notify you once it's approved.",
-                { role: RoleType.DRIVER }
-            );
+            // Notify user - driver profile submitted for review. Best-effort: a
+            // notification failure must never fail an already-committed setup.
+            try {
+                await this.notificationService.notify(
+                    userId,
+                    NotificationType.PROFILE_CREATED,
+                    "Driver Application Submitted! 🚗",
+                    "Your driver profile is under review. We'll notify you once it's approved.",
+                    { role: RoleType.DRIVER }
+                );
+            } catch (notifyErr) {
+                log.warn("Driver setup notification failed (non-fatal)", { userId, error: (notifyErr as Error).message });
+            }
 
             log.info("Driver profile setup completed", { userId });
             return savedProfile;
@@ -245,14 +254,18 @@ export class ProfileService {
 
             await queryRunner.commitTransaction();
 
-            // Notify user - merchant profile submitted for review
-            await this.notificationService.notify(
-                userId,
-                NotificationType.PROFILE_CREATED,
-                "Merchant Application Submitted! 🏪",
-                "Your merchant profile is under review. We'll notify you once it's approved and you can start listing products.",
-                { role: RoleType.MERCHANT }
-            );
+            // Notify user - best-effort; never fail a committed setup on notification.
+            try {
+                await this.notificationService.notify(
+                    userId,
+                    NotificationType.PROFILE_CREATED,
+                    "Merchant Application Submitted! 🏪",
+                    "Your merchant profile is under review. We'll notify you once it's approved and you can start listing products.",
+                    { role: RoleType.MERCHANT }
+                );
+            } catch (notifyErr) {
+                log.warn("Merchant setup notification failed (non-fatal)", { userId, error: (notifyErr as Error).message });
+            }
 
             log.info("Merchant profile setup completed", { userId });
             return savedProfile;
