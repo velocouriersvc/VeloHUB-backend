@@ -28,6 +28,8 @@ import placesRoutes from "./routes/placesRoutes";
 import notificationRoutes from "./routes/notificationRoutes";
 import healthRoutes from "./routes/healthRoutes";
 import uploadRoutes from "./routes/uploadRoutes";
+import publicAssetRoutes from "./routes/publicAssetRoutes";
+import { BUCKET_NAME as PUBLIC_BUCKET } from "./utils/minio-client";
 import adminRoutes from "./routes/adminRoutes";
 import waitlistRoutes from "./routes/waitlistRoutes";
 import productRoutes from "./routes/productRoutes";
@@ -86,6 +88,11 @@ app.get("/docs.json", (_req: Request, res: Response) => {
 
 // Health
 app.use(healthRoutes);
+
+// Public asset streaming at the bucket path (e.g. /velo-uploads/<key>). Image URLs
+// point here; the API proxies the object from internal MinIO so images load on
+// iOS and Android. Mounted before auth/api-key middleware since assets are public.
+app.use(`/${PUBLIC_BUCKET}`, publicAssetRoutes);
 
 // Handled by express.raw at the top
 
