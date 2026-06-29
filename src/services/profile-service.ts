@@ -118,24 +118,30 @@ export class ProfileService {
         await queryRunner.connect();
         await queryRunner.startTransaction();
 
+        // Truncate to each column's length so a long value (e.g. a full address in
+        // `region` varchar(100), or a country name in `issuingCountry` varchar(3))
+        // can never overflow and 500 the setup.
+        const cut = (v: string | null | undefined, n: number): string =>
+            v == null ? "" : String(v).trim().slice(0, n);
+
         try {
             // 1. Update User level info (email, country)
             const user = await queryRunner.manager.findOne(User, { where: { id: userId } });
             if (user) {
                 user.email = data.email || user.email;
-                user.country = data.country_code || user.country;
+                user.country = cut(data.country_code, 2) || user.country;
                 await queryRunner.manager.save(User, user);
             }
 
             // 2. Handle Identification (Ghana Card)
             let idRecord: Identification | null = null;
             if (data.ghana_card_number) {
-                 idRecord = await queryRunner.manager.findOne(Identification, { where: { idNumber: data.ghana_card_number } });
+                 idRecord = await queryRunner.manager.findOne(Identification, { where: { idNumber: cut(data.ghana_card_number, 100) } });
                  if (!idRecord) {
                     idRecord = queryRunner.manager.create(Identification, {
                         type: 'Ghana Card',
-                        idNumber: data.ghana_card_number,
-                        issuingCountry: data.country_code || 'GH',
+                        idNumber: cut(data.ghana_card_number, 100),
+                        issuingCountry: cut(data.country_code, 3) || 'GH',
                         frontUrl: data.ghana_card_front_url || 'pending',
                         backUrl: data.ghana_card_back_url || null,
                         status: IdentificationStatus.PENDING
@@ -145,10 +151,6 @@ export class ProfileService {
             }
 
             // 3. Create or Update Driver Profile.
-            // Truncate to each column's length so a long value (e.g. a full address
-            // in `region` varchar(100)) can never overflow and 500 the setup.
-            const cut = (v: string | null | undefined, n: number): string =>
-                v == null ? "" : String(v).trim().slice(0, n);
             let profile = await queryRunner.manager.findOne(DriverProfile, { where: { userId } });
             const profileData = {
                 userId,

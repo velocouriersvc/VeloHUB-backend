@@ -10,7 +10,8 @@
     "typeorm": "typeorm-ts-node-commonjs",
     "test": "jest --runInBand",
     "seed:pricing": "ts-node src/scripts/seed-vehicle-pricing.ts",
-    "backfill:locations": "ts-node src/scripts/backfill-merchant-locations.ts"
+    "backfill:locations": "ts-node src/scripts/backfill-merchant-locations.ts",
+    "seed:product-images": "ts-node src/scripts/backfill-product-images.ts"
   },
   "jest": {
     "preset": "ts-jest",
