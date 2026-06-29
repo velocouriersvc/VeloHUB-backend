@@ -3,6 +3,7 @@ import { seedPlatformSettings } from "./seed-platform-settings";
 import { seedVehiclePricing } from "./seed-vehicle-pricing";
 import { seedProductCategories } from "./seed-product-categories";
 import { syncNotificationTypeEnum } from "./sync-notification-enum";
+import { backfillProductImages } from "./backfill-product-images";
 
 /**
  * Run all essential seed scripts once on server boot.
@@ -22,6 +23,13 @@ export async function runSeeds(): Promise<void> {
         // Ensure the notifications enum has every value (fixes setup 500s caused by
         // missing enum values like "profile_created"/"welcome" on synchronize-only DBs).
         await syncNotificationTypeEnum(true);
+
+        // Give products without an image a placeholder so listings are not blank.
+        // Self-limiting (skips products that already have an http image) and
+        // non-fatal. Disable with DISABLE_PRODUCT_IMAGE_BACKFILL=true.
+        if (process.env.DISABLE_PRODUCT_IMAGE_BACKFILL !== "true") {
+            await backfillProductImages(true);
+        }
 
         logger.info("All seed scripts completed");
     } catch (err) {

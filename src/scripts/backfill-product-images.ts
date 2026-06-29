@@ -4,19 +4,20 @@ import { AppDataSource } from "../db/data-source";
 import { Product } from "../models/product";
 import { minioClient, BUCKET_NAME } from "../utils/minio-client";
 import { getPublicObjectUrl } from "../services/upload-service";
+import logger from "../utils/logger";
 
 /**
  * Backfill product images into the MinIO bucket so they display in the apps and
- * to confirm the upload -> bucket -> public-URL -> /<bucket>/<key> serving works
- * end to end.
+ * to confirm the upload -> bucket -> public-URL -> /<bucket>/<key> serving works.
  *
- * For every product that has no usable (http/https) image, this uploads a sample
- * image to the bucket and saves the public URL on the product. Products that
- * already have a real image are left untouched (pass FORCE=1 to replace all).
+ * For every product without a usable (http/https) image, uploads a sample image
+ * to the bucket and saves the public URL on the product. Products that already
+ * have a real image are left untouched (use force to replace all). This is
+ * self-limiting: once a product has an http image it is skipped on later runs.
  *
- * Run on the server (where MinIO + DB are reachable):
+ * Runs automatically on server boot (see run-seeds.ts), and can be run manually:
  *   npx ts-node src/scripts/backfill-product-images.ts
- *   FORCE=1 npx ts-node src/scripts/backfill-product-images.ts   # replace all
+ *   FORCE=1 npx ts-node src/scripts/backfill-product-images.ts
  */
 async function fetchSampleImage(seed: string): Promise<Buffer> {
     // Deterministic per-product placeholder photo (so re-runs are stable).
@@ -26,40 +27,58 @@ async function fetchSampleImage(seed: string): Promise<Buffer> {
     return Buffer.from(await res.arrayBuffer());
 }
 
-async function run(): Promise<void> {
-    const force = process.env.FORCE === "1";
-    await AppDataSource.initialize();
-    const repo = AppDataSource.getRepository(Product);
-    const products = await repo.find();
+export async function backfillProductImages(
+    alreadyInitialised = false,
+    opts: { force?: boolean } = {}
+): Promise<void> {
+    if (!alreadyInitialised) {
+        await AppDataSource.initialize();
+    }
+    try {
+        const force = opts.force ?? process.env.FORCE === "1";
+        const repo = AppDataSource.getRepository(Product);
+        const products = await repo.find();
 
-    let updated = 0;
-    let skipped = 0;
-    for (const p of products) {
-        const hasRemote = Array.isArray(p.images) && p.images.some((u) => /^https?:\/\//.test(u));
-        if (hasRemote && !force) { skipped++; continue; }
+        // Only the products that actually need an image (keeps boot cost ~zero once done).
+        const targets = products.filter(
+            (p) => force || !(Array.isArray(p.images) && p.images.some((u) => /^https?:\/\//.test(u)))
+        );
+        if (targets.length === 0) {
+            logger.info("Product image backfill: nothing to do");
+            return;
+        }
 
-        try {
-            const buf = await fetchSampleImage(p.id || crypto.randomUUID());
-            const key = `products/seed/${p.id}.jpg`;
-            await minioClient.putObject(BUCKET_NAME, key, buf, buf.length, {
-                "Content-Type": "image/jpeg",
-            });
-            const url = getPublicObjectUrl(key);
-            p.images = [url];
-            await repo.save(p);
-            updated++;
-            console.log(`OK  ${p.name} -> ${url}`);
-        } catch (e) {
-            console.warn(`ERR ${p.name}: ${(e as Error).message}`);
+        let updated = 0;
+        for (const p of targets) {
+            try {
+                const buf = await fetchSampleImage(p.id || crypto.randomUUID());
+                const key = `products/seed/${p.id}.jpg`;
+                await minioClient.putObject(BUCKET_NAME, key, buf, buf.length, {
+                    "Content-Type": "image/jpeg",
+                });
+                p.images = [getPublicObjectUrl(key)];
+                await repo.save(p);
+                updated++;
+            } catch (e) {
+                logger.warn("Product image backfill failed for one product", {
+                    productId: p.id,
+                    error: (e as Error).message,
+                });
+            }
+        }
+        logger.info(`Product image backfill: updated ${updated}/${targets.length} product(s)`);
+    } catch (e) {
+        // Non-fatal: never block boot on this.
+        logger.warn("Product image backfill skipped", { error: (e as Error).message });
+    } finally {
+        if (!alreadyInitialised) {
+            await AppDataSource.destroy();
         }
     }
-
-    console.log(`\nDone. Updated ${updated}, skipped ${skipped} (already had an image), of ${products.length} products.`);
-    console.log(`Open any printed URL in a browser to confirm the bucket serving works.`);
-    await AppDataSource.destroy();
 }
 
-run().catch((e) => {
-    console.error(e);
-    process.exit(1);
-});
+if (require.main === module) {
+    backfillProductImages(false)
+        .then(() => console.log("Done - product images backfilled."))
+        .catch((e) => { console.error(e); process.exit(1); });
+}
