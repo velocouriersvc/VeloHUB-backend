@@ -451,7 +451,8 @@ export class OrderService {
             await this.cartService.clearCart(userId);
             cartEventsTotal.inc({ action: "checkout" });
 
-            // 14. Notify merchant of new order
+            // 14. Notify merchant of new order (in-app). The seller decides when the
+            // order is accepted, prepared and ready; nothing auto-advances here.
             await this.notificationService.notify(
                 cart.merchantId,
                 NotificationType.ORDER_PLACED,
@@ -464,6 +465,20 @@ export class OrderService {
                     deliveryType: input.deliveryType,
                 }
             );
+
+            // 14b. Also alert the merchant by SMS so they see new orders even when the
+            // app is closed (sellers must accept and decide readiness). Best-effort.
+            try {
+                const merchantUser = await this.userRepo.findOne({ where: { id: cart.merchantId } });
+                if (merchantUser?.phoneNumber) {
+                    await this.notificationService.notifyBySms(
+                        merchantUser.phoneNumber,
+                        `New VeloHUB order #${orderNumber} (${formatCurrency(quote.totalAmount, currency)}). Open the app to accept and prepare it.`
+                    );
+                }
+            } catch (smsErr) {
+                log.warn("Merchant new-order SMS failed (non-fatal)", { error: (smsErr as Error).message });
+            }
 
             // 15. Notify customer - order placed confirmation
             await this.notificationService.notify(

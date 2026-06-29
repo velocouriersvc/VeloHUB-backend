@@ -7,11 +7,23 @@ import { MerchantStats } from "../models/merchant-stats";
 import { NotificationType } from "../models/notification";
 import { NotificationService } from "./notification-service";
 import { createServiceLogger } from "../utils/logger";
+import { rewriteToPublicAssetUrl } from "./upload-service";
 import { productViewsTotal } from "../utils/metrics";
 import { In } from "typeorm";
 import { Order, OrderStatus } from "../models/order";
 
 const log = createServiceLogger("ProductService");
+
+/** Normalize a product's image URLs to the public https asset host so they load
+ *  on Android (which blocks cleartext / wrong-host URLs that iOS may tolerate). */
+function toPublicImages<T extends { images?: string[] | null }>(product: T): T {
+    if (product && Array.isArray(product.images)) {
+        product.images = product.images
+            .map((u) => rewriteToPublicAssetUrl(u))
+            .filter((u): u is string => !!u);
+    }
+    return product;
+}
 
 // ── Input Types ─────────────────────────────────────────────────────
 
@@ -311,6 +323,7 @@ export class ProductService {
 
         if (product) {
             productViewsTotal.inc({ category: product.category || "unknown" });
+            return toPublicImages(product);
         }
 
         return product;
@@ -431,7 +444,7 @@ export class ProductService {
 
         log.info(`[getProducts] category="${params.category || 'ALL'}" search="${params.search || ''}" → ${total} total, returning ${products.length}`);
 
-        return { products, total, page, limit };
+        return { products: products.map(toPublicImages), total, page, limit };
     }
 
     /**
@@ -475,8 +488,7 @@ export class ProductService {
             .addOrderBy("product.createdAt", "DESC");
 
         const [products, total] = await qb.skip((page - 1) * limit).take(limit).getManyAndCount();
-
-        return { products, total, page, limit };
+        return { products: products.map(toPublicImages), total, page, limit };
     }
 
     /**
@@ -545,7 +557,7 @@ export class ProductService {
         return rows.map((row: any) => ({
             ...row,
             price: typeof row.price === 'string' ? Number(row.price) : row.price,
-            images: row.images || [],
+            images: (row.images || []).map((u: string) => rewriteToPublicAssetUrl(u)).filter(Boolean),
         }));
     }
 

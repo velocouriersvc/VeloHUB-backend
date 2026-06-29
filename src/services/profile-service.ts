@@ -144,19 +144,21 @@ export class ProfileService {
                 idRecord = await queryRunner.manager.save(Identification, idRecord);
             }
 
-            // 3. Create or Update Driver Profile
+            // 3. Create or Update Driver Profile.
+            // Truncate to each column's length so a long value (e.g. a full address
+            // in `region` varchar(100)) can never overflow and 500 the setup.
+            const cut = (v: string | null | undefined, n: number): string =>
+                v == null ? "" : String(v).trim().slice(0, n);
             let profile = await queryRunner.manager.findOne(DriverProfile, { where: { userId } });
             const profileData = {
                 userId,
-                fullName: data.full_name,
-                licenseNumber: data.license_number,
-                // If licensePhotoUrl was passed before... the frontend snippet doesn't have it explicitly as 'license_photo', 
-                // but for now, let's keep what we have.
-                vehicleType: data.vehicle_type,
-                plateNumber: data.vehicle_number,
-                vehicleModel: data.vehicle_model || null,
-                vehicleColor: data.vehicle_color || null,
-                region: data.location,
+                fullName: cut(data.full_name, 255),
+                licenseNumber: cut(data.license_number, 100),
+                vehicleType: cut(data.vehicle_type, 50),
+                plateNumber: cut(data.vehicle_number, 50),
+                vehicleModel: cut(data.vehicle_model, 100) || null,
+                vehicleColor: cut(data.vehicle_color, 50) || null,
+                region: cut(data.location, 100),
                 identificationId: idRecord?.id || null,
                 status: DriverVerificationStatus.PENDING
             };
