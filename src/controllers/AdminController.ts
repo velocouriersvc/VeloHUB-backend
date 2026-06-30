@@ -9,6 +9,7 @@ import { Zone } from "../models/zone";
 import { PlatformSettings } from "../models/platform-settings";
 import { PlatformWithdrawal } from "../models/platform-withdrawal";
 import { AdminService } from "../services/admin-service";
+import { EmailService } from "../services/email-service";
 import { AuthRequest } from "../middleware/role-middleware";
 import { createServiceLogger } from "../utils/logger";
 import { AuditLogController } from "./AuditLogController";
@@ -18,6 +19,9 @@ import { Wallet } from "../models/wallet";
 import { UserRole, RoleStatus } from "../models/user-role";
 import { Role, RoleType } from "../models/role";
 import { ServiceBookingStatus } from "../models/service-booking";
+import { Identification, IdentificationStatus } from "../models/identification";
+import { NotificationService } from "../services/notification-service";
+import { NotificationType } from "../models/notification";
 import crypto from "crypto";
 
 const log = createServiceLogger("AdminController");
@@ -26,6 +30,7 @@ export class AdminController {
     private userRepo = AppDataSource.getRepository(User);
     private driverRepo = AppDataSource.getRepository(DriverProfile);
     private merchantRepo = AppDataSource.getRepository(MerchantProfile);
+    private identificationRepo = AppDataSource.getRepository(Identification);
     private rideRepo = AppDataSource.getRepository(Ride);
     private zoneRepo = AppDataSource.getRepository(Zone);
     private settingsRepo = AppDataSource.getRepository(PlatformSettings);
@@ -52,17 +57,32 @@ export class AdminController {
     getDrivers = async (req: Request, res: Response) => {
         try {
             const drivers = await this.driverRepo.find({
-                relations: ["user"]
+                relations: ["user", "identification"]
             });
             return res.json(drivers.map(d => ({
                 id: d.userId,
+                driver_profile_id: d.id,
                 full_name: d.fullName,
-                email: d.user.email,
-                phone: d.user.phoneNumber,
+                email: d.user?.email || "N/A",
+                phone: d.user?.phoneNumber || "N/A",
                 vehicle_type: d.vehicleType,
                 vehicle_number: d.plateNumber,
-                status: d.user.status,
-                created_date: d.user.createdAt,
+                vehicle_model: d.vehicleModel,
+                vehicle_color: d.vehicleColor,
+                license_number: d.licenseNumber,
+                license_photo_url: d.licensePhotoUrl,
+                region: d.region,
+                status: d.status,
+                user_status: d.user?.status || "inactive",
+                created_date: d.createdAt,
+                // Identification documents
+                identification_id: d.identification?.id || null,
+                id_type: d.identification?.type || null,
+                id_number: d.identification?.idNumber || null,
+                id_front_url: d.identification?.frontUrl || null,
+                id_back_url: d.identification?.backUrl || null,
+                id_status: d.identification?.status || null,
+                id_expiry: d.identification?.expiryDate || null,
             })));
         } catch (error) {
             console.error("Error fetching drivers:", error);
@@ -278,18 +298,137 @@ export class AdminController {
     };
 
     /**
+     * POST /admin/drivers/:id/verify
+     * Approve or reject a driver's verification, updating both driver profile and identification status.
+     */
+    verifyDriver = async (req: Request, res: Response) => {
+        try {
+            const userId = req.params.id;
+            const { action, rejection_reason } = req.body; // action: 'approve' | 'reject'
+
+            if (!action || !['approve', 'reject'].includes(action)) {
+                return res.status(400).json({ message: "action must be 'approve' or 'reject'" });
+            }
+
+            const driver = await this.driverRepo.findOne({
+                where: { userId },
+                relations: ["identification", "user"],
+            });
+            if (!driver) return res.status(404).json({ message: "Driver not found" });
+
+            // Find the driver role definition
+            const driverRole = await this.roleRepo.findOneBy({ name: RoleType.DRIVER });
+            if (!driverRole) return res.status(500).json({ message: "Driver role not found in system" });
+
+            if (action === 'approve') {
+                driver.status = DriverVerificationStatus.APPROVED;
+                driver.user.status = UserStatus.ACTIVE;
+                if (driver.identification) {
+                    driver.identification.status = IdentificationStatus.VERIFIED;
+                    await this.identificationRepo.save(driver.identification);
+                }
+
+                // Approve the user_role entry so the driver role shows up in auth responses
+                let userRole = await this.userRoleRepo.findOneBy({ userId, roleId: driverRole.id });
+                if (userRole) {
+                    userRole.status = RoleStatus.APPROVED;
+                    userRole.completedRequirements = true;
+                    await this.userRoleRepo.save(userRole);
+                } else {
+                    // Create user_role if it doesn't exist (e.g. manual admin creation)
+                    userRole = this.userRoleRepo.create({
+                        userId,
+                        roleId: driverRole.id,
+                        status: RoleStatus.APPROVED,
+                        completedRequirements: true,
+                    });
+                    await this.userRoleRepo.save(userRole);
+                }
+            } else {
+                driver.status = DriverVerificationStatus.REJECTED;
+                driver.user.status = UserStatus.SUSPENDED;
+                if (driver.identification) {
+                    driver.identification.status = IdentificationStatus.REJECTED;
+                    await this.identificationRepo.save(driver.identification);
+                }
+
+                // Reject the user_role entry
+                const userRole = await this.userRoleRepo.findOneBy({ userId, roleId: driverRole.id });
+                if (userRole) {
+                    userRole.status = RoleStatus.REJECTED;
+                    await this.userRoleRepo.save(userRole);
+                }
+            }
+
+            await this.userRepo.save(driver.user);
+            await this.driverRepo.save(driver);
+
+            await AuditLogController.record({
+                action: action === 'approve' ? "Approve Driver" : "Reject Driver",
+                entity_type: "driver",
+                entity_id: userId,
+                performed_by: (req as any).user?.email || "Admin",
+                details: action === 'approve'
+                    ? `Driver verified and approved`
+                    : `Driver rejected: ${rejection_reason || 'No reason provided'}`,
+                risk_level: AuditRiskLevel.MEDIUM,
+            });
+
+            // Send in-app + push notification to the driver
+            const notificationService = new NotificationService();
+            if (action === 'approve') {
+                await notificationService.notify(
+                    userId,
+                    NotificationType.ROLE_APPROVED,
+                    "You're Approved! 🎉",
+                    "Your driver verification has been approved. You can now go online and start accepting rides and deliveries.",
+                    { type: "driver_approved" }
+                );
+            } else {
+                await notificationService.notify(
+                    userId,
+                    NotificationType.ROLE_REJECTED,
+                    "Verification Update",
+                    rejection_reason
+                        ? `Your driver verification was not approved: ${rejection_reason}`
+                        : "Your driver verification was not approved. Please review your documents and try again.",
+                    { type: "driver_rejected", reason: rejection_reason || null }
+                );
+            }
+
+            return res.json({
+                message: `Driver ${action === 'approve' ? 'approved' : 'rejected'} successfully`,
+                status: driver.status,
+            });
+        } catch (error) {
+            console.error("Error verifying driver:", error);
+            return res.status(500).json({ message: "Internal server error" });
+        }
+    };
+
+    /**
      * PATCH /admin/merchants/:id
+     * Updates merchant status and triggers side effects (roles, wallets, stats, notifications)
      */
     updateMerchantStatus = async (req: Request, res: Response) => {
         try {
             const userId = req.params.id;
             const { status } = req.body;
+            const adminId = (req as any).user?.id || "Admin";
 
-            const merchant = await this.merchantRepo.findOneBy({ userId });
-            if (!merchant) return res.status(404).json({ message: "Merchant not found" });
+            let result;
+            if (status === MerchantVerificationStatus.APPROVED) {
+                result = await this.adminService.approveMerchant(userId, adminId);
+            } else if (status === MerchantVerificationStatus.REJECTED) {
+                result = await this.adminService.suspendMerchant(userId, adminId, "Rejected by admin");
+            } else {
+                const merchant = await this.merchantRepo.findOneBy({ userId });
+                if (!merchant) return res.status(404).json({ message: "Merchant not found" });
 
-            merchant.status = status as MerchantVerificationStatus;
-            await this.merchantRepo.save(merchant);
+                merchant.status = status as MerchantVerificationStatus;
+                await this.merchantRepo.save(merchant);
+                result = merchant;
+            }
 
             await AuditLogController.record({
                 action: "Update Merchant Status",
@@ -297,12 +436,14 @@ export class AdminController {
                 entity_id: userId,
                 performed_by: (req as any).user?.email || "Admin",
                 details: `Status updated to ${status}`,
-                risk_level: AuditRiskLevel.LOW
+                risk_level: status === MerchantVerificationStatus.APPROVED ? AuditRiskLevel.MEDIUM : AuditRiskLevel.LOW
             });
 
-            return res.json({ message: "Merchant status updated", status: merchant.status });
+            return res.json({ message: "Merchant status updated", status: result.status });
         } catch (error) {
-            console.error("Error updating merchant status:", error);
+            log.error("Error updating merchant status:", error);
+            const msg = (error as Error).message;
+            if (msg.includes("not found")) return res.status(404).json({ message: msg });
             return res.status(500).json({ message: "Internal server error" });
         }
     };
@@ -358,6 +499,18 @@ export class AdminController {
             if (msg.includes("not found")) return res.status(404).json({ message: msg });
             log.error("Error getting order detail", { error: msg });
             return res.status(500).json({ message: "Internal server error" });
+        }
+    };
+
+    syncMerchants = async (req: Request, res: Response) => {
+        try {
+            const adminId = (req as any).user.id;
+            const results = await this.adminService.syncMerchants(adminId);
+            return res.json({ message: "Sync complete", ...results });
+        } catch (error) {
+            const msg = (error as Error).message;
+            log.error("Error syncing merchants", { error: msg });
+            return res.status(500).json({ message: "Internal server error", error: msg });
         }
     };
 
@@ -476,7 +629,14 @@ export class AdminController {
     createProduct = async (req: AuthRequest, res: Response) => {
         try {
             const { merchantId, ...productData } = req.body;
+            
+            // Basic validation
             if (!merchantId) return res.status(400).json({ message: "merchantId is required" });
+            if (!productData.name) return res.status(400).json({ message: "Product name is required" });
+            if (productData.price === undefined || productData.price === null) {
+                return res.status(400).json({ message: "Product price is required" });
+            }
+            if (!productData.category) return res.status(400).json({ message: "Product category is required" });
 
             const product = await this.adminService.createProduct(merchantId, productData);
 
@@ -492,8 +652,8 @@ export class AdminController {
             return res.status(201).json(product);
         } catch (error) {
             log.error("Error creating product:", error);
-            const msg = (error as Error).message;
-            return res.status(500).json({ message: msg || "Internal server error" });
+            const msg = (error as Error).message || "Internal server error";
+            return res.status(500).json({ message: msg });
         }
     };
 
@@ -821,6 +981,20 @@ export class AdminController {
     // ════════════════════════════════════════════════════════════════
     //  REPORTS
     // ════════════════════════════════════════════════════════════════
+
+    getFinancialOverview = async (req: AuthRequest, res: Response) => {
+        try {
+            const { from, to } = req.query;
+            const overview = await this.adminService.getFinancialOverview(
+                from as string | undefined,
+                to as string | undefined
+            );
+            return res.json(overview);
+        } catch (error) {
+            log.error("Error getting financial overview", { error: (error as Error).message });
+            return res.status(500).json({ message: "Internal server error" });
+        }
+    };
 
     getRevenueReport = async (req: AuthRequest, res: Response) => {
         try {
@@ -1281,6 +1455,75 @@ export class AdminController {
         }
     }
 
+    // Public website contact form. Anonymous (no auth): emails the support inbox
+    // and sends the visitor a confirmation with a tracking reference. Does not write
+    // the support_tickets table (which requires a userId).
+    contactForm = async (req: Request, res: Response) => {
+        try {
+            const { name, email, accountType, message } = req.body || {};
+            if (!name || !email || !message) {
+                return res.status(400).json({ message: "name, email and message are required" });
+            }
+            if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(email))) {
+                return res.status(400).json({ message: "A valid email is required" });
+            }
+
+            const reference = "VH-" + Date.now().toString(36).toUpperCase().slice(-6);
+            const safe = (v: unknown) => String(v ?? "").slice(0, 4000);
+            const supportInbox = process.env.SUPPORT_EMAIL || "contact@velocouriersvc.com";
+
+            // Notify the support inbox (best-effort).
+            EmailService.send({
+                to: supportInbox,
+                subject: `New contact inquiry ${reference} (${safe(accountType) || "General"})`,
+                html: `<h2>New website inquiry ${reference}</h2>
+                       <p><strong>Name:</strong> ${safe(name)}</p>
+                       <p><strong>Email:</strong> ${safe(email)}</p>
+                       <p><strong>Account type:</strong> ${safe(accountType) || "Not specified"}</p>
+                       <p><strong>Message:</strong></p><p>${safe(message)}</p>
+                       <p style="color:#64748b">Reply to: ${safe(email)}</p>`,
+            }).catch((e) => log.warn("Contact support email failed", { error: (e as Error).message }));
+
+            // Confirmation to the visitor (best-effort).
+            EmailService.send({
+                to: String(email),
+                subject: `We received your message (${reference})`,
+                html: `<p>Hi ${safe(name)},</p>
+                       <p>Thanks for contacting VeloHUB. Your reference is <strong>${reference}</strong>.
+                       Our team typically replies within one business day.</p>
+                       <p>VeloHUB Support</p>`,
+            }).catch((e) => log.warn("Contact confirmation email failed", { error: (e as Error).message }));
+
+            return res.status(200).json({ success: true, reference });
+        } catch (error) {
+            log.error("Error handling contact form", { error: (error as Error).message });
+            return res.status(500).json({ message: "Internal server error" });
+        }
+    };
+
+    createSupportTicket = async (req: AuthRequest, res: Response) => {
+        try {
+            const userId = req.user?.id;
+            if (!userId) return res.status(401).json({ message: "User ID required" });
+
+            const { subject, description, category, priority } = req.body;
+            if (!subject || !description) return res.status(400).json({ message: "Subject and description required" });
+
+            const ticket = await this.adminService.createSupportTicket({
+                userId,
+                subject,
+                description,
+                category,
+                priority
+            });
+
+            return res.status(201).json({ message: "Support ticket created", ticket });
+        } catch (error) {
+            log.error("Error creating support ticket", { error: (error as Error).message });
+            return res.status(500).json({ message: "Internal server error" });
+        }
+    }
+
     // ════════════════════════════════════════════════════════════════
     //  FINANCE & SETTINGS
     // ════════════════════════════════════════════════════════════════
@@ -1540,4 +1783,65 @@ export class AdminController {
             return res.status(500).json({ message: "Internal server error" });
         }
     }
+
+    updateUserRoles = async (req: AuthRequest, res: Response) => {
+        try {
+            const adminId = req.user?.id;
+            if (!adminId) return res.status(401).json({ message: "User ID required" });
+
+            const { id } = req.params;
+            const { roles } = req.body;
+
+            if (!Array.isArray(roles)) {
+                return res.status(400).json({ message: "roles must be an array" });
+            }
+
+            const result = await this.adminService.updateUserRoles(id, roles as RoleType[], adminId);
+
+            await AuditLogController.record({
+                action: "Update User Roles",
+                entity_type: "user",
+                entity_id: id,
+                performed_by: req.user?.email || "Admin",
+                details: `Updated roles to: ${roles.join(", ")}`,
+                risk_level: AuditRiskLevel.HIGH
+            });
+
+            return res.json(result);
+        } catch (error) {
+            log.error("Error updating user roles:", error);
+            const msg = (error as Error).message;
+            if (msg.includes("not found")) return res.status(404).json({ message: msg });
+            return res.status(500).json({ message: "Internal server error" });
+        }
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    //  VEHICLE PRICING
+    // ════════════════════════════════════════════════════════════════
+
+    getVehiclePricing = async (req: AuthRequest, res: Response) => {
+        try {
+            const country = req.query.country as string | undefined;
+            const pricing = await this.adminService.getVehiclePricing(country);
+            return res.json(pricing);
+        } catch (error) {
+            log.error("Error getting vehicle pricing", { error: (error as Error).message });
+            return res.status(500).json({ message: "Internal server error" });
+        }
+    };
+
+    updateVehiclePricing = async (req: AuthRequest, res: Response) => {
+        try {
+            const adminId = req.user?.id;
+            if (!adminId) return res.status(401).json({ message: "User ID required" });
+            const updated = await this.adminService.updateVehiclePricing(req.params.id, req.body, adminId);
+            return res.json(updated);
+        } catch (error) {
+            log.error("Error updating vehicle pricing", { error: (error as Error).message });
+            const msg = (error as Error).message;
+            if (msg.includes("not found")) return res.status(404).json({ message: msg });
+            return res.status(500).json({ message: "Internal server error" });
+        }
+    };
 }

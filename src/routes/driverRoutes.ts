@@ -336,6 +336,44 @@ router.get("/rides/history", driverRole, driverController.getRideHistory);
 router.get("/stats", driverRole, driverController.getStats);
 
 // ════════════════════════════════════════════════════════════════════
+//  DRIVER PROFILE
+// ════════════════════════════════════════════════════════════════════
+
+/**
+ * @openapi
+ * /driver/profile:
+ *   get:
+ *     tags: [Driver]
+ *     summary: Get driver's own profile
+ *     description: Returns the driver's profile including vehicle info, documents, and verification status.
+ *     security:
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - $ref: '#/components/parameters/PhoneNumber'
+ *     responses:
+ *       200:
+ *         description: Driver profile object
+ *       404:
+ *         description: Driver profile not found
+ */
+router.get("/profile", driverRole, driverController.getProfile);
+
+/**
+ * @openapi
+ * /driver/profile:
+ *   put:
+ *     tags: [Driver]
+ *     summary: Update driver's own profile
+ *     description: Update name, vehicle model, color, or plate number.
+ *     security:
+ *       - ApiKeyAuth: []
+ *     responses:
+ *       200:
+ *         description: Profile updated
+ */
+router.put("/profile", driverRole, driverController.updateProfile);
+
+// ════════════════════════════════════════════════════════════════════
 //  MARKETPLACE DELIVERIES
 // ════════════════════════════════════════════════════════════════════
 
@@ -587,9 +625,9 @@ router.post("/deliveries/:orderId/cancel", driverRole, deliveryController.cancel
  *     summary: Update delivery status
  *     description: |
  *       Transition delivery status through the lifecycle:
- *       - **picked_up** — Driver has picked up items from merchant
- *       - **in_transit** — Driver is on the way to customer
- *       - **delivered** — Items delivered to customer
+ *       - **picked_up** - Driver has picked up items from merchant
+ *       - **in_transit** - Driver is on the way to customer
+ *       - **delivered** - Items delivered to customer
  *
  *       Notifies customer and merchant on each transition.
  *       Requires **driver** role.
@@ -712,10 +750,76 @@ router.patch("/deliveries/:orderId/status", driverRole, validate([
  *                     platformFee:
  *                       type: number
  *       400:
- *         description: Cannot complete — not assigned or invalid state
+ *         description: Cannot complete - not assigned or invalid state
  *       404:
  *         description: Order not found
  */
 router.post("/deliveries/:orderId/complete", driverRole, deliveryController.completeDelivery);
+
+/**
+ * @openapi
+ * /driver/deliveries/{orderId}/verify-delivery-code:
+ *   post:
+ *     tags: [Driver - Deliveries]
+ *     summary: Verify delivery code given by customer
+ *     description: |
+ *       Driver submits the code provided by the customer/buyer to confirm delivery ownership.
+ *       On success the order transitions to DELIVERED and deliveryCodeVerifiedAt is set.
+ *       Max 5 attempts per order per hour.
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: orderId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [code]
+ *             properties:
+ *               code:
+ *                 type: string
+ *                 example: "A3BX7Q"
+ *     responses:
+ *       200:
+ *         description: Code verified, order marked as delivered
+ *       400:
+ *         description: Invalid code
+ *       429:
+ *         description: Too many attempts
+ */
+router.post(
+    "/deliveries/:orderId/verify-delivery-code",
+    driverRole,
+    validate([body("code").required("Delivery code is required")]),
+    deliveryController.verifyDeliveryCode
+);
+
+/**
+ * @openapi
+ * /driver/surge:
+ *   get:
+ *     tags: [Driver - Rides]
+ *     summary: Get current surge multiplier
+ *     description: Returns the current surge multiplier for the driver's country.
+ *     security:
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - $ref: '#/components/parameters/PhoneNumber'
+ *       - in: query
+ *         name: country
+ *         schema:
+ *           type: string
+ *           default: GH
+ *     responses:
+ *       200:
+ *         description: Current surge multiplier
+ */
+router.get("/surge", driverRole, driverController.getSurge);
 
 export default router;

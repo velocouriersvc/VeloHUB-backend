@@ -5,18 +5,23 @@ import { DriverProfile, DriverVerificationStatus } from "../models/driver-profil
 import { MerchantProfile, MerchantVerificationStatus } from "../models/merchant-profile";
 import { Identification, IdentificationStatus } from "../models/identification";
 import { supabase, supabaseAdmin } from "../utils/supabase-client";
-import { RoleType } from "../models/role";
+import { Role, RoleType } from "../models/role";
 import { User, UserStatus } from "../models/user";
 import { UserRole, RoleStatus } from "../models/user-role";
-import { Role } from "../models/role";
 import { BuyerSetupPayload, DriverSetupPayload, MerchantSetupPayload } from "../types/profile";
 import { createServiceLogger } from "../utils/logger";
+import { UserProfile } from "../models/user-profile";
+import { rewriteToPublicAssetUrl } from "./upload-service";
+import { NotificationService } from "./notification-service";
+import { NotificationType } from "../models/notification";
 
 const log = createServiceLogger("ProfileService");
 
 export class ProfileService {
     private userRepository = AppDataSource.getRepository(User);
     private roleRepository = AppDataSource.getRepository(Role);
+    private userProfileRepository = AppDataSource.getRepository(UserProfile);
+    private notificationService = new NotificationService();
 
     private async syncToSupabase(userId: string, data: Record<string, unknown>) {
         try {
@@ -83,6 +88,20 @@ export class ProfileService {
             await this.ensureRole(queryRunner, userId, RoleType.BUYER);
 
             await queryRunner.commitTransaction();
+
+            // Notify user - best-effort; never fail a committed setup on notification.
+            try {
+                await this.notificationService.notify(
+                    userId,
+                    NotificationType.WELCOME,
+                    "Welcome to VeloHub! 🎉",
+                    "Your profile has been set up. Start ordering from local stores and restaurants!",
+                    { role: RoleType.BUYER }
+                );
+            } catch (notifyErr) {
+                log.warn("Buyer setup notification failed (non-fatal)", { userId, error: (notifyErr as Error).message });
+            }
+
             log.info("Buyer profile setup completed", { userId });
             return savedProfile;
         } catch (error) {
@@ -99,24 +118,30 @@ export class ProfileService {
         await queryRunner.connect();
         await queryRunner.startTransaction();
 
+        // Truncate to each column's length so a long value (e.g. a full address in
+        // `region` varchar(100), or a country name in `issuingCountry` varchar(3))
+        // can never overflow and 500 the setup.
+        const cut = (v: string | null | undefined, n: number): string =>
+            v == null ? "" : String(v).trim().slice(0, n);
+
         try {
             // 1. Update User level info (email, country)
             const user = await queryRunner.manager.findOne(User, { where: { id: userId } });
             if (user) {
                 user.email = data.email || user.email;
-                user.country = data.country_code || user.country;
+                user.country = cut(data.country_code, 2) || user.country;
                 await queryRunner.manager.save(User, user);
             }
 
             // 2. Handle Identification (Ghana Card)
             let idRecord: Identification | null = null;
             if (data.ghana_card_number) {
-                 idRecord = await queryRunner.manager.findOne(Identification, { where: { idNumber: data.ghana_card_number } });
+                 idRecord = await queryRunner.manager.findOne(Identification, { where: { idNumber: cut(data.ghana_card_number, 100) } });
                  if (!idRecord) {
                     idRecord = queryRunner.manager.create(Identification, {
                         type: 'Ghana Card',
-                        idNumber: data.ghana_card_number,
-                        issuingCountry: data.country_code || 'GH',
+                        idNumber: cut(data.ghana_card_number, 100),
+                        issuingCountry: cut(data.country_code, 3) || 'GH',
                         frontUrl: data.ghana_card_front_url || 'pending',
                         backUrl: data.ghana_card_back_url || null,
                         status: IdentificationStatus.PENDING
@@ -125,19 +150,17 @@ export class ProfileService {
                 idRecord = await queryRunner.manager.save(Identification, idRecord);
             }
 
-            // 3. Create or Update Driver Profile
+            // 3. Create or Update Driver Profile.
             let profile = await queryRunner.manager.findOne(DriverProfile, { where: { userId } });
             const profileData = {
                 userId,
-                fullName: data.full_name,
-                licenseNumber: data.license_number,
-                // If licensePhotoUrl was passed before... the frontend snippet doesn't have it explicitly as 'license_photo', 
-                // but for now, let's keep what we have.
-                vehicleType: data.vehicle_type,
-                plateNumber: data.vehicle_number,
-                vehicleModel: data.vehicle_model || null,
-                vehicleColor: data.vehicle_color || null,
-                region: data.location,
+                fullName: cut(data.full_name, 255),
+                licenseNumber: cut(data.license_number, 100),
+                vehicleType: cut(data.vehicle_type, 50),
+                plateNumber: cut(data.vehicle_number, 50),
+                vehicleModel: cut(data.vehicle_model, 100) || null,
+                vehicleColor: cut(data.vehicle_color, 50) || null,
+                region: cut(data.location, 100),
                 identificationId: idRecord?.id || null,
                 status: DriverVerificationStatus.PENDING
             };
@@ -152,6 +175,21 @@ export class ProfileService {
             await this.ensureRole(queryRunner, userId, RoleType.DRIVER);
 
             await queryRunner.commitTransaction();
+
+            // Notify user - driver profile submitted for review. Best-effort: a
+            // notification failure must never fail an already-committed setup.
+            try {
+                await this.notificationService.notify(
+                    userId,
+                    NotificationType.PROFILE_CREATED,
+                    "Driver Application Submitted! 🚗",
+                    "Your driver profile is under review. We'll notify you once it's approved.",
+                    { role: RoleType.DRIVER }
+                );
+            } catch (notifyErr) {
+                log.warn("Driver setup notification failed (non-fatal)", { userId, error: (notifyErr as Error).message });
+            }
+
             log.info("Driver profile setup completed", { userId });
             return savedProfile;
         } catch (error) {
@@ -199,8 +237,7 @@ export class ProfileService {
                 userId,
                 businessName: data.business_name,
                 category: data.business_type,
-                // Assuming business email/phone might be same as default if not explicitly separate in form
-                businessEmail: null,
+                businessEmail: data.business_email,
                 businessPhone: data.phone,
                 address: data.business_address,
                 region: data.location,
@@ -220,6 +257,20 @@ export class ProfileService {
             await this.ensureRole(queryRunner, userId, RoleType.MERCHANT);
 
             await queryRunner.commitTransaction();
+
+            // Notify user - best-effort; never fail a committed setup on notification.
+            try {
+                await this.notificationService.notify(
+                    userId,
+                    NotificationType.PROFILE_CREATED,
+                    "Merchant Application Submitted! 🏪",
+                    "Your merchant profile is under review. We'll notify you once it's approved and you can start listing products.",
+                    { role: RoleType.MERCHANT }
+                );
+            } catch (notifyErr) {
+                log.warn("Merchant setup notification failed (non-fatal)", { userId, error: (notifyErr as Error).message });
+            }
+
             log.info("Merchant profile setup completed", { userId });
             return savedProfile;
         } catch (error) {
@@ -232,19 +283,130 @@ export class ProfileService {
     }
 
     private async ensureRole(queryRunner: QueryRunner, userId: string, roleName: RoleType) {
-        const role = await queryRunner.manager.findOne(Role, { where: { name: roleName } });
-        if (role) {
-            const existingUserRole = await queryRunner.manager.findOne(UserRole, {
-                where: { userId, roleId: role.id }
+        let role = await queryRunner.manager.findOne(Role, { where: { name: roleName } });
+        if (!role) {
+            role = queryRunner.manager.create(Role, {
+                name: roleName,
+                description: `${roleName} role`
             });
-            if (!existingUserRole) {
-                const userRole = queryRunner.manager.create(UserRole, {
-                    userId,
-                    roleId: role.id,
-                    status: (roleName === RoleType.BUYER) ? RoleStatus.APPROVED : RoleStatus.PENDING
-                });
-                await queryRunner.manager.save(userRole);
+            await queryRunner.manager.save(role);
+        }
+
+        const existingUserRole = await queryRunner.manager.findOne(UserRole, {
+            where: { userId, roleId: role.id }
+        });
+        if (!existingUserRole) {
+            const userRole = queryRunner.manager.create(UserRole, {
+                userId,
+                roleId: role.id,
+                status: (roleName === RoleType.BUYER) ? RoleStatus.APPROVED : RoleStatus.PENDING
+            });
+            await queryRunner.manager.save(userRole);
+        }
+    }
+
+    async getUserProfile(userId: string) {
+        log.info("Fetching user profile", { userId });
+        const user = await this.userRepository.findOne({
+            where: { id: userId },
+            relations: ["userRoles", "userRoles.role"],
+        });
+
+        if (!user) {
+            log.warn("User not found in getUserProfile", { userId });
+            throw new Error("User not found");
+        }
+
+        log.info("User found, fetching user profile entity", { userId });
+
+        let userProfile = await this.userProfileRepository.findOne({ where: { userId } });
+        if (!userProfile) {
+            userProfile = this.userProfileRepository.create({ userId });
+            userProfile = await this.userProfileRepository.save(userProfile);
+        }
+
+        let resolvedFullName = userProfile.fullName;
+        if (!resolvedFullName) {
+            const buyerProfile = await AppDataSource.getRepository(BuyerProfile).findOne({ where: { userId } });
+            if (buyerProfile?.fullName) {
+                resolvedFullName = buyerProfile.fullName;
+            } else {
+                const driverProfile = await AppDataSource.getRepository(DriverProfile).findOne({ where: { userId } });
+                if (driverProfile?.fullName) {
+                    resolvedFullName = driverProfile.fullName;
+                } else {
+                    const merchantProfile = await AppDataSource.getRepository(MerchantProfile).findOne({ where: { userId } });
+                    if (merchantProfile?.businessName) {
+                        resolvedFullName = merchantProfile.businessName;
+                    }
+                }
             }
         }
+
+        const roleDetails = (user.userRoles || []).map((userRole) => ({
+            name: userRole.role?.name,
+            status: userRole.status,
+            assignedAt: userRole.assignedAt,
+        }));
+
+        return {
+            id: user.id,
+            phoneNumber: user.phoneNumber,
+            email: user.email,
+            status: user.status,
+            activeRole: user.activeRole,
+            fullName: resolvedFullName,
+            profileImageUrl: rewriteToPublicAssetUrl(userProfile.profileImageUrl),
+            roles: roleDetails,
+        };
+    }
+
+    async updateUserProfile(userId: string, payload: { fullName?: string; email?: string; profileImageUrl?: string | null }) {
+        let userProfile = await this.userProfileRepository.findOne({ where: { userId } });
+        if (!userProfile) {
+            userProfile = this.userProfileRepository.create({ userId });
+        }
+
+        if (payload.fullName !== undefined) {
+            userProfile.fullName = payload.fullName.trim() || null;
+        }
+
+        if (payload.profileImageUrl !== undefined) {
+            userProfile.profileImageUrl = payload.profileImageUrl || null;
+        }
+
+        await this.userProfileRepository.save(userProfile);
+
+        // Update email on the User entity if provided
+        if (payload.email) {
+            const user = await this.userRepository.findOne({ where: { id: userId } });
+            if (user) {
+                user.email = payload.email.trim();
+                await this.userRepository.save(user);
+            }
+        }
+
+        return this.getUserProfile(userId);
+    }
+
+    async deleteMyAccount(userId: string): Promise<void> {
+        // Soft-delete: anonymise PII and mark account as deleted
+        const user = await this.userRepository.findOne({ where: { id: userId } });
+        if (!user) throw new Error('User not found');
+
+        user.email = null as any;
+        (user as any).deletedAt = new Date();
+        (user as any).isActive = false;
+        await this.userRepository.save(user);
+
+        // Remove user profile data
+        const userProfile = await this.userProfileRepository.findOne({ where: { userId } });
+        if (userProfile) {
+            userProfile.fullName = null;
+            userProfile.profileImageUrl = null;
+            await this.userProfileRepository.save(userProfile);
+        }
+
+        log.info('User self-deleted account', { userId });
     }
 }

@@ -6,6 +6,7 @@ const log = createServiceLogger("RedisLocationService");
 // Redis key prefixes
 const DRIVER_LOCATION_KEY = "driver:location";       // Hash: {lat, lng, heading, speed}
 const DRIVER_STATUS_KEY = "driver:status";            // String: online/busy
+const DRIVER_ACTIVE_RIDE_KEY = "driver:active-ride"; // String: rideId
 const RIDE_TRACKING_KEY = "ride:tracking";             // Hash: ride tracking data
 const RIDE_BROADCAST_KEY = "ride:broadcast";           // Set: driver IDs who received the broadcast
 
@@ -88,6 +89,21 @@ export class RedisLocationService {
             `${DRIVER_LOCATION_KEY}:${driverId}`,
             `${DRIVER_STATUS_KEY}:${driverId}`
         );
+    }
+
+    /**
+     * Track which ride a driver is currently on (for socket broadcasts)
+     */
+    async setDriverActiveRide(driverId: string, rideId: string): Promise<void> {
+        await redis.set(`${DRIVER_ACTIVE_RIDE_KEY}:${driverId}`, rideId, "EX", 7200);
+    }
+
+    async getDriverActiveRide(driverId: string): Promise<string | null> {
+        return redis.get(`${DRIVER_ACTIVE_RIDE_KEY}:${driverId}`);
+    }
+
+    async removeDriverActiveRide(driverId: string): Promise<void> {
+        await redis.del(`${DRIVER_ACTIVE_RIDE_KEY}:${driverId}`);
     }
 
     /**

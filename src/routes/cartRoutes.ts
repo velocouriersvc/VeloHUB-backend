@@ -103,7 +103,7 @@ router.get("/", buyerRole, cartController.getCart);
  *     tags: [Cart]
  *     summary: Add item to cart
  *     description: |
- *       Adds a product to the cart. Enforces **single-merchant rule** — all items must
+ *       Adds a product to the cart. Enforces **single-merchant rule** - all items must
  *       come from the same merchant. Returns 409 if the product belongs to a different merchant.
  *
  *       - Validates product exists and is active

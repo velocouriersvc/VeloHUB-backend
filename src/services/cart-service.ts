@@ -5,16 +5,10 @@ import { Product } from "../models/product";
 import { CustomizationOption } from "../models/customization-option";
 import { ProductCustomization } from "../models/product-customization";
 import { MerchantProfile } from "../models/merchant-profile";
-import { redis } from "../utils/redis";
 import { createServiceLogger } from "../utils/logger";
 import { cartEventsTotal } from "../utils/metrics";
-import { In } from "typeorm";
 
 const log = createServiceLogger("CartService");
-
-// Redis
-const CART_CACHE_KEY = (userId: string) => `cart:${userId}`;
-const CART_CACHE_TTL = 86400; // 24 hours
 
 // ── Input Types ─────────────────────────────────────────────────────
 
@@ -33,6 +27,11 @@ export interface CartResponse {
     merchant: {
         businessName: string;
         category: string;
+    } | null;
+    merchantLocation?: {
+        address: string;
+        latitude: number | null;
+        longitude: number | null;
     } | null;
     items: CartItemResponse[];
     subtotal: number;
@@ -69,13 +68,9 @@ export class CartService {
 
     /**
      * Get or create the user's cart, returned as a rich response with product details.
+     * Always fetches directly from Postgres - no Redis cache.
      */
     async getCart(userId: string): Promise<CartResponse> {
-        // Try Redis cache first
-        const cached = await this.getCachedCart(userId);
-        if (cached) return cached;
-
-        // Fetch from DB
         let cart = await this.cartRepo.findOne({
             where: { userId },
             relations: {
@@ -85,15 +80,25 @@ export class CartService {
         });
 
         if (!cart) {
-            // Create empty cart
             cart = this.cartRepo.create({ userId, merchantId: null, subtotal: 0 });
             cart = await this.cartRepo.save(cart);
             cart.items = [];
         }
 
-        const response = await this.buildCartResponse(cart);
-        await this.cacheCart(userId, response);
-        return response;
+        log.info("getCart from DB", {
+            cartId: cart.id,
+            itemCount: cart.items?.length,
+            itemIds: cart.items?.map((i) => i.id),
+        });
+
+        return this.buildCartResponse(cart);
+    }
+
+    /**
+     * @deprecated Use getCart() - Redis cache has been removed.
+     */
+    async getCartFresh(userId: string): Promise<CartResponse> {
+        return this.getCart(userId);
     }
 
     // ── Add Item ────────────────────────────────────────────────────
@@ -125,20 +130,23 @@ export class CartService {
             );
         }
 
-        // 3. Get or create cart
+        // 3. Get or create cart (load items separately to avoid cascade issues)
         let cart = await this.cartRepo.findOne({
             where: { userId },
-            relations: { items: true },
         });
 
         if (!cart) {
             cart = this.cartRepo.create({ userId, merchantId: null, subtotal: 0 });
             cart = await this.cartRepo.save(cart);
-            cart.items = [];
         }
 
+        // Load items separately (not on the cart entity)
+        const cartItems = await this.cartItemRepo.find({
+            where: { cartId: cart.id },
+        });
+
         // 4. Single-merchant enforcement
-        if (cart.merchantId && cart.merchantId !== product.merchantId && cart.items.length > 0) {
+        if (cart.merchantId && cart.merchantId !== product.merchantId && cartItems.length > 0) {
             const currentMerchant = await this.merchantRepo.findOne({
                 where: { userId: cart.merchantId },
             });
@@ -188,7 +196,7 @@ export class CartService {
         const itemTotal = Math.round((unitPrice + optionsTotal) * input.quantity * 100) / 100;
 
         // 8. Check if this exact product+options combo already exists in cart → update qty
-        const existingItem = this.findExistingCartItem(cart.items, input.productId, resolvedOptions);
+        const existingItem = this.findExistingCartItem(cartItems, input.productId, resolvedOptions);
 
         if (existingItem) {
             existingItem.quantity += input.quantity;
@@ -214,8 +222,7 @@ export class CartService {
         cart.subtotal = await this.calculateSubtotal(cart.id);
         await this.cartRepo.save(cart);
 
-        // 10. Invalidate cache & return
-        await this.invalidateCache(userId);
+        // 10. Return fresh cart from Postgres
         cartEventsTotal.inc({ action: "add_item" });
 
         const response = await this.getCart(userId);
@@ -236,14 +243,17 @@ export class CartService {
             throw new Error("Quantity must be at least 1. Use remove endpoint to delete.");
         }
 
+        // Load cart WITHOUT items to avoid cascade issues
         const cart = await this.cartRepo.findOne({
             where: { userId },
-            relations: { items: true },
         });
 
         if (!cart) throw new Error("Cart not found");
 
-        const item = cart.items.find((i) => i.id === itemId);
+        // Load item directly
+        const item = await this.cartItemRepo.findOne({
+            where: { id: itemId, cartId: cart.id },
+        });
         if (!item) throw new Error("Cart item not found");
 
         // Check stock
@@ -260,11 +270,11 @@ export class CartService {
         item.itemTotal = Math.round((Number(item.unitPrice) + optionsTotal) * quantity * 100) / 100;
         await this.cartItemRepo.save(item);
 
-        // Update subtotal
+        // Update subtotal (no items loaded on cart = no cascade)
         cart.subtotal = await this.calculateSubtotal(cart.id);
         await this.cartRepo.save(cart);
 
-        await this.invalidateCache(userId);
+        // Fresh query from Postgres
         return this.getCart(userId);
     }
 
@@ -274,31 +284,63 @@ export class CartService {
      * Remove an item from the cart.
      */
     async removeItem(userId: string, itemId: string): Promise<CartResponse> {
+        log.info("removeItem called", { userId, itemId });
+
+        // Load cart WITHOUT items relation to avoid cascade re-insert
         const cart = await this.cartRepo.findOne({
             where: { userId },
-            relations: { items: true },
         });
 
         if (!cart) throw new Error("Cart not found");
 
-        const item = cart.items.find((i) => i.id === itemId);
-        if (!item) throw new Error("Cart item not found");
+        // Verify the item exists and belongs to this cart
+        const item = await this.cartItemRepo.findOne({
+            where: { id: itemId, cartId: cart.id },
+        });
+        if (!item) {
+            log.warn("Cart item not found", { itemId, cartId: cart.id });
+            throw new Error("Cart item not found");
+        }
 
-        await this.cartItemRepo.delete(itemId);
+        log.info("Deleting cart item", { itemId, productId: item.productId });
 
-        // If no items left, clear merchant
-        const remainingItems = cart.items.filter((i) => i.id !== itemId);
-        if (remainingItems.length === 0) {
+        // Delete the item
+        const deleteResult = await this.cartItemRepo.delete(itemId);
+        log.info("Delete result", { affected: deleteResult.affected });
+
+        // Verify deletion
+        const stillExists = await this.cartItemRepo.findOne({ where: { id: itemId } });
+        if (stillExists) {
+            log.error("Item still exists after delete!", { itemId });
+        } else {
+            log.info("Item confirmed deleted from DB", { itemId });
+        }
+
+        // Check if any items remain
+        const remainingCount = await this.cartItemRepo.count({
+            where: { cartId: cart.id },
+        });
+        log.info("Remaining items after delete", { remainingCount });
+
+        if (remainingCount === 0) {
             cart.merchantId = null;
         }
 
+        // Update subtotal and save cart (no items loaded = no cascade re-insert)
         cart.subtotal = await this.calculateSubtotal(cart.id);
         await this.cartRepo.save(cart);
 
-        await this.invalidateCache(userId);
         cartEventsTotal.inc({ action: "remove_item" });
 
-        return this.getCart(userId);
+        // Fresh query from Postgres
+        const response = await this.getCart(userId);
+        log.info("removeItem response", {
+            itemCount: response.items.length,
+            itemIds: response.items.map((i) => i.id),
+            subtotal: response.subtotal,
+            removedStillPresent: response.items.some((i) => i.id === itemId),
+        });
+        return response;
     }
 
     // ── Clear Cart ──────────────────────────────────────────────────
@@ -307,25 +349,23 @@ export class CartService {
      * Clear the entire cart (remove all items, reset merchantId).
      */
     async clearCart(userId: string): Promise<CartResponse> {
+        // Load cart WITHOUT items to avoid cascade re-insert
         const cart = await this.cartRepo.findOne({
             where: { userId },
-            relations: { items: true },
         });
 
         if (!cart) throw new Error("Cart not found");
 
-        // Delete all items
-        if (cart.items.length > 0) {
-            await this.cartItemRepo.delete({ cartId: cart.id });
-        }
+        // Delete all items by cartId
+        await this.cartItemRepo.delete({ cartId: cart.id });
 
         cart.merchantId = null;
         cart.subtotal = 0;
         await this.cartRepo.save(cart);
 
-        await this.invalidateCache(userId);
         cartEventsTotal.inc({ action: "clear" });
 
+        // Fresh query from Postgres
         return this.getCart(userId);
     }
 
@@ -350,9 +390,9 @@ export class CartService {
      * Build the rich cart response with product names/images from loaded relations.
      */
     private async buildCartResponse(cart: Cart): Promise<CartResponse> {
-        // Load items with product details if not already loaded
+        // Always load items with product details from DB
         let items = cart.items || [];
-        if (items.length > 0 && !items[0].product) {
+        if (items.length === 0 || (items.length > 0 && !items[0].product)) {
             items = await this.cartItemRepo.find({
                 where: { cartId: cart.id },
                 relations: { product: true },
@@ -361,6 +401,7 @@ export class CartService {
 
         // Load merchant info
         let merchant: { businessName: string; category: string } | null = null;
+        let merchantLocation: { address: string; latitude: number | null; longitude: number | null } | null = null;
         if (cart.merchantId) {
             const profile = await this.merchantRepo.findOne({
                 where: { userId: cart.merchantId },
@@ -369,6 +410,11 @@ export class CartService {
                 merchant = {
                     businessName: profile.businessName,
                     category: profile.category,
+                };
+                merchantLocation = {
+                    address: profile.address,
+                    latitude: profile.latitude,
+                    longitude: profile.longitude,
                 };
             }
         }
@@ -390,6 +436,7 @@ export class CartService {
             id: cart.id,
             merchantId: cart.merchantId,
             merchant,
+            merchantLocation,
             items: cartItems,
             subtotal: Number(cart.subtotal),
             itemCount,
@@ -464,30 +511,9 @@ export class CartService {
         }
     }
 
-    // ── Redis Cache ─────────────────────────────────────────────────
+    // ── Cache (no-op - all reads go directly to Postgres) ──
 
-    private async getCachedCart(userId: string): Promise<CartResponse | null> {
-        try {
-            const data = await redis.get(CART_CACHE_KEY(userId));
-            return data ? JSON.parse(data) : null;
-        } catch {
-            return null;
-        }
-    }
-
-    private async cacheCart(userId: string, cart: CartResponse): Promise<void> {
-        try {
-            await redis.set(CART_CACHE_KEY(userId), JSON.stringify(cart), "EX", CART_CACHE_TTL);
-        } catch {
-            // Non-critical — cache miss is fine
-        }
-    }
-
-    async invalidateCache(userId: string): Promise<void> {
-        try {
-            await redis.del(CART_CACHE_KEY(userId));
-        } catch {
-            // Non-critical
-        }
+    async invalidateCache(_userId: string): Promise<void> {
+        // No-op: Redis cache removed, all reads go to Postgres directly
     }
 }

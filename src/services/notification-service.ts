@@ -5,6 +5,7 @@ import { PreludeService } from "./prelude-service";
 import { createServiceLogger } from "../utils/logger";
 import { notificationEventsTotal } from "../utils/metrics";
 import { formatCurrency } from "../utils/currency";
+import { Expo, ExpoPushMessage, ExpoPushTicket } from "expo-server-sdk";
 
 const log = createServiceLogger("NotificationService");
 
@@ -12,9 +13,13 @@ export class NotificationService {
     private notifRepo = AppDataSource.getRepository(Notification);
     private pushTokenRepo = AppDataSource.getRepository(PushToken);
     private preludeService: PreludeService;
+    private expo: Expo;
 
     constructor() {
         this.preludeService = new PreludeService();
+        this.expo = new Expo({
+            accessToken: process.env.EXPO_ACCESS_TOKEN,
+        });
     }
 
     /**
@@ -90,7 +95,7 @@ export class NotificationService {
     }
 
     /**
-     * Get user's notifications (for the notification screen) — enriched with icons/categories.
+     * Get user's notifications (for the notification screen) - enriched with icons/categories.
      */
     async getUserNotifications(
         userId: string,
@@ -231,8 +236,7 @@ export class NotificationService {
     }
 
     /**
-     * Send push notification via FCM (placeholder — wire up Firebase Admin SDK)
-     * TODO: Add firebase-admin dependency and initialize when ready for push
+     * Send push notification via Expo Push API
      */
     private async sendPushNotification(
         userId: string,
@@ -246,45 +250,96 @@ export class NotificationService {
 
         if (tokens.length === 0) return;
 
-        // TODO: Replace with actual FCM send when firebase-admin is added
-        // For now, just log that we would send a push
-        log.info("Push notification queued", { userId, title, deviceCount: tokens.length });
-        notificationEventsTotal.inc({ channel: "push", status: "success" });
+        // Determine the Android notification channel based on data context
+        let channelId = "default";
+        if (data?.rideId || data?.screen === "rides") {
+            channelId = "rides";
+        } else if (data?.orderId || data?.orderNumber) {
+            channelId = "orders";
+        }
 
-        // When ready, implement like this:
-        // import admin from "firebase-admin";
-        // const message = {
-        //     notification: { title, body },
-        //     data: data ? Object.fromEntries(Object.entries(data).map(([k, v]) => [k, String(v)])) : {},
-        //     tokens: tokens.map(t => t.token),
-        // };
-        // await admin.messaging().sendEachForMulticast(message);
+        // Build messages - only for valid Expo push tokens
+        const messages: ExpoPushMessage[] = [];
+        for (const t of tokens) {
+            if (!Expo.isExpoPushToken(t.token)) {
+                log.warn("Invalid Expo push token, skipping", { userId, token: t.token });
+                continue;
+            }
+            messages.push({
+                to: t.token,
+                sound: "default",
+                title,
+                body,
+                data: data || {},
+                priority: "high",
+                channelId,
+            });
+        }
+
+        if (messages.length === 0) return;
+
+        // Chunk and send via Expo Push API
+        const chunks = this.expo.chunkPushNotifications(messages);
+        for (const chunk of chunks) {
+            try {
+                const ticketChunk: ExpoPushTicket[] = await this.expo.sendPushNotificationsAsync(chunk);
+
+                // Handle ticket errors - deactivate invalid tokens
+                for (let i = 0; i < ticketChunk.length; i++) {
+                    const ticket = ticketChunk[i];
+                    if (ticket.status === "error") {
+                        log.error("Push ticket error", {
+                            userId,
+                            error: ticket.message,
+                            details: ticket.details,
+                        });
+
+                        // If the token is invalid, deactivate it
+                        if (
+                            ticket.details?.error === "DeviceNotRegistered" ||
+                            ticket.details?.error === "InvalidCredentials"
+                        ) {
+                            const badToken = (chunk[i] as any).to as string;
+                            await this.pushTokenRepo.update({ token: badToken }, { isActive: false });
+                            log.info("Deactivated invalid push token", { token: badToken });
+                        }
+                    }
+                }
+
+                notificationEventsTotal.inc({ channel: "push", status: "success" });
+            } catch (err) {
+                log.error("Expo Push API error", { userId, error: (err as Error).message });
+                notificationEventsTotal.inc({ channel: "push", status: "failed" });
+            }
+        }
+
+        log.info("Push notification sent", { userId, title, deviceCount: messages.length });
     }
 
     // ── Convenience methods for common ride notifications ──
 
     async notifyRideAccepted(customerId: string, driverName: string, rideId: string) {
-        return this.notify(customerId, NotificationType.RIDE_ACCEPTED, "Ride Accepted! 🚗", `${driverName} is on the way`, { rideId });
+        return this.notify(customerId, NotificationType.RIDE_ACCEPTED, "Ride Accepted! 🚗", `${driverName} is on the way`, { rideId, screen: "rides", deepLink: `velohub://rides?rideId=${rideId}` });
     }
 
     async notifyDriverEnroute(customerId: string, driverName: string, rideId: string) {
-        return this.notify(customerId, NotificationType.DRIVER_ENROUTE, "Driver En Route 🛣️", `${driverName} is heading to your pickup`, { rideId });
+        return this.notify(customerId, NotificationType.DRIVER_ENROUTE, "Driver En Route 🛣️", `${driverName} is heading to your pickup`, { rideId, screen: "rides", deepLink: `velohub://rides?rideId=${rideId}` });
     }
 
     async notifyDriverArrived(customerId: string, driverName: string, rideId: string) {
-        return this.notify(customerId, NotificationType.DRIVER_ARRIVED, "Driver Arrived! 📍", `${driverName} has arrived at your pickup location`, { rideId });
+        return this.notify(customerId, NotificationType.DRIVER_ARRIVED, "Driver Arrived! 📍", `${driverName} has arrived at your pickup location`, { rideId, screen: "rides", deepLink: `velohub://rides?rideId=${rideId}` });
     }
 
     async notifyRideStarted(customerId: string, rideId: string) {
-        return this.notify(customerId, NotificationType.RIDE_STARTED, "Ride Started 🚀", "Your ride is now in progress", { rideId });
+        return this.notify(customerId, NotificationType.RIDE_STARTED, "Ride Started 🚀", "Your ride is now in progress", { rideId, screen: "rides", deepLink: `velohub://rides?rideId=${rideId}` });
     }
 
     async notifyRideCompleted(customerId: string, fare: number, rideId: string, currency: string = "GHS") {
-        return this.notify(customerId, NotificationType.RIDE_COMPLETED, "Ride Completed ✅", `Your ride is complete. Fare: ${formatCurrency(fare, currency)}`, { rideId, fare });
+        return this.notify(customerId, NotificationType.RIDE_COMPLETED, "Ride Completed ✅", `Your ride is complete. Fare: ${formatCurrency(fare, currency)}`, { rideId, fare, screen: "rides", deepLink: `velohub://rides?rideId=${rideId}` });
     }
 
     async notifyRideCancelled(userId: string, reason: string, rideId: string) {
-        return this.notify(userId, NotificationType.RIDE_CANCELLED, "Ride Cancelled ❌", reason, { rideId });
+        return this.notify(userId, NotificationType.RIDE_CANCELLED, "Ride Cancelled ❌", reason, { rideId, screen: "rides", deepLink: `velohub://rides?rideId=${rideId}` });
     }
 
     async notifyPaymentReceived(userId: string, amount: number, rideId: string, currency: string = "GHS") {
@@ -300,6 +355,6 @@ export class NotificationService {
     }
 
     async notifyNewRideRequest(driverId: string, pickupAddress: string, rideId: string) {
-        return this.notify(driverId, NotificationType.RIDE_REQUESTED, "New Ride Request! 🔔", `Pickup: ${pickupAddress}`, { rideId });
+        return this.notify(driverId, NotificationType.RIDE_REQUESTED, "New Ride Request! 🔔", `Pickup: ${pickupAddress}`, { rideId, screen: "rides", deepLink: `velohub://rides?rideId=${rideId}` });
     }
 }

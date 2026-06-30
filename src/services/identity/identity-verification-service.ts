@@ -8,12 +8,21 @@ import { createServiceLogger } from "../../utils/logger";
 const log = createServiceLogger("IdentityVerificationService");
 
 export class IdentityVerificationService {
-    private stripe: Stripe;
+    private stripe: Stripe | null;
 
     constructor() {
-        this.stripe = new Stripe(process.env.STRIPE_SECRET_KEY || "", {
-            apiVersion: "2026-02-25.clover" as any,
-        });
+        // Stripe Identity is being phased out. Only build the client when a key is
+        // present so a missing key cannot break the service (or any controller that
+        // constructs it) when Stripe has been removed.
+        const key = process.env.STRIPE_SECRET_KEY;
+        this.stripe = key ? new Stripe(key, { apiVersion: "2026-02-25.clover" as any }) : null;
+    }
+
+    private requireStripe(): Stripe {
+        if (!this.stripe) {
+            throw new Error("Identity verification is not configured");
+        }
+        return this.stripe;
     }
 
     /**
@@ -46,7 +55,7 @@ export class IdentityVerificationService {
         // - Selfie: enabled
         // - ID Number: enabled
         // - Live Capture: enabled (enforced)
-        const session = await this.stripe.identity.verificationSessions.create({
+        const session = await this.requireStripe().identity.verificationSessions.create({
             type: "document",
             options: {
                 document: {
@@ -82,13 +91,13 @@ export class IdentityVerificationService {
         }
 
         // Return the session details plus an ephemeral key for the mobile SDK
-        const ephemeralKey = await this.stripe.ephemeralKeys.create(
+        const ephemeralKey = await this.requireStripe().ephemeralKeys.create(
             { verification_session: session.id },
             { apiVersion: "2026-02-25.clover" as any }
         );
 
         return {
-            sessionId: session.id,
+            id: session.id,
             clientSecret: session.client_secret,
             ephemeralKeySecret: ephemeralKey.secret,
         };
@@ -101,7 +110,7 @@ export class IdentityVerificationService {
         let event: Stripe.Event;
 
         try {
-            event = this.stripe.webhooks.constructEvent(
+            event = this.requireStripe().webhooks.constructEvent(
                 payload,
                 signature,
                 process.env.STRIPE_WEBHOOK_SECRET || ""
@@ -156,7 +165,7 @@ export class IdentityVerificationService {
         identification.stripeVerificationReportId = session.last_verification_report as string;
         
         // Retrieve the report to get verified details if needed
-        const report = await this.stripe.identity.verificationReports.retrieve(
+        const report = await this.requireStripe().identity.verificationReports.retrieve(
             session.last_verification_report as string
         );
 

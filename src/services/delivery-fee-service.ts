@@ -2,10 +2,16 @@ import { AppDataSource } from "../db/data-source";
 import { PlatformSettings } from "../models/platform-settings";
 import { MerchantProfile } from "../models/merchant-profile";
 import { createServiceLogger } from "../utils/logger";
+import {
+    PricingVertical,
+    resolveOrderVertical,
+    computeDeliveryFee,
+    MIN_BILLABLE_DISTANCE_KM,
+} from "../config/pricing";
 
 const log = createServiceLogger("DeliveryFeeService");
 
-// Fallbacks — used when platform_settings is missing
+// Fallbacks - used when platform_settings is missing
 const DEFAULT_BASE_FEE = 5.0;
 const DEFAULT_PER_KM_FEE = 2.0;
 
@@ -15,10 +21,15 @@ export interface DeliveryFeeResult {
     baseFee: number;
     perKmFee: number;
     estimatedDeliveryMin: number;
+    vertical: PricingVertical;
+    driverPayout: number;
+    platformCommission: number;
+    /** False when the merchant location was missing and a base-only fee was used. */
+    locationResolved: boolean;
 }
 
 /**
- * DeliveryFeeService — calculate delivery fee based on Haversine distance
+ * DeliveryFeeService - calculate delivery fee based on Haversine distance
  * and per-country config from `platform_settings`.
  */
 export class DeliveryFeeService {
@@ -37,39 +48,62 @@ export class DeliveryFeeService {
         merchantId: string,
         deliveryLat: number,
         deliveryLng: number,
-        country: string = "GH"
+        country: string = "GH",
+        vertical?: PricingVertical
     ): Promise<DeliveryFeeResult> {
         // 1. Get merchant location
         const merchant = await this.merchantRepo.findOne({
             where: { userId: merchantId },
         });
 
-        if (!merchant) {
-            throw new Error("Merchant profile not found");
+        // 2. Resolve distance when we have both merchant and customer coordinates.
+        //    If the merchant has no saved location (data not yet backfilled), we
+        //    DO NOT fail the whole quote - we fall back to a base-fee-only delivery
+        //    (distance 0) so the order can still be priced and placed. A warning is
+        //    logged so the missing location can be fixed.
+        let distanceKm = 0;
+        let locationResolved = false;
+        if (merchant?.latitude && merchant?.longitude) {
+            distanceKm = this.haversineDistance(
+                merchant.latitude,
+                merchant.longitude,
+                deliveryLat,
+                deliveryLng
+            );
+            locationResolved = true;
+        } else {
+            log.warn("Merchant location unavailable - using base delivery fee only", {
+                merchantId,
+                hasMerchant: !!merchant,
+            });
         }
-
-        if (!merchant.latitude || !merchant.longitude) {
-            throw new Error("Merchant location not set — cannot calculate delivery fee");
-        }
-
-        // 2. Calculate Haversine distance
-        const distanceKm = this.haversineDistance(
-            merchant.latitude,
-            merchant.longitude,
-            deliveryLat,
-            deliveryLng
-        );
 
         // 3. Get fee config from platform_settings
         const settings = await this.settingsRepo.findOne({
             where: { country, isActive: true },
         });
 
-        const baseFee = settings ? Number(settings.deliveryBaseFee) : DEFAULT_BASE_FEE;
-        const perKmFee = settings ? Number(settings.deliveryPerKmFee) : DEFAULT_PER_KM_FEE;
+        const rawBaseFee = settings ? Number(settings.deliveryBaseFee) : DEFAULT_BASE_FEE;
+        const rawPerKmFee = settings ? Number(settings.deliveryPerKmFee) : DEFAULT_PER_KM_FEE;
+        const driverShareRate = settings ? Number(settings.driverDeliveryFeeShare) / 100 : 0.75;
 
-        // 4. Calculate fee: base + (distance * perKm), rounded to 2 decimal places
-        const deliveryFee = Math.round((baseFee + distanceKm * perKmFee) * 100) / 100;
+        // 4. Resolve the pricing vertical (food vs marketplace) from the merchant
+        //    category unless the caller pins it explicitly, then apply the
+        //    cross-vertical base/distance weighting via the pure helper.
+        const resolvedVertical = vertical ?? resolveOrderVertical(merchant?.category);
+        // For a real (resolved) distance, bill at least the minimum billable distance
+        // so sub-1km deliveries aren't under-charged. When the location is unknown we
+        // keep distance 0 (base-only fallback).
+        const billableKm = locationResolved
+            ? Math.max(distanceKm, MIN_BILLABLE_DISTANCE_KM)
+            : distanceKm;
+        const fee = computeDeliveryFee({
+            baseFee: rawBaseFee,
+            perKmFee: rawPerKmFee,
+            distanceKm: billableKm,
+            vertical: resolvedVertical,
+            driverShareRate,
+        });
 
         // 5. Estimate delivery time (rough: 3 min/km + 10 min pickup/dropoff buffer)
         const estimatedDeliveryMin = Math.ceil(distanceKm * 3 + 10);
@@ -77,16 +111,21 @@ export class DeliveryFeeService {
         log.info("Delivery fee calculated", {
             merchantId,
             distanceKm: Math.round(distanceKm * 100) / 100,
-            deliveryFee,
+            deliveryFee: fee.deliveryFee,
+            vertical: resolvedVertical,
             country,
         });
 
         return {
-            deliveryFee,
+            deliveryFee: fee.deliveryFee,
             distanceKm: Math.round(distanceKm * 100) / 100,
-            baseFee,
-            perKmFee,
+            baseFee: fee.baseFee,
+            perKmFee: rawPerKmFee,
             estimatedDeliveryMin,
+            vertical: resolvedVertical,
+            driverPayout: fee.driverPayout,
+            platformCommission: fee.platformCommission,
+            locationResolved,
         };
     }
 

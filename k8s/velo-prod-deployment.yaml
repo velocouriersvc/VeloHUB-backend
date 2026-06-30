@@ -38,6 +38,16 @@ spec:
             limits:
               cpu: "500m"
               memory: "512Mi"
+          # Startup can take a while: image pull + TypeORM schema sync + boot seeds.
+          # The startupProbe holds off liveness/readiness (and prevents a mid-boot
+          # liveness kill / crash loop) until the app is actually listening.
+          # 30 x 10s = up to 300s allowed for first byte.
+          startupProbe:
+            httpGet:
+              path: /
+              port: http
+            periodSeconds: 10
+            failureThreshold: 60
           readinessProbe:
             httpGet:
               path: /

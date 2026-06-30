@@ -224,6 +224,32 @@ router.get("/active", requireRole(["buyer"]), rideController.getActiveRide);
 
 /**
  * @openapi
+ * /rides/nearby-drivers:
+ *   post:
+ *     tags: [Rides]
+ *     summary: Get nearby online drivers
+ *     description: Returns online drivers within a radius for map overlay. Requires **buyer** role.
+ *     security:
+ *       - ApiKeyAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           example:
+ *             phoneNumber: "+233501234567"
+ *             lat: 5.6037
+ *             lng: -0.187
+ *             radiusKm: 10
+ *     responses:
+ *       200:
+ *         description: Array of nearby drivers with locations
+ *       403:
+ *         description: Invalid API key or role not approved
+ */
+router.post("/nearby-drivers", requireRole(["buyer"]), rideController.getNearbyDrivers);
+
+/**
+ * @openapi
  * /rides/history:
  *   get:
  *     tags: [Rides]
@@ -271,5 +297,35 @@ router.get("/history", requireRole(["buyer"]), rideController.getRideHistory);
  *         description: Invalid API key or role not approved
  */
 router.get("/:id", requireRole(["buyer", "driver"]), rideController.getRide);
+
+/**
+ * @openapi
+ * /rides/nearby-drivers:
+ *   post:
+ *     tags: [Rides]
+ *     summary: Get nearby available drivers
+ *     description: Returns a list of nearby drivers for the map overlay.
+ *     security:
+ *       - ApiKeyAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [lat, lng]
+ *             properties:
+ *               lat:
+ *                 type: number
+ *               lng:
+ *                 type: number
+ *               radiusKm:
+ *                 type: number
+ *                 default: 10
+ *     responses:
+ *       200:
+ *         description: List of nearby drivers with coordinates
+ */
+router.post("/nearby-drivers", requireRole(["buyer"]), rideController.getNearbyDrivers);
 
 export default router;

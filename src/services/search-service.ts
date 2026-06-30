@@ -73,15 +73,33 @@ export class SearchService {
 
     constructor() {
         try {
-            this.redis = new Redis({
-                host: process.env.REDIS_HOST || "localhost",
-                port: Number(process.env.REDIS_PORT) || 6379,
-                password: process.env.REDIS_PASSWORD || undefined,
-                maxRetriesPerRequest: 1,
-                lazyConnect: true,
+            // Parse REDIS_URL if available, otherwise fall back to individual vars
+            const redisUrl = process.env.REDIS_URL;
+            if (redisUrl) {
+                this.redis = new Redis(redisUrl, {
+                    maxRetriesPerRequest: 1,
+                    lazyConnect: true,
+                    enableOfflineQueue: false,
+                });
+            } else {
+                this.redis = new Redis({
+                    host: process.env.REDIS_HOST || "localhost",
+                    port: Number(process.env.REDIS_PORT) || 6379,
+                    password: process.env.REDIS_PASSWORD || undefined,
+                    maxRetriesPerRequest: 1,
+                    lazyConnect: true,
+                    enableOfflineQueue: false,
+                });
+            }
+
+            // Attach error listener BEFORE connect to prevent unhandled error events
+            this.redis.on("error", () => {
+                // Silently handled - we null out redis below on connect failure
             });
+
             this.redis.connect().catch(() => {
-                log.warn("Redis not available — search cache disabled");
+                log.warn("Redis not available - search cache disabled");
+                this.redis?.disconnect();
                 this.redis = null;
             });
         } catch {
@@ -90,7 +108,7 @@ export class SearchService {
     }
 
     /**
-     * Unified search — returns matching merchants and products.
+     * Unified search - returns matching merchants and products.
      */
     async search(params: SearchParams): Promise<SearchResult> {
         merchantSearchTotal.inc();
@@ -341,7 +359,7 @@ export class SearchService {
                 id: p.id,
                 name: p.name,
                 description: p.description,
-                category: p.category,
+                category: p.category || "Uncategorized",
                 price: Number(p.price),
                 compareAtPrice: p.compareAtPrice ? Number(p.compareAtPrice) : null,
                 images: p.images || [],

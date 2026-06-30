@@ -9,6 +9,7 @@ import { NotificationService } from "./notification-service";
 import { NotificationType } from "../models/notification";
 import { createServiceLogger } from "../utils/logger";
 import { formatCurrency } from "../utils/currency";
+import { emitOrderEvent } from "../socket-gateway";
 import { Between, In, FindOptionsWhere } from "typeorm";
 import { SettlementResult } from "./settlement-service";
 import { WalletTransactionResponse } from "../types/merchant";
@@ -99,7 +100,7 @@ export class MerchantService {
     }
 
     /**
-     * Update merchant profile fields — supports behavioral flags and hours dictionary.
+     * Update merchant profile fields - supports behavioral flags and hours dictionary.
      */
     async updateProfile(merchantId: string, input: any): Promise<any> {
         const profile = await this.profileRepo.findOne({ where: { userId: merchantId } });
@@ -154,7 +155,7 @@ export class MerchantService {
     // ── Dashboard ───────────────────────────────────────────────────
 
     /**
-     * Merchant dashboard — profile + stats + today's snapshot.
+     * Merchant dashboard - profile + stats + today's snapshot.
      */
     async getDashboard(merchantId: string): Promise<MerchantDashboard> {
         const profile = await this.profileRepo.findOne({
@@ -245,7 +246,7 @@ export class MerchantService {
         merchantId: string,
         hours: OperatingHoursInput[]
     ): Promise<MerchantOperatingHours[]> {
-        // Validate — must have 7 days (0-6)
+        // Validate - must have 7 days (0-6)
         const days = hours.map((h) => h.dayOfWeek);
         const uniqueDays = new Set(days);
         if (uniqueDays.size !== days.length) {
@@ -359,6 +360,13 @@ export class MerchantService {
         await this.orderRepo.save(order);
         await this.recordStatusChange(orderId, fromStatus, OrderStatus.ACCEPTED, merchantId, "merchant");
 
+        // Emit WebSocket event for real-time tracking
+        emitOrderEvent(orderId, "order:status", {
+            orderId,
+            status: OrderStatus.ACCEPTED,
+            updatedAt: new Date().toISOString(),
+        });
+
         // Notify customer
         await this.notificationService.notify(
             order.customerId,
@@ -398,6 +406,13 @@ export class MerchantService {
         await this.orderRepo.save(order);
         await this.recordStatusChange(orderId, fromStatus, OrderStatus.CANCELLED, merchantId, "merchant", reason);
 
+        // Emit WebSocket event for real-time tracking
+        emitOrderEvent(orderId, "order:status", {
+            orderId,
+            status: OrderStatus.CANCELLED,
+            updatedAt: new Date().toISOString(),
+        });
+
         // Notify customer
         await this.notificationService.notify(
             order.customerId,
@@ -412,7 +427,7 @@ export class MerchantService {
     }
 
     /**
-     * Update order status — merchant can transition:
+     * Update order status - merchant can transition:
      * ACCEPTED → PREPARING → READY_FOR_PICKUP
      */
     async updateOrderStatus(
@@ -457,6 +472,13 @@ export class MerchantService {
         await this.orderRepo.save(order);
         await this.recordStatusChange(orderId, fromStatus, newStatus, merchantId, "merchant");
 
+        // Emit WebSocket event for real-time tracking
+        emitOrderEvent(orderId, "order:status", {
+            orderId,
+            status: newStatus,
+            updatedAt: new Date().toISOString(),
+        });
+
         // Notify customer on key transitions
         const statusMessages: Record<string, { title: string; body: string; type: NotificationType }> = {
             [OrderStatus.PREPARING]: {
@@ -492,7 +514,7 @@ export class MerchantService {
     }
 
     /**
-     * Verify pickup code — driver shows code, merchant verifies.
+     * Verify pickup code - driver shows code, merchant verifies.
      */
     async verifyPickupCode(
         merchantId: string,
@@ -522,6 +544,13 @@ export class MerchantService {
 
         await this.orderRepo.save(order);
         await this.recordStatusChange(orderId, fromStatus, OrderStatus.PICKED_UP, merchantId, "merchant", "Pickup code verified");
+
+        // Emit WebSocket event for real-time tracking
+        emitOrderEvent(orderId, "order:status", {
+            orderId,
+            status: OrderStatus.PICKED_UP,
+            updatedAt: new Date().toISOString(),
+        });
 
         // Notify customer
         await this.notificationService.notify(
@@ -569,7 +598,7 @@ export class MerchantService {
     }
 
     /**
-     * Request a payout — merchant withdraws from wallet via momo/bank.
+     * Request a payout - merchant withdraws from wallet via momo/bank.
      */
     async requestPayout(
         merchantId: string,
@@ -751,6 +780,9 @@ export class MerchantService {
         let profile = await this.profileRepo.findOne({ where: { slug: slugOrId } });
         if (!profile) {
             profile = await this.profileRepo.findOne({ where: { id: slugOrId } });
+        }
+        if (!profile) {
+            profile = await this.profileRepo.findOne({ where: { userId: slugOrId } });
         }
         if (!profile) return;
 

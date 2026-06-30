@@ -1,15 +1,29 @@
 import { AppDataSource } from "../db/data-source";
 import { Product, ProductCategory } from "../models/product";
+import { ProductCategory as ProductCategoryEntity } from "../models/product-category";
 import { ProductCustomization } from "../models/product-customization";
 import { CustomizationOption } from "../models/customization-option";
 import { MerchantStats } from "../models/merchant-stats";
 import { NotificationType } from "../models/notification";
 import { NotificationService } from "./notification-service";
 import { createServiceLogger } from "../utils/logger";
+import { rewriteToPublicAssetUrl } from "./upload-service";
 import { productViewsTotal } from "../utils/metrics";
 import { In } from "typeorm";
+import { Order, OrderStatus } from "../models/order";
 
 const log = createServiceLogger("ProductService");
+
+/** Normalize a product's image URLs to the public https asset host so they load
+ *  on Android (which blocks cleartext / wrong-host URLs that iOS may tolerate). */
+function toPublicImages<T extends { images?: string[] | null }>(product: T): T {
+    if (product && Array.isArray(product.images)) {
+        product.images = product.images
+            .map((u) => rewriteToPublicAssetUrl(u))
+            .filter((u): u is string => !!u);
+    }
+    return product;
+}
 
 // ── Input Types ─────────────────────────────────────────────────────
 
@@ -17,6 +31,9 @@ export interface CreateProductInput {
     name: string;
     description?: string;
     category: string;
+    /** Upload context: 'service' (from the Add Service form) or 'marketplace' (Add Product).
+     *  Used to reject listings created under a category of the wrong type. */
+    categoryType?: "service" | "marketplace";
     price: number;
     compareAtPrice?: number;
     stockQuantity?: number;
@@ -80,6 +97,7 @@ export interface CreateOptionInput {
 
 export class ProductService {
     private productRepo = AppDataSource.getRepository(Product);
+    private productCategoryRepo = AppDataSource.getRepository(ProductCategoryEntity);
     private customizationRepo = AppDataSource.getRepository(ProductCustomization);
     private optionRepo = AppDataSource.getRepository(CustomizationOption);
     private statsRepo = AppDataSource.getRepository(MerchantStats);
@@ -87,6 +105,77 @@ export class ProductService {
 
     constructor() {
         this.notificationService = new NotificationService();
+    }
+
+    /**
+     * Return product categories from DB as source of truth.
+     * @param includePending  When true (merchant screens), also returns isActive=false rows
+     *                        so merchants can see their submitted-but-pending categories.
+     * Falls back to enum values only when DB has zero active rows at all.
+     */
+    async getAvailableCategories(includePending = false): Promise<Array<{
+        id: string;
+        slug: string;
+        name: string;
+        icon: string | null;
+        type: string;
+        isActive: boolean;
+    }>> {
+        // Fetch active rows (always); also fetch inactive when merchant requests
+        const activeRows = await this.productCategoryRepo.find({
+            where: { isActive: true },
+            order: { name: "ASC" },
+        });
+
+        const pendingRows = includePending
+            ? await this.productCategoryRepo.find({ where: { isActive: false }, order: { name: "ASC" } })
+            : [];
+
+        const toDto = (c: ProductCategoryEntity) => ({
+            id: c.id,
+            slug: c.slug,
+            name: c.name,
+            icon: c.icon || null,
+            type: c.type || (c.slug === ProductCategory.SERVICES ? "service" : "marketplace"),
+            isActive: c.isActive,
+        });
+
+        if (activeRows.length > 0) {
+            return [...activeRows.map(toDto), ...pendingRows.map(toDto)];
+        }
+
+        // Fallback to in-code enum when DB has no active categories at all
+        const enumFallback = Object.values(ProductCategory).map((slug) => ({
+            id: slug,
+            slug,
+            name: slug.charAt(0).toUpperCase() + slug.slice(1),
+            icon: null,
+            type: slug === ProductCategory.SERVICES ? "service" : "marketplace",
+            isActive: true,
+        }));
+
+        return [...enumFallback, ...pendingRows.map(toDto)];
+    }
+
+    /**
+     * Merchant-submitted category suggestion.
+     * Created with isActive=false - admin must approve before it appears publicly.
+     * If the category already exists but is inactive (pending review), returns it silently
+     * instead of throwing so the merchant knows it is already in the queue.
+     */
+    async suggestCategory(name: string, type: "service" | "marketplace"): Promise<{ category: ProductCategoryEntity; alreadyPending: boolean }> {
+        const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
+        const existing = await this.productCategoryRepo.findOne({ where: { slug } });
+        if (existing) {
+            if (existing.isActive) {
+                throw new Error("This category is already live on the platform.");
+            }
+            // Already submitted and pending admin review - silently succeed
+            return { category: existing, alreadyPending: true };
+        }
+        const category = this.productCategoryRepo.create({ name, slug, type, isActive: false });
+        await this.productCategoryRepo.save(category);
+        return { category, alreadyPending: false };
     }
 
     // ── Create ──────────────────────────────────────────────────────
@@ -101,12 +190,46 @@ export class ProductService {
             const optRepo = manager.getRepository(CustomizationOption);
             const statsRepo = manager.getRepository(MerchantStats);
 
+            // Ensure category exists in product_categories table.
+            const catRepo = manager.getRepository(ProductCategoryEntity);
+            const slug = input.category.toLowerCase().replace(/\s+/g, '-');
+            const existingCat = await catRepo.findOne({ where: { slug } });
+
+            // Normalize the expected type from the upload context (Add Service vs Add Product).
+            const expectedType: "service" | "marketplace" | undefined =
+                input.categoryType === "service" ? "service"
+                : input.categoryType === "marketplace" ? "marketplace"
+                : undefined;
+
+            if (existingCat) {
+                // Reject cross-type listings: a physical product cannot be saved under a
+                // service category (or vice versa). This is what was letting blenders/toasters
+                // show up under "Services".
+                if (expectedType && existingCat.type && existingCat.type !== expectedType) {
+                    throw new Error(
+                        `Category "${input.category}" is a ${existingCat.type} category and cannot be used for a ${expectedType} listing. Please choose a ${expectedType} category.`
+                    );
+                }
+            } else {
+                // Create the category with the type from the upload context when known,
+                // otherwise fall back to the slug-based heuristic.
+                const categoryType = expectedType ?? (slug === ProductCategory.SERVICES ? 'service' : 'marketplace');
+                const newCat = catRepo.create({
+                    name: input.category,
+                    slug,
+                    type: categoryType,
+                    isActive: true
+                });
+                await catRepo.save(newCat);
+                log.info("Auto-created new category", { category: input.category, type: categoryType });
+            }
+
             // Create product
             const newProduct = productRepo.create({
                 merchantId,
                 name: input.name,
                 description: input.description || null,
-                category: input.category as ProductCategory,
+                category: input.category,
                 price: input.price,
                 compareAtPrice: input.compareAtPrice || null,
                 stockQuantity: input.stock_level ?? input.stockQuantity ?? 0,
@@ -199,10 +322,37 @@ export class ProductService {
         });
 
         if (product) {
-            productViewsTotal.inc({ category: product.category });
+            productViewsTotal.inc({ category: product.category || "unknown" });
+            return toPublicImages(product);
         }
 
         return product;
+    }
+
+    /**
+     * Resolve a category param: if it matches a category type (food, grocery, pharmacy, etc.)
+     * return all sub-category slugs under that type. Otherwise return the slug as-is.
+     */
+    private async resolveCategorySlugs(category: string): Promise<{ slugs: string[]; isType: boolean }> {
+        // Known category types - check if the param is a type rather than a slug
+        const CATEGORY_TYPES = ["food", "grocery", "pharmacy", "marketplace", "service", "product"];
+        const lower = category.toLowerCase();
+
+        if (CATEGORY_TYPES.includes(lower)) {
+            const rows = await this.productCategoryRepo.find({
+                where: { type: lower, isActive: true },
+                select: ["slug"],
+            });
+            const slugs = rows.map((r) => r.slug);
+            log.info(`[resolveCategorySlugs] type="${lower}" resolved to ${slugs.length} slugs: [${slugs.join(", ")}]`);
+            if (slugs.length > 0) {
+                return { slugs, isType: true };
+            }
+            // If no sub-categories found for this type, fall through to exact match
+            log.warn(`[resolveCategorySlugs] type="${lower}" has 0 sub-categories, falling back to exact match`);
+        }
+
+        return { slugs: [category], isType: false };
     }
 
     /**
@@ -215,6 +365,13 @@ export class ProductService {
         isActive?: boolean;
         page?: number;
         limit?: number;
+        country?: string;
+        /** Buyer location - when provided with radiusKm, only return products from
+         *  merchants within that distance (Haversine). Used to enforce the local
+         *  delivery radius (e.g. 20km) so buyers don't see far-away listings. */
+        lat?: number;
+        lng?: number;
+        radiusKm?: number;
     }): Promise<{ products: Product[]; total: number; page: number; limit: number }> {
         const page = params.page || 1;
         const limit = Math.min(params.limit || 20, 50);
@@ -239,8 +396,37 @@ export class ProductService {
             qb.andWhere("product.merchantId = :merchantId", { merchantId: params.merchantId });
         }
 
+        if (params.country) {
+            qb.andWhere("merchant.country = :country", { country: params.country });
+        }
+
+        // Local-radius filter: only products whose merchant is within radiusKm of the
+        // buyer. Haversine in SQL; LEAST(1, …) guards acos() against float rounding > 1.
+        if (
+            params.lat != null && !Number.isNaN(params.lat) &&
+            params.lng != null && !Number.isNaN(params.lng) &&
+            params.radiusKm != null && params.radiusKm > 0
+        ) {
+            qb.andWhere('"merchantProfile"."latitude" IS NOT NULL')
+                .andWhere('"merchantProfile"."longitude" IS NOT NULL')
+                .andWhere(
+                    `(6371 * acos(LEAST(1,
+                        cos(radians(:userLat)) * cos(radians("merchantProfile"."latitude")) *
+                        cos(radians("merchantProfile"."longitude") - radians(:userLng)) +
+                        sin(radians(:userLat)) * sin(radians("merchantProfile"."latitude"))
+                    ))) <= :radiusKm`,
+                    { userLat: params.lat, userLng: params.lng, radiusKm: params.radiusKm }
+                );
+        }
+
         if (params.category) {
-            qb.andWhere("product.category = :category", { category: params.category });
+            const { slugs, isType } = await this.resolveCategorySlugs(params.category);
+            if (slugs.length === 1) {
+                qb.andWhere("product.category = :category", { category: slugs[0] });
+            } else {
+                qb.andWhere("product.category IN (:...categorySlugs)", { categorySlugs: slugs });
+            }
+            log.info(`[getProducts] category="${params.category}" isType=${isType} → filtering by slugs: [${slugs.join(", ")}]`);
         }
 
         if (params.search) {
@@ -256,11 +442,13 @@ export class ProductService {
 
         const [products, total] = await qb.skip(offset).take(limit).getManyAndCount();
 
-        return { products, total, page, limit };
+        log.info(`[getProducts] category="${params.category || 'ALL'}" search="${params.search || ''}" → ${total} total, returning ${products.length}`);
+
+        return { products: products.map(toPublicImages), total, page, limit };
     }
 
     /**
-     * Get all products for a specific merchant (merchant dashboard — includes inactive).
+     * Get all products for a specific merchant (merchant dashboard - includes inactive).
      */
     async getMerchantProducts(
         merchantId: string,
@@ -270,10 +458,113 @@ export class ProductService {
         return this.getProducts({ merchantId, isActive: undefined, page, limit });
     }
 
+    /**
+     * Get popular products for a specific merchant based on order frequency (merchant dashboard).
+     */
+    async getMerchantPopularProducts(
+        merchantId: string,
+        page: number = 1,
+        limit: number = 10
+    ): Promise<{ products: Product[]; total: number; page: number; limit: number }> {
+        const subquery = AppDataSource.getRepository(Order)
+            .createQueryBuilder("order")
+            .select("oi.productId")
+            .addSelect("COUNT(*)", "orderCount")
+            .innerJoin("order.orderItems", "oi")
+            .where("order.merchantId = :merchantId", { merchantId })
+            .andWhere("order.status IN (:...statuses)", { statuses: [OrderStatus.COMPLETED, OrderStatus.DELIVERED] })
+            .groupBy("oi.productId");
+
+        const qb = this.productRepo
+            .createQueryBuilder("product")
+            .leftJoinAndSelect("product.customizations", "customization")
+            .leftJoinAndSelect("customization.options", "option")
+            .leftJoinAndSelect("product.merchant", "merchant")
+            .leftJoinAndSelect("merchant.merchantProfile", "merchantProfile")
+            .where("product.deletedAt IS NULL")
+            .andWhere("product.id IN (" + subquery.getQuery() + ")")
+            .setParameters(subquery.getParameters())
+            .orderBy("orderCount", "DESC")
+            .addOrderBy("product.createdAt", "DESC");
+
+        const [products, total] = await qb.skip((page - 1) * limit).take(limit).getManyAndCount();
+        return { products: products.map(toPublicImages), total, page, limit };
+    }
+
+    /**
+     * Get popular products for a given category based on historical orders.
+     */
+    async getPopularProducts(category: string = "food", limit: number = 5, country?: string): Promise<Product[]> {
+        const safeLimit = Math.min(Math.max(limit || 1, 1), 20);
+
+        // Resolve category type to slugs (e.g. "food" → ["burgers", "pizza", ...])
+        const { slugs } = await this.resolveCategorySlugs(category);
+        log.info(`[getPopularProducts] category="${category}" resolved to slugs: [${slugs.join(", ")}]`);
+
+        // Build the category filter: single slug = $1 exact match, multiple = ANY($1)
+        const categoryFilter = slugs.length === 1
+            ? "AND p.category = $1"
+            : "AND p.category = ANY($1)";
+        const categoryParam = slugs.length === 1 ? slugs[0] : slugs;
+
+        const countryFilter = country ? "AND m.country = $5" : "";
+        const params: any[] = [categoryParam, OrderStatus.CANCELLED, OrderStatus.REFUNDED, safeLimit];
+        if (country) params.push(country.toUpperCase());
+
+        const rows = await AppDataSource.query(
+            `
+            SELECT
+                p.id,
+                p.name,
+                p.description,
+                p.category,
+                p.price,
+                p.images,
+                p.merchant_id AS "merchantId",
+                p.stock_quantity AS "stockQuantity",
+                p.min_stock_alert AS "minStockAlert",
+                p.is_active AS "isActive",
+                p.preparation_time_min AS "preparationTimeMin",
+                p.expiration_date AS "expirationDate",
+                p.dosage_info AS "dosageInfo",
+                p.prescription_required AS "prescriptionRequired",
+                p.service_duration_min AS "serviceDurationMin",
+                p.rental_duration AS "rentalDuration",
+                p.deposit AS "deposit",
+                p.created_at AS "createdAt",
+                p.updated_at AS "updatedAt"
+            FROM products p
+            INNER JOIN users m ON m.id = p.merchant_id
+            INNER JOIN LATERAL (
+                SELECT SUM((item->>'quantity')::int) AS popularity
+                FROM orders o,
+                     jsonb_array_elements(o.items) AS item
+                WHERE (item->>'productId')::uuid = p.id
+                  AND o.status NOT IN ($2, $3)
+            ) pop ON pop.popularity IS NOT NULL
+            WHERE p.deleted_at IS NULL
+              AND p.is_active = true
+              ${categoryFilter}
+              ${countryFilter}
+            ORDER BY pop.popularity DESC
+            LIMIT $4
+            `,
+            params
+        );
+
+        log.info(`[getPopularProducts] category="${category}" country="${country || 'ALL'}" → ${rows.length} popular products found`);
+
+        return rows.map((row: any) => ({
+            ...row,
+            price: typeof row.price === 'string' ? Number(row.price) : row.price,
+            images: (row.images || []).map((u: string) => rewriteToPublicAssetUrl(u)).filter(Boolean),
+        }));
+    }
+
     // ── Update ──────────────────────────────────────────────────────
 
     /**
-     * Update product fields (not customizations — those have separate endpoints).
+     * Update product fields (not customizations - those have separate endpoints).
      */
     async updateProduct(
         productId: string,
@@ -589,7 +880,7 @@ export class ProductService {
             return { success: false, outOfStock };
         }
 
-        // All items in stock — decrement
+        // All items in stock - decrement
         for (const item of items) {
             const product = await this.productRepo.findOne({ where: { id: item.productId } });
             if (!product) continue;

@@ -1,13 +1,19 @@
 import { AppDataSource } from "../db/data-source";
 import crypto from "crypto";
+import axios from "axios";
 import { User, UserStatus } from "../models/user";
 import { OtpService } from "./otp-service";
 import { supabase } from "../utils/supabase-client";
 import { Profile } from "../types/profile";
 import { AuthResponse, AuthUserResponse, SupabaseUser, SyncUserResponse } from "../types/auth";
-import { Role } from "../models/role";
-import { UserRole } from "../models/user-role";
+import { Role, RoleType } from "../models/role";
+import { UserRole, RoleStatus } from "../models/user-role";
+import { BuyerProfile } from "../models/buyer-profile";
+import { DriverProfile } from "../models/driver-profile";
+import { MerchantProfile } from "../models/merchant-profile";
+import { UserProfile } from "../models/user-profile";
 import { createServiceLogger } from "../utils/logger";
+import { hashPassword, verifyPassword } from "../utils/password";
 
 const log = createServiceLogger("AuthService");
 
@@ -31,15 +37,47 @@ export class AuthService {
         return profile as Profile;
     }
 
-    async requestOtp(phoneNumber: string, channel: 'sms' | 'whatsapp' = 'sms'): Promise<void> {
-        // 1. Generate and Send OTP via OtpService (Local DB + Twilio SMS)
+    async requestOtp(phoneNumber: string, channel: 'sms' | 'whatsapp' | 'email' = 'sms', email?: string): Promise<void> {
+        // Generate and send the OTP via the chosen channel (SMS/WhatsApp via Prelude, or email via SMTP).
         try {
-            await this.otpService.createOtp(phoneNumber, channel);
+            await this.otpService.createOtp(phoneNumber, channel, email);
             log.info("OTP request initiated", { channel });
         } catch (error) {
             log.error("Failed to request OTP", { error: (error as Error).message });
             throw new Error(`Failed to send verification code via ${channel}. Please try again later.`);
         }
+    }
+
+    private async ensureBuyerRoleExists(user: User) {
+        await AppDataSource.transaction(async manager => {
+            let buyerRole = await manager.findOne(Role, { where: { name: RoleType.BUYER } });
+            if (!buyerRole) {
+                buyerRole = manager.create(Role, {
+                    name: RoleType.BUYER,
+                    description: "Standard buyer role"
+                });
+                await manager.save(buyerRole);
+            }
+
+            const existingUserRole = await manager.findOne(UserRole, {
+                where: { userId: user.id, roleId: buyerRole.id }
+            });
+
+            if (!existingUserRole) {
+                const userRole = manager.create(UserRole, {
+                    userId: user.id,
+                    roleId: buyerRole.id,
+                    status: RoleStatus.APPROVED
+                });
+                await manager.save(userRole);
+            }
+
+            const persistedUser = await manager.findOne(User, { where: { id: user.id } });
+            if (persistedUser && !persistedUser.activeRole) {
+                persistedUser.activeRole = RoleType.BUYER;
+                await manager.save(persistedUser);
+            }
+        });
     }
 
     async verifyOtp(phoneNumber: string, code: string): Promise<AuthResponse | null> {
@@ -51,9 +89,6 @@ export class AuthService {
         }
 
         // 2. Check if user exists in local DB
-        // const profile = await this.getProfileByPhone(phoneNumber); // Removed Supabase check
-        // const isNewUser = !profile;
-
         let user = await this.userRepository.findOne({
             where: { phoneNumber },
             relations: ["userRoles", "userRoles.role"]
@@ -74,14 +109,374 @@ export class AuthService {
         user.lastLoginAt = new Date();
         await this.userRepository.save(user);
 
-        log.info("User login successful", { userId: user.id, isNewUser });
+        if (!user.userRoles?.length) {
+            await this.ensureBuyerRoleExists(user);
+            user = await this.userRepository.findOne({
+                where: { id: user.id },
+                relations: ["userRoles", "userRoles.role"]
+            }) as User;
+        }
+
+        const approvedRoles = user.userRoles?.filter((ur: UserRole) => ur.status === RoleStatus.APPROVED).map((ur: UserRole) => ur.role.name) || [];
+
+        // Resolve display name and profile existence
+        let fullName: string | null = null;
+        let hasProfile = false;
+        const buyerProfile = await AppDataSource.getRepository(BuyerProfile).findOne({ where: { userId: user.id } });
+        if (buyerProfile?.fullName) {
+            fullName = buyerProfile.fullName;
+            hasProfile = true;
+        } else {
+            const driverProfile = await AppDataSource.getRepository(DriverProfile).findOne({ where: { userId: user.id } });
+            if (driverProfile?.fullName) {
+                fullName = driverProfile.fullName;
+                hasProfile = true;
+            } else {
+                const merchantProfile = await AppDataSource.getRepository(MerchantProfile).findOne({ where: { userId: user.id } });
+                if (merchantProfile?.businessName) {
+                    fullName = merchantProfile.businessName;
+                    hasProfile = true;
+                }
+            }
+        }
+
+        log.info("User login successful", { userId: user.id, isNewUser, hasProfile });
 
         return {
-            token: "mock-jwt-token",
             user: {
                 id: user.id,
                 is_new_user: isNewUser,
-                roles: user.userRoles?.map((ur: UserRole) => ur.role.name) || [],
+                roles: approvedRoles,
+                activeRole: user.activeRole || null,
+                full_name: fullName || null,
+                has_profile: hasProfile,
+            }
+        } as any;
+    }
+
+    /**
+     * Register a new account with email + password (and name + phone).
+     * Stores a scrypt password hash and creates a buyer profile. Returns the same
+     * shape as OTP login (incl. phoneNumber) so the app's existing session works.
+     */
+    async registerWithPassword(input: {
+        firstName: string;
+        lastName: string;
+        email: string;
+        phoneNumber: string;
+        password: string;
+        country?: string;
+    }): Promise<AuthResponse> {
+        const email = input.email.trim().toLowerCase();
+        const fullName = `${input.firstName.trim()} ${input.lastName.trim()}`.trim();
+
+        // Reject duplicates on email or phone.
+        const existing = await this.userRepository.findOne({
+            where: [{ email }, { phoneNumber: input.phoneNumber }],
+        });
+        if (existing) {
+            throw new Error("An account with this email or phone number already exists. Please log in.");
+        }
+
+        let user = this.userRepository.create({
+            id: crypto.randomUUID(),
+            email,
+            phoneNumber: input.phoneNumber,
+            passwordHash: hashPassword(input.password),
+            country: input.country || "GH",
+            status: UserStatus.ACTIVE,
+            lastLoginAt: new Date(),
+        });
+        user = await this.userRepository.save(user);
+
+        await this.ensureBuyerRoleExists(user);
+
+        // Create the buyer profile with the supplied name.
+        const buyerProfileRepo = AppDataSource.getRepository(BuyerProfile);
+        const profile = buyerProfileRepo.create({ userId: user.id, fullName });
+        await buyerProfileRepo.save(profile);
+
+        const reloaded = await this.userRepository.findOne({
+            where: { id: user.id },
+            relations: ["userRoles", "userRoles.role"],
+        }) as User;
+        const approvedRoles = reloaded.userRoles
+            ?.filter((ur: UserRole) => ur.status === RoleStatus.APPROVED)
+            .map((ur: UserRole) => ur.role.name) || [];
+
+        log.info("User registered with password", { userId: user.id });
+
+        return {
+            user: {
+                id: user.id,
+                phoneNumber: user.phoneNumber,
+                email: user.email,
+                is_new_user: true,
+                roles: approvedRoles,
+                activeRole: user.activeRole || null,
+                full_name: fullName,
+                has_profile: true,
+            },
+        } as any;
+    }
+
+    /**
+     * Authenticate with email + password. Returns the same shape as OTP login
+     * (incl. phoneNumber) so downstream phone-based API auth keeps working.
+     */
+    async loginWithPassword(email: string, password: string): Promise<AuthResponse | null> {
+        const normalizedEmail = email.trim().toLowerCase();
+        const user = await this.userRepository.findOne({
+            where: { email: normalizedEmail },
+            relations: ["userRoles", "userRoles.role"],
+        });
+
+        if (!user || !verifyPassword(password, user.passwordHash)) {
+            return null; // invalid credentials (don't reveal which part failed)
+        }
+
+        user.lastLoginAt = new Date();
+        await this.userRepository.save(user);
+
+        const approvedRoles = user.userRoles
+            ?.filter((ur: UserRole) => ur.status === RoleStatus.APPROVED)
+            .map((ur: UserRole) => ur.role.name) || [];
+
+        let fullName: string | null = null;
+        let hasProfile = false;
+        const buyerProfile = await AppDataSource.getRepository(BuyerProfile).findOne({ where: { userId: user.id } });
+        if (buyerProfile?.fullName) {
+            fullName = buyerProfile.fullName;
+            hasProfile = true;
+        }
+
+        log.info("User login with password successful", { userId: user.id });
+
+        return {
+            user: {
+                id: user.id,
+                phoneNumber: user.phoneNumber,
+                email: user.email,
+                is_new_user: false,
+                roles: approvedRoles,
+                activeRole: user.activeRole || null,
+                full_name: fullName,
+                has_profile: hasProfile,
+            },
+        } as any;
+    }
+
+    /**
+     * Set or change the password for an already-authenticated user.
+     *
+     * - If the user already has a password, `currentPassword` is required and must match.
+     * - If the user has no password yet (e.g. an OTP/phone-only account), it is set
+     *   without a current password, letting existing users add email+password login
+     *   without creating a new account.
+     * Optionally records an email so the user can later log in by email.
+     */
+    async setPassword(
+        userId: string,
+        newPassword: string,
+        currentPassword?: string,
+        email?: string
+    ): Promise<{ success: boolean; hasPassword: true }> {
+        if (!newPassword || newPassword.length < 6) {
+            throw new Error("Password must be at least 6 characters");
+        }
+
+        const user = await this.userRepository.findOne({ where: { id: userId } });
+        if (!user) {
+            throw new Error("User not found");
+        }
+
+        if (user.passwordHash) {
+            if (!currentPassword || !verifyPassword(currentPassword, user.passwordHash)) {
+                throw new Error("Current password is incorrect");
+            }
+        }
+
+        // Let an OTP/phone-only user attach an email so they can log in by email later.
+        if (email && !user.email) {
+            const normalizedEmail = email.trim().toLowerCase();
+            const emailTaken = await this.userRepository.findOne({ where: { email: normalizedEmail } });
+            if (emailTaken && emailTaken.id !== user.id) {
+                throw new Error("That email is already in use by another account");
+            }
+            user.email = normalizedEmail;
+        }
+
+        user.passwordHash = hashPassword(newPassword);
+        await this.userRepository.save(user);
+
+        log.info("User password set/changed", { userId: user.id });
+        return { success: true, hasPassword: true };
+    }
+
+    /**
+     * Forgot-password step 1: email a reset code to the address on file.
+     *
+     * For users who no longer have access to their sign-up phone number. Reuses the
+     * email OTP channel, keyed by the user's phone (or id when phone-less). Always
+     * returns success so callers can't probe which emails are registered.
+     */
+    async requestPasswordReset(email: string): Promise<{ success: boolean }> {
+        const normalizedEmail = email.trim().toLowerCase();
+        const user = await this.userRepository.findOne({ where: { email: normalizedEmail } });
+
+        if (user) {
+            const otpKey = user.phoneNumber || user.id;
+            try {
+                await this.otpService.createOtp(otpKey, "email", normalizedEmail);
+                log.info("Password reset code sent", { userId: user.id });
+            } catch (err) {
+                log.warn("Failed to send password reset code", { error: (err as Error).message });
+            }
+        } else {
+            log.info("Password reset requested for unknown email (ignored)");
+        }
+
+        return { success: true };
+    }
+
+    /**
+     * Forgot-password step 2: verify the emailed code and set a new password.
+     */
+    async resetPassword(email: string, code: string, newPassword: string): Promise<{ success: boolean }> {
+        if (!newPassword || newPassword.length < 6) {
+            throw new Error("Password must be at least 6 characters");
+        }
+
+        const normalizedEmail = email.trim().toLowerCase();
+        const user = await this.userRepository.findOne({ where: { email: normalizedEmail } });
+        // Generic error so we never reveal whether the email exists.
+        if (!user) {
+            throw new Error("Invalid or expired reset code");
+        }
+
+        const otpKey = user.phoneNumber || user.id;
+        const verified = await this.otpService.verifyOtp(otpKey, code);
+        if (!verified) {
+            throw new Error("Invalid or expired reset code");
+        }
+
+        user.passwordHash = hashPassword(newPassword);
+        await this.userRepository.save(user);
+
+        log.info("Password reset successful", { userId: user.id });
+        return { success: true };
+    }
+
+    private async verifyAppleToken(identityToken: string): Promise<{ sub: string; email?: string }> {
+        const parts = identityToken.split('.');
+        if (parts.length !== 3) throw new Error('Invalid token format');
+
+        const [headerB64, payloadB64, signatureB64] = parts;
+        const header = JSON.parse(Buffer.from(headerB64, 'base64url').toString());
+        const payload = JSON.parse(Buffer.from(payloadB64, 'base64url').toString());
+
+        const now = Math.floor(Date.now() / 1000);
+        if (payload.iss !== 'https://appleid.apple.com') throw new Error('Invalid issuer');
+        // Accept both bundle IDs (iOS and potential future variants)
+        const bundleId = process.env.APPLE_BUNDLE_ID || 'com.velo.marketplace';
+        if (payload.aud !== bundleId) throw new Error(`Invalid audience: ${payload.aud}`);
+        if (payload.exp < now) throw new Error('Token expired');
+
+        const { data } = await axios.get<{ keys: Array<{ kid: string; kty: string; n: string; e: string }> }>(
+            'https://appleid.apple.com/auth/keys',
+            { timeout: 5000 }
+        );
+        const jwk = data.keys.find(k => k.kid === header.kid);
+        if (!jwk) throw new Error('No matching Apple public key found');
+
+        const publicKey = crypto.createPublicKey({ key: jwk as any, format: 'jwk' });
+        const verifier = crypto.createVerify('RSA-SHA256');
+        verifier.update(`${headerB64}.${payloadB64}`);
+        const valid = verifier.verify(publicKey, Buffer.from(signatureB64, 'base64url'));
+        if (!valid) throw new Error('Token signature invalid');
+
+        return { sub: payload.sub as string, email: payload.email as string | undefined };
+    }
+
+    async appleSignIn(identityToken: string, fullName?: string, email?: string): Promise<any> {
+        const { sub: appleSubjectId, email: tokenEmail } = await this.verifyAppleToken(identityToken);
+        const resolvedEmail = tokenEmail || email || null;
+
+        // Find existing user by Apple subject ID first, then by email
+        let user = await this.userRepository.findOne({
+            where: { appleSubjectId },
+            relations: ["userRoles", "userRoles.role"]
+        });
+
+        if (!user && resolvedEmail) {
+            user = await this.userRepository.findOne({
+                where: { email: resolvedEmail },
+                relations: ["userRoles", "userRoles.role"]
+            });
+            if (user && !user.appleSubjectId) {
+                user.appleSubjectId = appleSubjectId;
+                await this.userRepository.save(user);
+            }
+        }
+
+        const isNewUser = !user;
+
+        if (!user) {
+            user = this.userRepository.create({
+                id: crypto.randomUUID(),
+                email: resolvedEmail,
+                appleSubjectId,
+                status: UserStatus.ACTIVE,
+            });
+            await this.userRepository.save(user);
+            log.info("New Apple Sign-In user created", { userId: user.id });
+        }
+
+        user.lastLoginAt = new Date();
+        await this.userRepository.save(user);
+
+        // Store full name in UserProfile if provided on first sign-in
+        if (fullName && isNewUser) {
+            const userProfileRepo = AppDataSource.getRepository(UserProfile);
+            const existing = await userProfileRepo.findOne({ where: { userId: user.id } });
+            if (!existing) {
+                await userProfileRepo.save(userProfileRepo.create({ userId: user.id, fullName }));
+            }
+        }
+
+        if (!user.userRoles?.length) {
+            await this.ensureBuyerRoleExists(user);
+            user = await this.userRepository.findOne({
+                where: { id: user.id },
+                relations: ["userRoles", "userRoles.role"]
+            }) as User;
+        }
+
+        const approvedRoles = user.userRoles
+            ?.filter((ur: UserRole) => ur.status === RoleStatus.APPROVED)
+            .map((ur: UserRole) => ur.role.name) || [];
+
+        // Resolve display name
+        let displayName: string | null = fullName || null;
+        let hasProfile = false;
+        const userProfile = await AppDataSource.getRepository(UserProfile).findOne({ where: { userId: user.id } });
+        if (userProfile?.fullName) { displayName = userProfile.fullName; hasProfile = true; }
+        if (!displayName) {
+            const buyerProfile = await AppDataSource.getRepository(BuyerProfile).findOne({ where: { userId: user.id } });
+            if (buyerProfile?.fullName) { displayName = buyerProfile.fullName; hasProfile = true; }
+        }
+
+        return {
+            message: isNewUser ? 'Account created' : 'Signed in',
+            user: {
+                id: user.id,
+                phoneNumber: user.phoneNumber,
+                email: user.email,
+                is_new_user: isNewUser,
+                has_profile: hasProfile,
+                roles: approvedRoles,
+                activeRole: user.activeRole || null,
+                full_name: displayName,
             }
         };
     }
@@ -117,7 +512,7 @@ export class AuthService {
                 email: user.email || undefined,
                 phoneNumber: user.phoneNumber || undefined,
                 status: user.status,
-                roles: user.userRoles?.map((ur: UserRole) => ur.role.name) || [],
+                roles: user.userRoles?.filter((ur: UserRole) => ur.status === RoleStatus.APPROVED).map((ur: UserRole) => ur.role.name) || [],
             },
             isNewUser
         };

@@ -57,6 +57,13 @@ jobs:
   deploy:
     needs: build
     runs-on: ubuntu-latest
+    env:
+      STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
+      STRIPE_WEBHOOK_SECRET: ${{ secrets.STRIPE_WEBHOOK_SECRET }}
+      # Optional: set these repo secrets to keep the GHCR package PRIVATE.
+      # If GHCR_PULL_TOKEN is empty, the package is expected to be PUBLIC.
+      GHCR_PULL_TOKEN: ${{ secrets.GHCR_PULL_TOKEN }}
+      GHCR_PULL_USER: ${{ secrets.GHCR_PULL_USER }}
     steps:
       - name: Deploy to VPS
         id: deploy
@@ -67,7 +74,8 @@ jobs:
           key: ${{ secrets.VPS_SSH_KEY }}
           port: ${{ secrets.VPS_PORT }}
           request_pty: true
-          command_timeout: 180s
+          command_timeout: 900s
+          envs: STRIPE_SECRET_KEY,STRIPE_WEBHOOK_SECRET,GHCR_PULL_TOKEN,GHCR_PULL_USER
           script: |
             echo "=========================================="
             echo "🚀 DEPLOYMENT STARTED"
@@ -76,9 +84,54 @@ jobs:
             echo "📦 Image: ghcr.io/velocouriersvc/velo-backend:latest"
             echo ""
 
+            # ── Step 0: Update Kubernetes secrets ──
+            echo "── UPDATING SECRETS ──"
+            sudo kubectl -n velo patch secret velo-secrets \
+              --type='json' \
+              -p="[
+                {\"op\":\"replace\",\"path\":\"/data/STRIPE_SECRET_KEY\",\"value\":\"$(echo -n "$STRIPE_SECRET_KEY" | base64 -w 0)\"},
+                {\"op\":\"replace\",\"path\":\"/data/STRIPE_WEBHOOK_SECRET\",\"value\":\"$(echo -n "$STRIPE_WEBHOOK_SECRET" | base64 -w 0)\"}
+              ]" 2>/dev/null || \
+            sudo kubectl -n velo create secret generic velo-secrets \
+              --from-literal=STRIPE_SECRET_KEY="$STRIPE_SECRET_KEY" \
+              --from-literal=STRIPE_WEBHOOK_SECRET="$STRIPE_WEBHOOK_SECRET" \
+              --dry-run=client -o yaml | sudo kubectl apply -f -
+            echo "Secrets updated."
+            echo ""
+
+            # ── Step 0.5: Ensure GHCR image-pull access ──
+            # Fixes ImagePullBackOff (403) caused by a stale/expired regcred token.
+            echo "── ENSURING IMAGE PULL ACCESS ──"
+            if [ -n "$GHCR_PULL_TOKEN" ]; then
+              # Private package: recreate the pull secret from a long-lived token.
+              sudo kubectl -n velo delete secret regcred --ignore-not-found
+              sudo kubectl -n velo create secret docker-registry regcred \
+                --docker-server=ghcr.io \
+                --docker-username="${GHCR_PULL_USER:-velocouriersvc}" \
+                --docker-password="$GHCR_PULL_TOKEN"
+              echo "regcred recreated from GHCR_PULL_TOKEN (private package)."
+            else
+              # Public package: remove the stale secret so the image pulls anonymously.
+              sudo kubectl -n velo delete secret regcred --ignore-not-found
+              echo "regcred removed; expecting a PUBLIC GHCR package for anonymous pull."
+            fi
+            echo ""
+
             # ── Step 1: Pre-deploy status ──
             echo "── PRE-DEPLOY STATUS ──"
             sudo kubectl -n velo get pods -l app=velo-api -o wide
+            echo ""
+
+            # ── Step 1.5: Ensure a startupProbe exists ──
+            # The app boot (TypeORM schema sync + seeds) can exceed the liveness
+            # window and get the pod killed mid-boot. A startupProbe holds off
+            # liveness/readiness until the app is listening. Idempotent: re-applying
+            # the same probe is a no-op (no extra rollout). The VPS has no repo
+            # checkout, so we patch inline rather than `kubectl apply -f`.
+            echo "── ENSURING STARTUP PROBE ──"
+            sudo kubectl -n velo patch deployment velo-api --type='json' -p='[
+              {"op":"add","path":"/spec/template/spec/containers/0/startupProbe","value":{"httpGet":{"path":"/","port":"http"},"periodSeconds":10,"failureThreshold":60}}
+            ]' || echo "startupProbe patch skipped (already set or patch unsupported)."
             echo ""
 
             # ── Step 2: Restart deployment ──
@@ -86,8 +139,8 @@ jobs:
             sudo kubectl -n velo rollout restart deployment/velo-api
 
             # ── Step 3: Wait for rollout ──
-            echo "── WAITING FOR ROLLOUT (timeout: 120s) ──"
-            if sudo kubectl -n velo rollout status deployment/velo-api --timeout=120s; then
+            echo "── WAITING FOR ROLLOUT (timeout: 600s) ──"
+            if sudo kubectl -n velo rollout status deployment/velo-api --timeout=600s; then
               echo ""
               echo "── POST-DEPLOY STATUS ──"
               sudo kubectl -n velo get pods -l app=velo-api -o wide

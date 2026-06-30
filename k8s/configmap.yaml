@@ -13,6 +13,19 @@ data:
   DB_USERNAME: "postgres"
   DB_NAME: "velo"
 
+  # Connection tuning
+  DB_POOL_MAX: "10"        # cap TypeORM pool per replica (matters under Supabase connection limits)
+  DB_SSL: "false"          # Contabo: false. ⚠️ At Supabase cutover set "true" (Supabase requires SSL).
+
+  # ── Supabase cutover (see MIGRATION_CONTABO_TO_SUPABASE.md) ──
+  # During the maintenance window, set DATABASE_URL (in velo-secrets) to the Supabase
+  # session-pooler connection string, then flip the two values below:
+  #   DB_SSL: "true"
+  #   DB_SYNCHRONIZE: "false"   # schema already restored — stop TypeORM auto-altering it
+  # DATABASE_URL (when set) takes precedence over DB_HOST/DB_PORT/DB_USERNAME/DB_NAME above,
+  # so you can leave those in place for instant rollback.
+  DB_SYNCHRONIZE: "true"
+
   # Redis (host is the K8s service name)
   REDIS_URL: "redis://redis-service:6379"
 
@@ -21,6 +34,9 @@ data:
   MINIO_PORT: "9000"
   MINIO_USE_SSL: "false"
   MINIO_BUCKET: "velo-uploads"
+  # Public base URL used for object links returned to mobile/web clients.
+  # Should point to the HTTPS domain fronting /velo-uploads via Nginx/Ingress.
+  MINIO_PUBLIC_URL: "https://api.velocouriersvc.com"
 
   # SMTP (Postfix on VPS host — see docs/K8S_EMAIL_SETUP.md)
   SMTP_HOST: "10.42.0.1"                    # pod gateway → host Postfix

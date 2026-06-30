@@ -12,7 +12,7 @@ export class MarketplaceOrderController {
     // ── Quote ───────────────────────────────────────────────────────
 
     /**
-     * POST /orders/quote — Get price breakdown before checkout.
+     * POST /orders/quote - Get price breakdown before checkout.
      */
     getQuote = async (req: AuthRequest, res: Response) => {
         try {
@@ -78,7 +78,7 @@ export class MarketplaceOrderController {
     // ── Checkout ─────────────────────────────────────────────────────
 
     /**
-     * POST /orders/checkout — Place an order from the user's cart.
+     * POST /orders/checkout - Place an order from the user's cart.
      */
     checkout = async (req: AuthRequest, res: Response) => {
         try {
@@ -195,7 +195,23 @@ export class MarketplaceOrderController {
     // ── My Orders ───────────────────────────────────────────────────
 
     /**
-     * GET /orders — Get customer's orders.
+     * GET /orders/active - Get customer's active/ongoing order.
+     */
+    getActiveOrder = async (req: AuthRequest, res: Response) => {
+        try {
+            const userId = req.user?.id;
+            if (!userId) return res.status(401).json({ message: "User ID required" });
+
+            const order = await this.orderService.getActiveOrder(userId);
+            return res.status(200).json({ order: order || null });
+        } catch (error) {
+            log.error("Error getting active order", { error: (error as Error).message });
+            return res.status(500).json({ message: "Internal server error" });
+        }
+    };
+
+    /**
+     * GET /orders - Get customer's orders.
      */
     getMyOrders = async (req: AuthRequest, res: Response) => {
         try {
@@ -220,7 +236,7 @@ export class MarketplaceOrderController {
     // ── Order Detail ────────────────────────────────────────────────
 
     /**
-     * GET /orders/:id — Get a single order with full details.
+     * GET /orders/:id - Get a single order with full details.
      */
     getOrder = async (req: AuthRequest, res: Response) => {
         try {
@@ -250,7 +266,7 @@ export class MarketplaceOrderController {
     // ── Cancel ──────────────────────────────────────────────────────
 
     /**
-     * POST /orders/:id/cancel — Customer cancels their order.
+     * POST /orders/:id/cancel - Customer cancels their order.
      */
     cancelOrder = async (req: AuthRequest, res: Response) => {
         try {

@@ -1,6 +1,5 @@
 import { Response } from "express";
 import { AuthRequest } from "../middleware/role-middleware";
-import { ProductCategory } from "../models/product";
 import { ProductService, CreateProductInput, UpdateProductInput, CreateCustomizationInput, CreateOptionInput } from "../services/product-service";
 import { UploadService } from "../services/upload-service";
 import { SearchService } from "../services/search-service";
@@ -16,11 +15,13 @@ export class ProductController {
     // ── Public Endpoints ────────────────────────────────────────────
 
     /**
-     * GET /products/categories — Get available product categories.
+     * GET /products/categories - Get available product categories.
+     * Merchants may pass ?includePending=true to also receive their submitted-but-not-yet-approved categories.
      */
     getCategories = async (req: AuthRequest, res: Response) => {
         try {
-            const categories = Object.values(ProductCategory);
+            const includePending = req.query.includePending === 'true';
+            const categories = await this.productService.getAvailableCategories(includePending);
             return res.status(200).json({ categories });
         } catch (error) {
             log.error("Error fetching categories", { error: (error as Error).message });
@@ -29,11 +30,35 @@ export class ProductController {
     };
 
     /**
-     * GET /products — List/filter products (public).
+     * POST /products/categories - Merchant suggests a new category (created inactive, pending admin review).
+     */
+    suggestCategory = async (req: AuthRequest, res: Response) => {
+        try {
+            const { name, type } = req.body as { name?: string; type?: string };
+            if (!name || !name.trim()) {
+                return res.status(400).json({ message: "Category name is required." });
+            }
+            const categoryType = type === "service" ? "service" : "marketplace";
+            const { category, alreadyPending } = await this.productService.suggestCategory(name.trim(), categoryType);
+            const message = alreadyPending
+                ? "This category is already submitted and pending review by our team."
+                : "Category submitted for review. It will appear once approved by our team.";
+            return res.status(201).json({ category, alreadyPending, message });
+        } catch (error) {
+            const msg = (error as Error).message;
+            log.error("Error suggesting category", { error: msg });
+            return res.status(400).json({ message: msg || "Could not submit category." });
+        }
+    };
+
+    /**
+     * GET /products - List/filter products (public).
      */
     getProducts = async (req: AuthRequest, res: Response) => {
         try {
-            const { merchantId, category, search, page, limit } = req.query;
+            const { merchantId, category, search, page, limit, country, lat, lng, radius } = req.query;
+
+            log.info(`[getProducts] incoming request → category="${category || ''}" search="${search || ''}" merchantId="${merchantId || ''}" country="${country || ''}" page=${page || 1} limit=${limit || 20}`);
 
             const result = await this.productService.getProducts({
                 merchantId: merchantId as string,
@@ -41,7 +66,13 @@ export class ProductController {
                 search: search as string,
                 page: page ? Number(page) : undefined,
                 limit: limit ? Number(limit) : undefined,
+                country: country as string,
+                lat: lat !== undefined ? Number(lat) : undefined,
+                lng: lng !== undefined ? Number(lng) : undefined,
+                radiusKm: radius !== undefined ? Number(radius) : undefined,
             });
+
+            log.info(`[getProducts] returning ${result.products.length}/${result.total} products for category="${category || 'ALL'}"`);
 
             return res.status(200).json(result);
         } catch (error) {
@@ -51,7 +82,7 @@ export class ProductController {
     };
 
     /**
-     * GET /products/:id — Get a single product with customizations (public).
+     * GET /products/:id - Get a single product with customizations (public).
      */
     getProduct = async (req: AuthRequest, res: Response) => {
         try {
@@ -69,10 +100,32 @@ export class ProductController {
         }
     };
 
+    /**
+     * GET /products/popular - Get popular products for a category.
+     */
+    getPopularProducts = async (req: AuthRequest, res: Response) => {
+        try {
+            const category = (req.query.category as string) || "food";
+            const limit = req.query.limit ? Number(req.query.limit) : 5;
+            const country = (req.query.country as string)?.toUpperCase();
+
+            log.info(`[getPopularProducts] incoming request → category="${category}" limit=${limit} country="${country || ''}"`);
+
+            const products = await this.productService.getPopularProducts(category, limit, country);
+
+            log.info(`[getPopularProducts] returning ${products.length} popular products for category="${category}"`);
+
+            return res.status(200).json({ products });
+        } catch (error) {
+            log.error("Error fetching popular products", { error: (error as Error).message });
+            return res.status(500).json({ message: "Internal server error" });
+        }
+    };
+
     // ── Merchant Endpoints ──────────────────────────────────────────
 
     /**
-     * GET /products/my — Get merchant's own products (includes inactive).
+     * GET /products/my - Get merchant's own products (includes inactive).
      */
     getMyProducts = async (req: AuthRequest, res: Response) => {
         try {
@@ -94,7 +147,7 @@ export class ProductController {
     };
 
     /**
-     * POST /products — Create a new product.
+     * POST /products - Create a new product.
      */
     createProduct = async (req: AuthRequest, res: Response) => {
         try {
@@ -115,13 +168,18 @@ export class ProductController {
 
             return res.status(201).json(product);
         } catch (error) {
-            log.error("Error creating product", { error: (error as Error).message });
-            return res.status(500).json({ message: (error as Error).message || "Internal server error" });
+            const message = (error as Error).message || "Internal server error";
+            // Category-type mismatch (and similar validation errors) are client errors, not 500s.
+            if (/cannot be used for|please choose a|is required/i.test(message)) {
+                return res.status(400).json({ message });
+            }
+            log.error("Error creating product", { error: message });
+            return res.status(500).json({ message });
         }
     };
 
     /**
-     * PUT /products/:id — Update a product.
+     * PUT /products/:id - Update a product.
      */
     updateProduct = async (req: AuthRequest, res: Response) => {
         try {
@@ -147,7 +205,7 @@ export class ProductController {
     };
 
     /**
-     * DELETE /products/:id — Soft-delete a product.
+     * DELETE /products/:id - Soft-delete a product.
      */
     deleteProduct = async (req: AuthRequest, res: Response) => {
         try {
@@ -173,7 +231,7 @@ export class ProductController {
     // ── Image Endpoints ─────────────────────────────────────────────
 
     /**
-     * POST /products/:id/images — Upload a product image.
+     * POST /products/:id/images - Upload a product image.
      */
     uploadImage = async (req: AuthRequest, res: Response) => {
         try {
@@ -211,7 +269,7 @@ export class ProductController {
     };
 
     /**
-     * DELETE /products/:id/images — Remove a product image.
+     * DELETE /products/:id/images - Remove a product image.
      */
     removeImage = async (req: AuthRequest, res: Response) => {
         try {
@@ -246,7 +304,7 @@ export class ProductController {
     // ── Customization Endpoints ─────────────────────────────────────
 
     /**
-     * POST /products/:id/customizations — Add a customization group.
+     * POST /products/:id/customizations - Add a customization group.
      */
     addCustomization = async (req: AuthRequest, res: Response) => {
         try {
@@ -273,7 +331,7 @@ export class ProductController {
     };
 
     /**
-     * PUT /products/customizations/:customizationId — Update customization.
+     * PUT /products/customizations/:customizationId - Update customization.
      */
     updateCustomization = async (req: AuthRequest, res: Response) => {
         try {
@@ -294,7 +352,7 @@ export class ProductController {
     };
 
     /**
-     * DELETE /products/customizations/:customizationId — Delete customization.
+     * DELETE /products/customizations/:customizationId - Delete customization.
      */
     deleteCustomization = async (req: AuthRequest, res: Response) => {
         try {
@@ -317,7 +375,7 @@ export class ProductController {
     // ── Option Endpoints ────────────────────────────────────────────
 
     /**
-     * POST /products/customizations/:customizationId/options — Add an option.
+     * POST /products/customizations/:customizationId/options - Add an option.
      */
     addOption = async (req: AuthRequest, res: Response) => {
         try {
@@ -344,7 +402,7 @@ export class ProductController {
     };
 
     /**
-     * PUT /products/options/:optionId — Update an option.
+     * PUT /products/options/:optionId - Update an option.
      */
     updateOption = async (req: AuthRequest, res: Response) => {
         try {
@@ -365,7 +423,7 @@ export class ProductController {
     };
 
     /**
-     * DELETE /products/options/:optionId — Delete an option.
+     * DELETE /products/options/:optionId - Delete an option.
      */
     deleteOption = async (req: AuthRequest, res: Response) => {
         try {
@@ -388,7 +446,7 @@ export class ProductController {
     // ── Stock Endpoints ─────────────────────────────────────────────
 
     /**
-     * PATCH /products/stock — Bulk update stock quantities.
+     * PATCH /products/stock - Bulk update stock quantities.
      */
     updateStock = async (req: AuthRequest, res: Response) => {
         try {

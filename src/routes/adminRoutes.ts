@@ -84,19 +84,39 @@ router.get("/merchants", adminRole, adminController.getMerchants);
  */
 router.get("/rides", adminRole, adminController.getRides);
 
+router.get("/users", adminRole, adminController.getUsers);
+
 /**
  * @openapi
- * /admin/users:
- *   get:
+ * /admin/users/{id}/roles:
+ *   put:
  *     tags: [Admin]
- *     summary: List all users
+ *     summary: Update user roles
  *     security:
  *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [roles]
+ *             properties:
+ *               roles:
+ *                 type: array
+ *                 items:
+ *                   type: string
  *     responses:
  *       200:
- *         description: List of users
+ *         description: Roles updated
  */
-router.get("/users", adminRole, adminController.getUsers);
+router.put("/users/:id/roles", adminRole, adminController.updateUserRoles);
 
 /**
  * @openapi
@@ -131,6 +151,39 @@ router.get("/users", adminRole, adminController.getUsers);
  *         description: Driver updated
  */
 router.patch("/drivers/:id", adminRole, adminController.updateDriver);
+
+/**
+ * @openapi
+ * /admin/drivers/{id}/verify:
+ *   post:
+ *     tags: [Admin]
+ *     summary: Approve or reject a driver's verification
+ *     security:
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [action]
+ *             properties:
+ *               action:
+ *                 type: string
+ *                 enum: [approve, reject]
+ *               rejection_reason:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Driver verified/rejected
+ */
+router.post("/drivers/:id/verify", adminRole, adminController.verifyDriver);
 
 /**
  * @openapi
@@ -787,6 +840,8 @@ router.get("/merchants/:id/details", adminRole, adminController.getMerchantDetai
  */
 router.patch("/merchants/:id/rates", adminRole, adminController.updateMerchantRates);
 
+router.post("/merchants/sync", adminRole, adminController.syncMerchants);
+
 /**
  * @openapi
  * /admin/merchants/{id}/suspend:
@@ -1083,6 +1138,33 @@ router.put("/settings/:country", adminRole, adminController.updateSettings);
 // ────────────────────────────────────────────────────────────────
 //  Reports
 // ────────────────────────────────────────────────────────────────
+
+/**
+ * @openapi
+ * /admin/reports/financial-overview:
+ *   get:
+ *     tags: [Admin - Reports]
+ *     summary: Comprehensive financial overview (orders + rides + payouts + withdrawals)
+ *     security:
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: from
+ *         schema:
+ *           type: string
+ *           format: date
+ *         description: Start date (defaults to 90 days ago)
+ *       - in: query
+ *         name: to
+ *         schema:
+ *           type: string
+ *           format: date
+ *         description: End date (defaults to now)
+ *     responses:
+ *       200:
+ *         description: Full financial overview
+ */
+router.get("/reports/financial-overview", adminRole, adminController.getFinancialOverview);
 
 /**
  * @openapi
@@ -1534,6 +1616,50 @@ router.patch("/support-tickets/:id", adminRole, adminController.updateSupportTic
 router.get("/export-orders", adminRole, adminController.exportOrdersCSV);
 router.get("/platform-settings", adminRole, adminController.getPlatformSettings);
 router.patch("/platform-settings/:id", adminRole, adminController.updatePlatformSetting);
+
+// ────────────────────────────────────────────────────────────────
+//  Vehicle Pricing
+// ────────────────────────────────────────────────────────────────
+
+/**
+ * @openapi
+ * /admin/vehicle-pricing:
+ *   get:
+ *     tags: [Admin - Settings]
+ *     summary: Get all vehicle pricing configs
+ *     security:
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: country
+ *         schema:
+ *           type: string
+ *         description: Filter by country code
+ *     responses:
+ *       200:
+ *         description: Vehicle pricing array
+ */
+router.get("/vehicle-pricing", adminRole, adminController.getVehiclePricing);
+
+/**
+ * @openapi
+ * /admin/vehicle-pricing/{id}:
+ *   patch:
+ *     tags: [Admin - Settings]
+ *     summary: Update a vehicle pricing entry
+ *     security:
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Updated vehicle pricing
+ */
+router.patch("/vehicle-pricing/:id", adminRole, adminController.updateVehiclePricing);
 
 router.get("/broadcasts", adminRole, adminController.getBroadcasts);
 router.get("/leaderboard", adminRole, adminController.getLeaderboard);

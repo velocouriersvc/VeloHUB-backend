@@ -1,0 +1,160 @@
+import { OrderService } from "./order-service";
+import { RideService } from "./ride-service";
+import { DeliveryType, OrderPaymentMethod } from "../models/order";
+import { RideType } from "../models/ride";
+import { VehicleType } from "../models/vehicle-pricing";
+
+export type UnifiedCheckoutKind = "product_order" | "product_order_with_delivery" | "package_ride";
+
+export interface ProductOrderCheckoutInput {
+    kind: "product_order";
+    deliveryType: DeliveryType;
+    paymentMethod: OrderPaymentMethod;
+    deliveryAddress?: string;
+    deliveryLat?: number;
+    deliveryLng?: number;
+    promoCode?: string;
+    customerNote?: string;
+    phoneNumber?: string;
+}
+
+export interface ProductOrderWithDeliveryCheckoutInput {
+    kind: "product_order_with_delivery";
+    deliveryType: DeliveryType;
+    paymentMethod: OrderPaymentMethod;
+    deliveryAddress: string;
+    deliveryLat: number;
+    deliveryLng: number;
+    pickupAddress?: string;
+    pickupLat?: number;
+    pickupLng?: number;
+    vehicleType: VehicleType;
+    distanceKm: number;
+    durationMin: number;
+    promoCode?: string;
+    customerNote?: string;
+    phoneNumber?: string;
+    stops?: Array<{ address: string; lat: number; lng: number; stopOrder: number }>;
+    sharedContacts?: Array<{ name: string; phone: string }>;
+}
+
+export interface PackageRideCheckoutInput {
+    kind: "package_ride";
+    pickupAddress: string;
+    pickupLat: number;
+    pickupLng: number;
+    dropoffAddress: string;
+    dropoffLat: number;
+    dropoffLng: number;
+    vehicleType: VehicleType;
+    distanceKm: number;
+    durationMin: number;
+    promoCode?: string;
+    paymentMethod?: string;
+}
+
+export type UnifiedCheckoutInput = ProductOrderCheckoutInput | ProductOrderWithDeliveryCheckoutInput | PackageRideCheckoutInput;
+
+export class CheckoutService {
+    private orderService = new OrderService();
+    private rideService = new RideService();
+
+    async checkout(userId: string, input: UnifiedCheckoutInput) {
+        if (input.kind === "product_order") {
+            const result = await this.orderService.checkout(userId, {
+                deliveryType: input.deliveryType,
+                deliveryAddress: input.deliveryAddress,
+                deliveryLat: input.deliveryLat,
+                deliveryLng: input.deliveryLng,
+                paymentMethod: input.paymentMethod,
+                promoCode: input.promoCode,
+                customerNote: input.customerNote,
+                phoneNumber: input.phoneNumber,
+            });
+            return {
+                kind: input.kind,
+                order: result.order,
+                payment: result.payment,
+            };
+        }
+
+        if (input.kind === "product_order_with_delivery") {
+            if (input.deliveryType !== DeliveryType.DELIVERY) {
+                throw new Error("product_order_with_delivery requires deliveryType to be DELIVERY");
+            }
+
+            const orderResult = await this.orderService.checkout(userId, {
+                deliveryType: input.deliveryType,
+                deliveryAddress: input.deliveryAddress,
+                deliveryLat: input.deliveryLat,
+                deliveryLng: input.deliveryLng,
+                paymentMethod: input.paymentMethod,
+                promoCode: input.promoCode,
+                customerNote: input.customerNote,
+                phoneNumber: input.phoneNumber,
+            });
+
+            let ride = null;
+            let rideError: string | null = null;
+
+            try {
+                const pickupAddress = input.pickupAddress || "";
+                const pickupLat = input.pickupLat ?? 0;
+                const pickupLng = input.pickupLng ?? 0;
+
+                if (!pickupAddress || !pickupLat || !pickupLng) {
+                    throw new Error("Pickup address and coordinates are required for delivery ride requests");
+                }
+
+                ride = await this.rideService.requestRide({
+                    customerId: userId,
+                    type: RideType.DELIVERY,
+                    pickupAddress,
+                    pickupLat,
+                    pickupLng,
+                    dropoffAddress: input.deliveryAddress,
+                    dropoffLat: input.deliveryLat,
+                    dropoffLng: input.deliveryLng,
+                    vehicleType: input.vehicleType,
+                    distanceKm: input.distanceKm,
+                    durationMin: input.durationMin,
+                    promoCode: input.promoCode,
+                    stops: input.stops,
+                    sharedContacts: input.sharedContacts,
+                });
+            } catch (error) {
+                rideError = (error as Error).message;
+            }
+
+            return {
+                kind: input.kind,
+                order: orderResult.order,
+                payment: orderResult.payment,
+                ride,
+                rideError,
+            };
+        }
+
+        const packageRideInput = input as PackageRideCheckoutInput;
+        const ride = await this.rideService.requestRide({
+            customerId: userId,
+            type: RideType.DELIVERY,
+            pickupAddress: packageRideInput.pickupAddress,
+            pickupLat: packageRideInput.pickupLat,
+            pickupLng: packageRideInput.pickupLng,
+            dropoffAddress: packageRideInput.dropoffAddress,
+            dropoffLat: packageRideInput.dropoffLat,
+            dropoffLng: packageRideInput.dropoffLng,
+            vehicleType: packageRideInput.vehicleType,
+            distanceKm: packageRideInput.distanceKm,
+            durationMin: packageRideInput.durationMin,
+            promoCode: packageRideInput.promoCode,
+        });
+
+        return {
+            kind: input.kind,
+            ride,
+        };
+    }
+}
+
