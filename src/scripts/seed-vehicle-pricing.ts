@@ -130,7 +130,22 @@ function inPricing(): PricingRow[] {
     }));
 }
 
-const ALL_PRICING: PricingRow[] = [
+// ── Global fare increase ────────────────────────────────────────────
+// Client-requested 20% increase across all ride fares (June 2026). Applied as a
+// single multiplier over the static rates above so it stays idempotent: the seed
+// always derives prices from these constants, so re-running never compounds it.
+const FARE_INCREASE = 1.2;
+function withIncrease(rows: PricingRow[]): PricingRow[] {
+    return rows.map(r => ({
+        ...r,
+        basePrice: +(r.basePrice * FARE_INCREASE).toFixed(2),
+        pricePerKm: +(Number(r.pricePerKm) * FARE_INCREASE).toFixed(4),
+        pricePerMin: +(r.pricePerMin * FARE_INCREASE).toFixed(2),
+        minimumFare: +(r.minimumFare * FARE_INCREASE).toFixed(2),
+    }));
+}
+
+const ALL_PRICING: PricingRow[] = withIncrease([
     ...US_PRICING,
     ...NG_PRICING,
     ...GH_PRICING,
@@ -140,7 +155,7 @@ const ALL_PRICING: PricingRow[] = [
     ...UG_PRICING,
     ...caPricing(),
     ...inPricing(),
-];
+]);
 
 /**
  * Seed vehicle_pricing rows.

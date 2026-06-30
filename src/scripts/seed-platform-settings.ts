@@ -375,14 +375,24 @@ export async function seedPlatformSettings(alreadyInitialised = false) {
 
     const repo = AppDataSource.getRepository(PlatformSettings);
 
+    // Client-requested 20% increase on delivery pricing (June 2026). Applied to the
+    // static config on each upsert so it is idempotent and never compounds.
+    const DELIVERY_INCREASE = 1.2;
+    const scaleFee = (v: any) => v == null ? v : +(Number(v) * DELIVERY_INCREASE).toFixed(4);
+
     let upserted = 0;
     for (const data of SETTINGS) {
-        const existing = await repo.findOne({ where: { country: data.country! } });
+        const row = {
+            ...data,
+            deliveryBaseFee: scaleFee(data.deliveryBaseFee),
+            deliveryPerKmFee: scaleFee(data.deliveryPerKmFee),
+        };
+        const existing = await repo.findOne({ where: { country: row.country! } });
         if (existing) {
-            Object.assign(existing, data);
+            Object.assign(existing, row);
             await repo.save(existing);
         } else {
-            await repo.save(repo.create(data));
+            await repo.save(repo.create(row));
         }
         upserted++;
     }
