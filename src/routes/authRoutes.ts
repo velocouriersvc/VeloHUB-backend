@@ -118,6 +118,8 @@ router.post("/password", requireAuth, authController.setPassword);
 // Forgot-password flow: email a reset code, then reset with the code (no auth)
 router.post("/forgot-password", authController.forgotPassword);
 router.post("/reset-password", authController.resetPassword);
+// Phone (SMS) reset: request-otp first, then submit phone + code + new password.
+router.post("/reset-password-phone", authController.resetPasswordByPhone);
 
 /**
  * @openapi

@@ -166,6 +166,29 @@ export class AuthController {
         }
     };
 
+    // Reset password via phone (SMS OTP). Client first calls /auth/request-otp
+    // (SMS), then submits phoneNumber + code + newPassword here.
+    resetPasswordByPhone = async (req: Request, res: Response) => {
+        try {
+            const { phoneNumber, code, newPassword } = req.body || {};
+            if (!phoneNumber || !code || !newPassword) {
+                return res.status(400).json({ message: "phoneNumber, code and newPassword are required" });
+            }
+            if (String(newPassword).length < 6) {
+                return res.status(400).json({ message: "newPassword must be at least 6 characters" });
+            }
+            const result = await this.authService.resetPasswordByPhone(phoneNumber, code, newPassword);
+            return res.status(200).json(result);
+        } catch (error) {
+            const message = (error as Error).message || "Internal server error";
+            if (/invalid|expired|at least 6/i.test(message)) {
+                return res.status(400).json({ message });
+            }
+            log.error("Error resetting password by phone", { error: message });
+            return res.status(500).json({ message: "Internal server error" });
+        }
+    };
+
     appleSignIn = async (req: Request, res: Response) => {
         try {
             const { identityToken, fullName, email } = req.body as {

@@ -340,6 +340,34 @@ export class AuthService {
     }
 
     /**
+     * Forgot-password via phone (SMS). Reuses the working Prelude OTP channel:
+     * the client first calls request-otp (SMS), then submits the code + new
+     * password here. Preferred over the email flow when SMTP is not configured.
+     */
+    async resetPasswordByPhone(phoneNumber: string, code: string, newPassword: string): Promise<{ success: boolean }> {
+        if (!newPassword || newPassword.length < 6) {
+            throw new Error("Password must be at least 6 characters");
+        }
+
+        const verified = await this.otpService.verifyOtp(phoneNumber, code);
+        if (!verified) {
+            throw new Error("Invalid or expired reset code");
+        }
+
+        const user = await this.userRepository.findOne({ where: { phoneNumber } });
+        // Generic error so we never reveal whether the phone is registered.
+        if (!user) {
+            throw new Error("Invalid or expired reset code");
+        }
+
+        user.passwordHash = hashPassword(newPassword);
+        await this.userRepository.save(user);
+
+        log.info("Password reset via phone successful", { userId: user.id });
+        return { success: true };
+    }
+
+    /**
      * Forgot-password step 2: verify the emailed code and set a new password.
      */
     async resetPassword(email: string, code: string, newPassword: string): Promise<{ success: boolean }> {
