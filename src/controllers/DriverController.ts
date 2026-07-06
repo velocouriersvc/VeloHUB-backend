@@ -193,6 +193,23 @@ export class DriverController {
     };
 
     /**
+     * GET /driver/rides/available
+     * Pending ride requests the driver can accept (loose proximity match).
+     */
+    getAvailableRides = async (req: AuthRequest, res: Response) => {
+        try {
+            const lat = req.query.lat != null ? Number(req.query.lat) : undefined;
+            const lng = req.query.lng != null ? Number(req.query.lng) : undefined;
+            const radiusKm = req.query.radiusKm != null ? Number(req.query.radiusKm) : 50;
+            const rides = await this.rideService.getAvailableRides(lat, lng, radiusKm);
+            return res.json({ rides });
+        } catch (error) {
+            log.error("Error getting available rides", { error: (error as Error).message });
+            return res.status(500).json({ message: "Internal server error" });
+        }
+    };
+
+    /**
      * GET /driver/rides/history
      * Get driver's ride history
      */

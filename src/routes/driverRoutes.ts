@@ -297,6 +297,29 @@ router.get("/rides/active", driverRole, driverController.getActiveRide);
 
 /**
  * @openapi
+ * /driver/rides/available:
+ *   get:
+ *     tags: [Driver]
+ *     summary: List pending ride requests the driver can accept
+ *     description: Recent unassigned rides still searching for a driver. Requires **driver** role.
+ *     security:
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - $ref: '#/components/parameters/PhoneNumber'
+ *       - in: query
+ *         name: lat
+ *         schema: { type: number }
+ *       - in: query
+ *         name: lng
+ *         schema: { type: number }
+ *     responses:
+ *       200:
+ *         description: List of available rides
+ */
+router.get("/rides/available", driverRole, driverController.getAvailableRides);
+
+/**
+ * @openapi
  * /driver/rides/history:
  *   get:
  *     tags: [Driver]

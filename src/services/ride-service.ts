@@ -1,4 +1,5 @@
 import { AppDataSource } from "../db/data-source";
+import { IsNull, MoreThan } from "typeorm";
 import { Ride, RideType, RideStatus, PaymentMethod, PaymentStatus, CancelledBy } from "../models/ride";
 import { RideStop } from "../models/ride-stop";
 import { RideSharedContact } from "../models/ride-shared-contact";
@@ -19,6 +20,16 @@ import { SettlementService } from "./settlement-service";
 import { emitRideEvent } from "../socket-gateway";
 
 const log = createServiceLogger("RideService");
+
+/** Great-circle distance in km (used for the loose driver proximity filter). */
+function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number): number {
+    const R = 6371;
+    const toRad = (d: number) => (d * Math.PI) / 180;
+    const dLat = toRad(lat2 - lat1);
+    const dLng = toRad(lng2 - lng1);
+    const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
 
 export interface RideRequest {
     customerId: string;
@@ -145,6 +156,23 @@ export class RideService {
         }
 
         return estimates;
+    }
+
+    /**
+     * Rides a driver can pick up right now: recent, still-searching, unassigned.
+     * Deliberately loose (no vehicle-type / approval / online gating) so requests
+     * reliably reach drivers even if the real-time broadcast missed them. When the
+     * driver sends a location we apply a generous proximity filter.
+     */
+    async getAvailableRides(lat?: number, lng?: number, radiusKm = 50): Promise<Ride[]> {
+        const since = new Date(Date.now() - 5 * 60 * 1000); // only fresh requests
+        const rides = await this.rideRepo.find({
+            where: { status: RideStatus.SEARCHING, driverId: IsNull(), createdAt: MoreThan(since) },
+            order: { createdAt: "DESC" },
+            take: 20,
+        });
+        if (lat == null || lng == null || Number.isNaN(lat) || Number.isNaN(lng)) return rides;
+        return rides.filter((r) => haversineKm(lat, lng, Number(r.pickupLat), Number(r.pickupLng)) <= radiusKm);
     }
 
     // ── Ride Lifecycle ──
