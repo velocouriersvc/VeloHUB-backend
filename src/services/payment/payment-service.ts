@@ -215,6 +215,38 @@ export class PaymentService {
         }
     }
 
+    /**
+     * Full refund of a ride's prepayment to the customer's wallet. Used when a
+     * customer cancels for a valid reason (e.g. the driver's vehicle/plate does not
+     * match). Cash rides have nothing to refund. Returns the amount refunded.
+     */
+    async refundRidePayment(rideId: string): Promise<number> {
+        const payment = await this.paymentRepo.findOne({
+            where: { rideId, status: PaymentRecordStatus.SUCCESS },
+        });
+        if (!payment || payment.method === PaymentMethodType.CASH) return 0;
+
+        const amount = Number(payment.amount);
+        const desc = `Refund for cancelled ride ${rideId}`;
+        const meta = { rideId, paymentId: payment.id, type: "ride_refund" };
+        try {
+            await this.walletService.credit(payment.userId, amount, desc, meta);
+        } catch (e) {
+            // Auto-create the wallet on first credit, then retry.
+            if (/Wallet not found/i.test((e as Error).message)) {
+                await this.walletService.createWallet(payment.userId);
+                await this.walletService.credit(payment.userId, amount, desc, meta);
+            } else {
+                throw e;
+            }
+        }
+
+        payment.status = PaymentRecordStatus.REFUNDED;
+        await this.paymentRepo.save(payment);
+        log.info("Ride payment refunded to wallet", { rideId, amount });
+        return amount;
+    }
+
     // ── Order Payments ──────────────────────────────────────────────
 
     /**

@@ -181,7 +181,7 @@ export class RideController {
             const userId = req.user?.id;
             if (!userId) return res.status(401).json({ message: "User ID required" });
 
-            const { reason } = req.body;
+            const { reason, fullRefund } = req.body;
 
             // Determine who's cancelling based on their role
             const roles = req.user?.roles || [];
@@ -190,7 +190,7 @@ export class RideController {
                 ? CancelledBy.DRIVER
                 : CancelledBy.CUSTOMER;
 
-            const ride = await this.rideService.cancelRide(rideId, cancelledBy, reason);
+            const ride = await this.rideService.cancelRide(rideId, cancelledBy, reason, !!fullRefund);
             return res.json({ ride });
         } catch (error) {
             log.error("Error cancelling ride", { error: (error as Error).message });

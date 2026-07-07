@@ -600,7 +600,8 @@ export class RideService {
     async cancelRide(
         rideId: string,
         cancelledBy: CancelledBy,
-        reason?: string
+        reason?: string,
+        fullRefund = false
     ): Promise<Ride> {
         const ride = await this.getRideOrFail(rideId);
 
@@ -631,8 +632,22 @@ export class RideService {
             await this.notificationService.notifyRideCancelled(ride.customerId, cancelMessage, rideId);
         }
 
-        // TODO: Handle refund logic if payment was already made (momo/wallet)
-        // For now, refunds would be a manual process
+        // Full refund (e.g. driver's vehicle/plate did not match). Refunds any
+        // successful prepayment to the customer's wallet; cash rides refund nothing.
+        if (fullRefund && cancelledBy === CancelledBy.CUSTOMER) {
+            try {
+                const refunded = await this.paymentService.refundRidePayment(rideId);
+                if (refunded > 0) {
+                    await this.notificationService.notifyRideCancelled(
+                        ride.customerId,
+                        `You were fully refunded ${refunded} to your wallet for the cancelled ride.`,
+                        rideId
+                    );
+                }
+            } catch (err) {
+                log.warn("Ride refund failed (will need manual handling)", { rideId, error: (err as Error).message });
+            }
+        }
 
         // Clean up Redis
         await this.redisLocation.removeRideTracking(rideId);
