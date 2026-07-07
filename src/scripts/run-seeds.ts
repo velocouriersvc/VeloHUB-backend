@@ -24,10 +24,11 @@ export async function runSeeds(): Promise<void> {
         // missing enum values like "profile_created"/"welcome" on synchronize-only DBs).
         await syncNotificationTypeEnum(true);
 
-        // Give products without an image a placeholder so listings are not blank.
-        // Self-limiting (skips products that already have an http image) and
-        // non-fatal. Disable with DISABLE_PRODUCT_IMAGE_BACKFILL=true.
-        if (process.env.DISABLE_PRODUCT_IMAGE_BACKFILL !== "true") {
+        // Placeholder images for blank products are now OPT-IN only. Merchants list
+        // products with (or without) their own images, and new listings must never be
+        // switched to a generic image. Run it once manually if ever needed by setting
+        // ENABLE_PRODUCT_IMAGE_BACKFILL=true (or `npm run seed:product-images`).
+        if (process.env.ENABLE_PRODUCT_IMAGE_BACKFILL === "true") {
             await backfillProductImages(true);
         }
 
