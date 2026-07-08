@@ -499,8 +499,11 @@ export class RideService {
     async driverEnroute(rideId: string, driverName: string): Promise<Ride> {
         const ride = await this.getRideOrFail(rideId);
 
-        if (ride.status !== RideStatus.PAID) {
-            throw new Error("Payment must be confirmed before driver can depart");
+        // Payment (esp. cash) settles independently, so the driver is not blocked
+        // from departing. Only forbid final/later states.
+        const allowed = [RideStatus.ACCEPTED, RideStatus.AWAITING_PAYMENT, RideStatus.PAID];
+        if (!allowed.includes(ride.status)) {
+            throw new Error("Ride is not ready for the driver to depart");
         }
 
         ride.status = RideStatus.DRIVER_ENROUTE;
@@ -521,8 +524,11 @@ export class RideService {
     async driverArrived(rideId: string, driverName: string): Promise<Ride> {
         const ride = await this.getRideOrFail(rideId);
 
-        if (ride.status !== RideStatus.DRIVER_ENROUTE) {
-            throw new Error("Driver must be en route first");
+        // Allow marking arrived from any active pre-trip state (the driver may tap
+        // "I've arrived" without a separate enroute call).
+        const allowed = [RideStatus.ACCEPTED, RideStatus.AWAITING_PAYMENT, RideStatus.PAID, RideStatus.DRIVER_ENROUTE];
+        if (!allowed.includes(ride.status)) {
+            throw new Error("Ride is not in a state to mark arrived");
         }
 
         ride.status = RideStatus.ARRIVED;
@@ -543,7 +549,9 @@ export class RideService {
     async startRide(rideId: string): Promise<Ride> {
         const ride = await this.getRideOrFail(rideId);
 
-        if (ride.status !== RideStatus.ARRIVED) {
+        // Allow starting from arrived (normal) or en route (if arrived was skipped).
+        const allowed = [RideStatus.ARRIVED, RideStatus.DRIVER_ENROUTE];
+        if (!allowed.includes(ride.status)) {
             throw new Error("Driver must have arrived at pickup");
         }
 
