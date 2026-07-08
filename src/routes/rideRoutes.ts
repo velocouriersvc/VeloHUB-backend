@@ -1,10 +1,12 @@
 import { Router } from "express";
 import { RideController } from "../controllers/RideController";
+import { ScheduledRideController } from "../controllers/ScheduledRideController";
 import { apiKeyMiddleware } from "../middleware/api-key-middleware";
 import { requireRole } from "../middleware/role-middleware";
 
 const router = Router();
 const rideController = new RideController();
+const scheduledRideController = new ScheduledRideController();
 
 // Apply API Key Middleware to all ride routes
 router.use(apiKeyMiddleware);
@@ -125,6 +127,58 @@ router.post("/estimate/:vehicleType", requireRole(["buyer"]), rideController.get
  *         description: Server error
  */
 router.post("/request", requireRole(["buyer"]), rideController.requestRide);
+
+/**
+ * @openapi
+ * /rides/schedule:
+ *   post:
+ *     tags: [Rides]
+ *     summary: Schedule a ride for later with upfront payment
+ *     description: |
+ *       Creates a scheduled ride and takes upfront payment. Cash is pay-at-ride.
+ *       momo/card return an authorization URL/prompt; the ride is auto-dispatched to
+ *       drivers ~10 minutes before the scheduled time. Requires **buyer** role.
+ *     security:
+ *       - ApiKeyAuth: []
+ *     responses:
+ *       201:
+ *         description: Scheduled ride created (with authorizationUrl for card/momo)
+ *       400:
+ *         description: Missing fields or time not in the future
+ */
+router.post("/schedule", requireRole(["buyer"]), scheduledRideController.create);
+
+/**
+ * @openapi
+ * /rides/scheduled:
+ *   get:
+ *     tags: [Rides]
+ *     summary: List the buyer's scheduled rides
+ *     security:
+ *       - ApiKeyAuth: []
+ *     responses:
+ *       200:
+ *         description: Array of scheduled rides
+ */
+router.get("/scheduled", requireRole(["buyer"]), scheduledRideController.list);
+
+/**
+ * @openapi
+ * /rides/scheduled/{id}/cancel:
+ *   post:
+ *     tags: [Rides]
+ *     summary: Cancel a scheduled ride and refund any prepayment to the wallet
+ *     security:
+ *       - ApiKeyAuth: []
+ *     responses:
+ *       200:
+ *         description: Cancelled (with refunded amount)
+ *       400:
+ *         description: Ride already dispatched
+ *       404:
+ *         description: Scheduled ride not found
+ */
+router.post("/scheduled/:id/cancel", requireRole(["buyer"]), scheduledRideController.cancel);
 
 /**
  * @openapi

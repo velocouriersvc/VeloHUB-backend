@@ -32,6 +32,9 @@ export class Payment {
     @Column({ type: "uuid", nullable: true })
     subscriptionId: string | null;
 
+    @Column({ type: "uuid", nullable: true })
+    scheduledRideId: string | null;
+
     @Column({ type: "uuid" })
     userId: string;
 

@@ -12,6 +12,7 @@ import { paymentEventsTotal } from "../../utils/metrics";
 import { formatCurrency, currencyForCountry } from "../../utils/currency";
 import { ServiceSubscription, ServiceSubscriptionStatus } from "../../models/service-subscription";
 import { BuyerProfile } from "../../models/buyer-profile";
+import { ScheduledRide, ScheduledPaymentStatus } from "../../models/scheduled-ride";
 
 const log = createServiceLogger("PaymentService");
 
@@ -31,6 +32,7 @@ export interface PaymentResult {
 
 export class PaymentService {
     private paymentRepo = AppDataSource.getRepository(Payment);
+    private scheduledRideRepo = AppDataSource.getRepository(ScheduledRide);
     private settingsRepo = AppDataSource.getRepository(PlatformSettings);
     private walletService: WalletService;
     private notificationService: NotificationService;
@@ -213,6 +215,98 @@ export class PaymentService {
             default:
                 throw new Error(`Unsupported payment method: ${method}`);
         }
+    }
+
+    /**
+     * Upfront payment for a scheduled ride. Same money split as a live ride, but the
+     * payment links to a `scheduledRideId` instead of a `rideId`. momo/card return a
+     * prompt/authorization URL; cash is registered as pay-at-ride.
+     */
+    async processScheduledRidePayment(params: {
+        scheduledRideId: string;
+        userId: string;
+        amount: number;
+        method: PaymentMethodType;
+        country?: string;
+        email?: string;
+        phoneNumber?: string;
+    }): Promise<PaymentResult> {
+        const { scheduledRideId, userId, amount, method } = params;
+        const country = params.country || "GH";
+        const { provider, currency, commissionRate } = await this.resolveCountryContext(country);
+
+        const reference = `SCHED-${uuidv4().slice(0, 12)}`;
+        const platformFee = Math.round(amount * commissionRate * 100) / 100;
+        const driverAmount = Math.round(amount * (1 - commissionRate) * 100) / 100;
+
+        const payment = this.paymentRepo.create({
+            scheduledRideId,
+            userId,
+            amount,
+            currency,
+            method,
+            provider: method === PaymentMethodType.WALLET ? "wallet" : provider.name,
+            providerRef: null,
+            providerStatus: null,
+            platformFee,
+            driverAmount,
+            status: PaymentRecordStatus.PENDING,
+            metadata: { reference, scheduledRideId },
+        });
+        const saved = await this.paymentRepo.save(payment);
+        log.info("Scheduled ride payment record created", { paymentId: saved.id, scheduledRideId, method, amount, currency });
+
+        switch (method) {
+            case PaymentMethodType.MOMO:
+                return this.processMomoPayment(saved, reference, params, provider, currency);
+            case PaymentMethodType.CARD:
+                return this.processCardViaPaystack(saved, reference, params, provider, currency);
+            case PaymentMethodType.WALLET:
+                return this.processWalletPayment(saved, reference, userId, amount);
+            case PaymentMethodType.CASH:
+                return this.processCashPayment(saved, reference);
+            default:
+                throw new Error(`Unsupported payment method: ${method}`);
+        }
+    }
+
+    /**
+     * Refund a scheduled ride's prepayment to the customer's wallet. Cash has nothing
+     * to refund. Returns the amount refunded.
+     */
+    async refundScheduledRidePayment(scheduledRideId: string): Promise<number> {
+        const payment = await this.paymentRepo.findOne({
+            where: { scheduledRideId, status: PaymentRecordStatus.SUCCESS },
+        });
+        if (!payment || payment.method === PaymentMethodType.CASH) return 0;
+
+        const amount = Number(payment.amount);
+        const desc = `Refund for cancelled scheduled ride ${scheduledRideId}`;
+        const meta = { scheduledRideId, paymentId: payment.id, type: "scheduled_ride_refund" };
+        try {
+            await this.walletService.credit(payment.userId, amount, desc, meta);
+        } catch (e) {
+            if (/Wallet not found/i.test((e as Error).message)) {
+                await this.walletService.createWallet(payment.userId);
+                await this.walletService.credit(payment.userId, amount, desc, meta);
+            } else {
+                throw e;
+            }
+        }
+
+        payment.status = PaymentRecordStatus.REFUNDED;
+        await this.paymentRepo.save(payment);
+        log.info("Scheduled ride payment refunded to wallet", { scheduledRideId, amount });
+        return amount;
+    }
+
+    /** Mark a scheduled ride as prepaid once its upfront payment succeeds. */
+    async markScheduledRidePaid(scheduledRideId: string): Promise<void> {
+        await this.scheduledRideRepo.update(
+            { id: scheduledRideId },
+            { paymentStatus: ScheduledPaymentStatus.PAID }
+        );
+        log.info("Scheduled ride marked paid", { scheduledRideId });
     }
 
     /**
@@ -785,6 +879,11 @@ export class PaymentService {
             // Side Effects: Subscriptions
             if (payment.subscriptionId) {
                 await this.activateSubscription(payment.subscriptionId, payment.userId);
+            }
+
+            // Side Effects: Scheduled ride prepaid
+            if (payment.scheduledRideId) {
+                await this.markScheduledRidePaid(payment.scheduledRideId);
             }
 
             log.info("Payment confirmed", { paymentId: payment.id, reference });
