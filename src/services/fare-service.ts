@@ -134,6 +134,7 @@ export class FareService {
             distanceKm,
             durationMin,
             minimumFare: Number(pricing.minimumFare),
+            bookingFee: Number(pricing.bookingFee ?? 0),
             surgeMultiplier: rawSurge,
             maxSurge,
             serviceFeeRate,

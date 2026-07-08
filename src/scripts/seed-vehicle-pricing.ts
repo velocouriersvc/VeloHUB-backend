@@ -27,6 +27,7 @@ interface PricingRow {
     pricePerKm: number;
     pricePerMin: number;
     minimumFare: number;
+    bookingFee?: number;
     riderServiceFee: number;
     maxPassengers: number;
 }
@@ -46,15 +47,20 @@ const US_PRICING: PricingRow[] = [
     { vehicleType: VehicleType.TRUCK, country: "US", basePrice: 15.00, pricePerKm: 3.85, pricePerMin: 0.72, minimumFare: 25.00, riderServiceFee: 3.00, maxPassengers: 2 },
 ];
 
-// ── Nigeria: Dynamic Fare Architecture (NGN) - UPDATED June 19, 2026 ──
-// Standard tier (car) is the client-spec baseline: Base ₦400, ₦110/km, ₦20/min.
-// Other tiers scale off the standard: bike 0.75x, suv 1.5x, truck 2.5x.
-// Service fee is now 5% of subtotal (NOT a flat fee) - riderServiceFee column unused.
+// ── Nigeria: client pricing (NGN) - UPDATED July 2026 ──────────────────
+// Exact client-specified fares (NOT subject to the global 20% increase below).
+//   Velo Bikes    (bike)     base 500  | 95/km  | 20/min | booking 200
+//   Velo Basic    (car)      base 1000 | 150/km | 30/min | booking 350
+//   Velo Priority (priority) = Velo Basic x ~1.25 (client range 1.16-1.35)
+//   Velo Premium  (suv)      base 1200 | 210/km | 35/min | booking 500
+//   Velo Trucks   (truck)    base 2500 | 265/km | 35/min | booking 250
+// Service fee is 5% of subtotal (riderServiceFee column unused for NG).
 const NG_PRICING: PricingRow[] = [
-    { vehicleType: VehicleType.BIKE, country: "NG", basePrice: 300,  pricePerKm: 82.50, pricePerMin: 15, minimumFare: 600,  riderServiceFee: 0, maxPassengers: 1 },
-    { vehicleType: VehicleType.CAR,  country: "NG", basePrice: 400,  pricePerKm: 110,   pricePerMin: 20, minimumFare: 800,  riderServiceFee: 0, maxPassengers: 4 },
-    { vehicleType: VehicleType.SUV,  country: "NG", basePrice: 600,  pricePerKm: 165,   pricePerMin: 30, minimumFare: 1200, riderServiceFee: 0, maxPassengers: 6 },
-    { vehicleType: VehicleType.TRUCK,country: "NG", basePrice: 1000, pricePerKm: 275,   pricePerMin: 50, minimumFare: 2000, riderServiceFee: 0, maxPassengers: 2 },
+    { vehicleType: VehicleType.BIKE,     country: "NG", basePrice: 500,  pricePerKm: 95,    pricePerMin: 20,   minimumFare: 700,  bookingFee: 200,   riderServiceFee: 0, maxPassengers: 1 },
+    { vehicleType: VehicleType.CAR,      country: "NG", basePrice: 1000, pricePerKm: 150,   pricePerMin: 30,   minimumFare: 1350, bookingFee: 350,   riderServiceFee: 0, maxPassengers: 4 },
+    { vehicleType: VehicleType.PRIORITY, country: "NG", basePrice: 1250, pricePerKm: 187.50, pricePerMin: 37.50, minimumFare: 1690, bookingFee: 437.50, riderServiceFee: 0, maxPassengers: 4 },
+    { vehicleType: VehicleType.SUV,      country: "NG", basePrice: 1200, pricePerKm: 210,   pricePerMin: 35,   minimumFare: 1700, bookingFee: 500,   riderServiceFee: 0, maxPassengers: 6 },
+    { vehicleType: VehicleType.TRUCK,    country: "NG", basePrice: 2500, pricePerKm: 265,   pricePerMin: 35,   minimumFare: 2750, bookingFee: 250,   riderServiceFee: 0, maxPassengers: 2 },
 ];
 
 // ── Ghana: Dynamic Fare Architecture (GHS) - UPDATED June 19, 2026 ──
@@ -142,19 +148,49 @@ function withIncrease(rows: PricingRow[]): PricingRow[] {
         pricePerKm: +(Number(r.pricePerKm) * FARE_INCREASE).toFixed(4),
         pricePerMin: +(r.pricePerMin * FARE_INCREASE).toFixed(2),
         minimumFare: +(r.minimumFare * FARE_INCREASE).toFixed(2),
+        bookingFee: +(Number(r.bookingFee ?? 0) * FARE_INCREASE).toFixed(2),
     }));
 }
 
-const ALL_PRICING: PricingRow[] = withIncrease([
-    ...US_PRICING,
+// Add a Velo Priority tier per country (Velo Basic/car x 1.25) where one is not
+// already defined explicitly, so the tier is available everywhere.
+const PRIORITY_MULTIPLIER = 1.25;
+function withPriority(rows: PricingRow[]): PricingRow[] {
+    const countries = [...new Set(rows.map(r => r.country))];
+    const extra: PricingRow[] = [];
+    for (const country of countries) {
+        const group = rows.filter(r => r.country === country);
+        if (group.some(r => r.vehicleType === VehicleType.PRIORITY)) continue;
+        const car = group.find(r => r.vehicleType === VehicleType.CAR);
+        if (!car) continue;
+        const m = PRIORITY_MULTIPLIER;
+        extra.push({
+            ...car,
+            vehicleType: VehicleType.PRIORITY,
+            basePrice: +(car.basePrice * m).toFixed(2),
+            pricePerKm: +(Number(car.pricePerKm) * m).toFixed(4),
+            pricePerMin: +(car.pricePerMin * m).toFixed(2),
+            minimumFare: +(car.minimumFare * m).toFixed(2),
+            bookingFee: +(Number(car.bookingFee ?? 0) * m).toFixed(2),
+        });
+    }
+    return [...rows, ...extra];
+}
+
+// NG uses exact client numbers (no global increase); every other market keeps
+// the +20% increase. Both get a Velo Priority tier.
+const ALL_PRICING: PricingRow[] = withPriority([
     ...NG_PRICING,
-    ...GH_PRICING,
-    ...KE_PRICING,
-    ...ZA_PRICING,
-    ...TZ_PRICING,
-    ...UG_PRICING,
-    ...caPricing(),
-    ...inPricing(),
+    ...withIncrease([
+        ...US_PRICING,
+        ...GH_PRICING,
+        ...KE_PRICING,
+        ...ZA_PRICING,
+        ...TZ_PRICING,
+        ...UG_PRICING,
+        ...caPricing(),
+        ...inPricing(),
+    ]),
 ]);
 
 /**
@@ -202,6 +238,36 @@ export async function seedVehiclePricing(alreadyInitialised = false) {
         } else {
             console.warn("⚠️  Migration check failed (continuing anyway):", errorMsg);
         }
+    }
+
+    // Auto-migration: add the bookingFee column (synchronize does not always add it).
+    try {
+        await AppDataSource.query(`ALTER TABLE vehicle_pricing ADD COLUMN IF NOT EXISTS "bookingFee" DECIMAL(8,2) NOT NULL DEFAULT 0`);
+    } catch (err) {
+        console.warn("⚠️  bookingFee column migration skipped:", (err as Error).message);
+    }
+
+    // Auto-migration: ensure the vehicleType Postgres enum has every value (adds
+    // "priority"). synchronize does not reliably add values to an existing enum.
+    try {
+        const rows: Array<{ enum_name: string }> = await AppDataSource.query(`
+            SELECT t.typname AS enum_name
+            FROM pg_type t
+            JOIN pg_attribute a ON a.atttypid = t.oid
+            JOIN pg_class c ON c.oid = a.attrelid
+            JOIN pg_namespace n ON n.oid = c.relnamespace
+            WHERE c.relname = 'vehicle_pricing' AND a.attname = 'vehicleType' AND n.nspname = 'public'
+            LIMIT 1
+        `);
+        const enumName = rows?.[0]?.enum_name;
+        if (enumName) {
+            for (const value of Object.values(VehicleType)) {
+                await AppDataSource.query(`ALTER TYPE "${enumName}" ADD VALUE IF NOT EXISTS '${value}'`);
+            }
+            console.log(`✓ vehicle type enum "${enumName}" synced (priority ensured)`);
+        }
+    } catch (err) {
+        console.warn("⚠️  vehicle type enum sync skipped:", (err as Error).message);
     }
 
     const repo = AppDataSource.getRepository(VehiclePricing);
