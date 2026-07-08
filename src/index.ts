@@ -11,6 +11,7 @@ import { metricsMiddleware, register } from "./utils/metrics";
 import path from "path";
 import { initSocketGateway } from "./socket-gateway";
 import { runSeeds } from "./scripts/run-seeds";
+import { startScheduledRideDispatcher } from "./scripts/scheduled-ride-dispatcher";
 
 
 import orderRoutes from "./routes/orderRoutes";
@@ -278,6 +279,11 @@ AppDataSource.initialize()
         await runSeeds();
       } catch (err) {
         logger.warn("Seed scripts failed (data may need manual seeding)", { error: (err as Error).message });
+      }
+      try {
+        startScheduledRideDispatcher();
+      } catch (err) {
+        logger.warn("Scheduled ride dispatcher failed to start", { error: (err as Error).message });
       }
     })();
   })

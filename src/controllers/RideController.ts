@@ -26,6 +26,7 @@ function mapVehicleType(input: string): VehicleType {
         motorbike: VehicleType.BIKE,
         bike: VehicleType.BIKE,
         car: VehicleType.CAR,
+        priority: VehicleType.PRIORITY,
         suv: VehicleType.SUV,
         van: VehicleType.TRUCK,
         truck: VehicleType.TRUCK,

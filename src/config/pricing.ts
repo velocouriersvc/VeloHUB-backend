@@ -144,6 +144,8 @@ export interface RideFareInput {
     distanceKm: number;
     durationMin: number;
     minimumFare?: number;
+    /** Flat booking fee added to the fare (base + distance + time + booking). */
+    bookingFee?: number;
     /** Raw surge (uncapped); will be clamped to [1, maxSurge]. */
     surgeMultiplier?: number;
     maxSurge?: number;
@@ -189,7 +191,9 @@ export function computeRideFare(input: RideFareInput): RideFareResult {
     const baseFare = round2(input.basePrice * profile.baseMultiplier);
     const distanceCost = round2(input.pricePerKm * profile.perKmMultiplier * billableKm);
     const timeCost = round2(input.pricePerMin * profile.perMinMultiplier * input.durationMin);
-    const subtotal = round2(baseFare + distanceCost + timeCost);
+    // Flat booking fee is part of the fare (and therefore the driver's 85% share).
+    const bookingFee = round2(input.bookingFee ?? 0);
+    const subtotal = round2(baseFare + distanceCost + timeCost + bookingFee);
 
     const surgedSubtotal = round2(subtotal * surge);
     const surgeAmount = round2(surgedSubtotal - subtotal);

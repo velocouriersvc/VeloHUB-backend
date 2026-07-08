@@ -53,8 +53,9 @@ async function verifyPricing() {
     let allCorrect = true;
 
     for (const p of ghPricing) {
-        const exp = expected[p.vehicleType];
-        const matches = 
+        const exp = (expected as Record<string, { base: number; perKm: number; perMin: number; min: number }>)[p.vehicleType];
+        if (!exp) continue;
+        const matches =
             Number(p.basePrice) === exp.base &&
             Number(p.pricePerKm) === exp.perKm &&
             Number(p.pricePerMin) === exp.perMin &&

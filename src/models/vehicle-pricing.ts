@@ -3,6 +3,7 @@ import { Entity, PrimaryGeneratedColumn, Column, UpdateDateColumn, Unique } from
 export enum VehicleType {
     BIKE = "bike",
     CAR = "car",
+    PRIORITY = "priority",
     SUV = "suv",
     TRUCK = "truck",
 }
@@ -30,6 +31,10 @@ export class VehiclePricing {
 
     @Column({ type: "decimal", precision: 8, scale: 2 })
     minimumFare: number;
+
+    /** Flat booking fee added to every fare (helps compensate drivers). */
+    @Column({ type: "decimal", precision: 8, scale: 2, default: 0 })
+    bookingFee: number;
 
     @Column({ type: "decimal", precision: 8, scale: 2, default: 1.99 })
     riderServiceFee: number;
