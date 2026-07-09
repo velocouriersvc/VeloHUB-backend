@@ -190,7 +190,7 @@ export class SearchService {
 
         // Geo filter + distance calculation
         if (params.latitude && params.longitude) {
-            const radiusKm = params.radiusKm || 10;
+            const radiusKm = params.radiusKm || 20;
 
             // Haversine distance via SQL (returns km)
             qb = qb.addSelect(
@@ -303,7 +303,7 @@ export class SearchService {
 
         // Geo filter via merchant location
         if (params.latitude && params.longitude) {
-            const radiusKm = params.radiusKm || 10;
+            const radiusKm = params.radiusKm || 20;
 
             qb = qb.addSelect(
                 `(6371 * acos(
@@ -386,7 +386,7 @@ export class SearchService {
             params.category || "",
             params.latitude?.toFixed(4) || "",
             params.longitude?.toFixed(4) || "",
-            params.radiusKm || 10,
+            params.radiusKm || 20,
             params.isOpen ? "1" : "0",
             params.page || 1,
             params.limit || 20,

@@ -1,6 +1,7 @@
 import { Response } from "express";
 import { AuthRequest } from "../middleware/role-middleware";
 import { RideService } from "../services/ride-service";
+import { RideMessageService } from "../services/ride-message-service";
 import { RideType, CancelledBy, PaymentMethod } from "../models/ride";
 import { VehicleType } from "../models/vehicle-pricing";
 import { PricingVertical } from "../config/pricing";
@@ -36,6 +37,23 @@ function mapVehicleType(input: string): VehicleType {
 
 export class RideController {
     private rideService = new RideService();
+    private rideMessageService = new RideMessageService();
+
+    /**
+     * GET /rides/:id/messages
+     * Chat history for a ride (customer or driver).
+     */
+    getMessages = async (req: AuthRequest, res: Response) => {
+        try {
+            const userId = req.user?.id;
+            if (!userId) return res.status(401).json({ message: "User ID required" });
+            const messages = await this.rideMessageService.list(req.params.id);
+            return res.json({ messages });
+        } catch (error) {
+            log.error("Error getting ride messages", { error: (error as Error).message });
+            return res.status(500).json({ message: "Internal server error" });
+        }
+    };
 
     /**
      * POST /rides/estimate
@@ -111,7 +129,7 @@ export class RideController {
                 dropoffAddress, dropoffLat, dropoffLng,
                 vehicleType, distanceKm, durationMin,
                 passengerCount, promoCode, stops, sharedContacts,
-                country,
+                country, requireCode,
             } = req.body;
 
             if (!pickupAddress || !pickupLat || !dropoffAddress || !dropoffLat || !vehicleType || !distanceKm || !durationMin) {
@@ -133,6 +151,7 @@ export class RideController {
                 passengerCount,
                 promoCode,
                 country,
+                requireCode: !!requireCode,
                 stops,
                 sharedContacts,
             });
@@ -207,7 +226,7 @@ export class RideController {
         try {
             const ride = await this.rideService.getRideById(req.params.id);
             if (!ride) return res.status(404).json({ message: "Ride not found" });
-            return res.json({ ride });
+            return res.json({ ride: await this.rideService.withDriverStats(ride) });
         } catch (error) {
             log.error("Error getting ride", { error: (error as Error).message });
             return res.status(500).json({ message: "Internal server error" });
@@ -224,7 +243,7 @@ export class RideController {
             if (!userId) return res.status(401).json({ message: "User ID required" });
 
             const ride = await this.rideService.getActiveRide(userId);
-            return res.json({ ride });
+            return res.json({ ride: await this.rideService.withDriverStats(ride) });
         } catch (error) {
             log.error("Error getting active ride", { error: (error as Error).message });
             return res.status(500).json({ message: "Internal server error" });

@@ -1,6 +1,7 @@
 import { Server as HttpServer } from "http";
 import { Server, Socket } from "socket.io";
 import { RedisLocationService } from "./services/redis-location-service";
+import { RideMessageService } from "./services/ride-message-service";
 import { createServiceLogger } from "./utils/logger";
 
 const log = createServiceLogger("SocketGateway");
@@ -27,6 +28,7 @@ export function initSocketGateway(httpServer: HttpServer): Server {
     });
 
     const locationService = new RedisLocationService();
+    const rideMessageService = new RideMessageService();
 
     // ── /drivers namespace - used by driver apps ──
     const driversNs = io.of("/drivers");
@@ -87,6 +89,19 @@ export function initSocketGateway(httpServer: HttpServer): Server {
             }
         });
 
+        // Driver sends a chat message to the customer of a ride
+        socket.on("ride:message", async (data: { rideId: string; text: string }) => {
+            try {
+                const msg = await rideMessageService.send(data.rideId, driverId, "driver", data.text);
+                // Deliver to the customer's ride room and echo back to the driver.
+                io!.of("/rides").to(`ride:${data.rideId}`).emit("ride:message", msg);
+                socket.emit("ride:message", msg);
+            } catch (err) {
+                log.error("Driver ride message failed", { driverId, error: (err as Error).message });
+                socket.emit("ride:message:error", { error: (err as Error).message });
+            }
+        });
+
         socket.on("disconnect", async () => {
             log.info("Driver disconnected", { driverId, socketId: socket.id });
             // Don't remove location immediately - let TTL handle it
@@ -133,6 +148,21 @@ export function initSocketGateway(httpServer: HttpServer): Server {
 
         socket.on("order:unsubscribe", (data: { orderId: string }) => {
             socket.leave(`order:${data.orderId}`);
+        });
+
+        // Customer sends a chat message to the driver of a ride
+        socket.on("ride:message", async (data: { rideId: string; text: string }) => {
+            try {
+                const msg = await rideMessageService.send(data.rideId, userId, "customer", data.text);
+                // Deliver to the assigned driver's personal room and echo to the ride room.
+                if (msg.driverUserId) {
+                    io!.of("/drivers").to(`driver:${msg.driverUserId}`).emit("ride:message", msg);
+                }
+                io!.of("/rides").to(`ride:${data.rideId}`).emit("ride:message", msg);
+            } catch (err) {
+                log.error("Customer ride message failed", { userId, error: (err as Error).message });
+                socket.emit("ride:message:error", { error: (err as Error).message });
+            }
         });
 
         socket.on("disconnect", () => {

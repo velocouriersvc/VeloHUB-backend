@@ -17,6 +17,8 @@ import { createServiceLogger } from "../utils/logger";
 import { rideEventsTotal } from "../utils/metrics";
 import { PlatformSettings } from "../models/platform-settings";
 import { SettlementService } from "./settlement-service";
+import { Rating } from "../models/rating";
+import { PickupCodeService } from "./pickup-code-service";
 import { emitRideEvent } from "../socket-gateway";
 
 const log = createServiceLogger("RideService");
@@ -46,6 +48,7 @@ export interface RideRequest {
     passengerCount?: number;
     promoCode?: string;
     country?: string;
+    requireCode?: boolean;
     stops?: Array<{ address: string; lat: number; lng: number; stopOrder: number }>;
     sharedContacts?: Array<{ name: string; phone: string }>;
 }
@@ -55,6 +58,24 @@ export interface RideEstimate {
     availableDrivers: number;
     estimatedPickupMin: number;
 }
+
+/**
+ * Forward progress rank for ride lifecycle statuses. Lets the driver transitions be
+ * idempotent: re-tapping "I've arrived" or firing enroute after arriving is a safe
+ * no-op instead of a hard error, which is what left drivers stuck on "En Route".
+ * ACCEPTED / AWAITING_PAYMENT / PAID share rank 1 (payment settles in parallel).
+ */
+const STATUS_RANK: Record<RideStatus, number> = {
+    [RideStatus.SEARCHING]: 0,
+    [RideStatus.ACCEPTED]: 1,
+    [RideStatus.AWAITING_PAYMENT]: 1,
+    [RideStatus.PAID]: 1,
+    [RideStatus.DRIVER_ENROUTE]: 2,
+    [RideStatus.ARRIVED]: 3,
+    [RideStatus.ONGOING]: 4,
+    [RideStatus.COMPLETED]: 5,
+    [RideStatus.CANCELLED]: -1,
+};
 
 export class RideService {
     private rideRepo = AppDataSource.getRepository(Ride);
@@ -225,6 +246,8 @@ export class RideService {
             commission: fareBreakdown.rideCommission,
             driverPayout: fareBreakdown.driverPayout,
             passengerCount: request.passengerCount || 1,
+            requireCode: !!request.requireCode,
+            pickupCode: request.requireCode ? new PickupCodeService().generate() : null,
             status: RideStatus.SEARCHING,
         });
 
@@ -499,10 +522,11 @@ export class RideService {
     async driverEnroute(rideId: string, driverName: string): Promise<Ride> {
         const ride = await this.getRideOrFail(rideId);
 
-        // Payment (esp. cash) settles independently, so the driver is not blocked
-        // from departing. Only forbid final/later states.
-        const allowed = [RideStatus.ACCEPTED, RideStatus.AWAITING_PAYMENT, RideStatus.PAID];
-        if (!allowed.includes(ride.status)) {
+        // Idempotent: if the ride is already enroute or further along, do nothing (the
+        // nav screen fires this on mount). Only a searching/cancelled ride is invalid.
+        if (STATUS_RANK[ride.status] < 0) throw new Error("Ride is cancelled");
+        if (STATUS_RANK[ride.status] >= STATUS_RANK[RideStatus.DRIVER_ENROUTE]) return ride;
+        if (STATUS_RANK[ride.status] < STATUS_RANK[RideStatus.ACCEPTED]) {
             throw new Error("Ride is not ready for the driver to depart");
         }
 
@@ -524,10 +548,11 @@ export class RideService {
     async driverArrived(rideId: string, driverName: string): Promise<Ride> {
         const ride = await this.getRideOrFail(rideId);
 
-        // Allow marking arrived from any active pre-trip state (the driver may tap
-        // "I've arrived" without a separate enroute call).
-        const allowed = [RideStatus.ACCEPTED, RideStatus.AWAITING_PAYMENT, RideStatus.PAID, RideStatus.DRIVER_ENROUTE];
-        if (!allowed.includes(ride.status)) {
+        // Idempotent: already arrived (or on/after the trip) is a safe no-op, so a
+        // re-tap or an out-of-order call never throws "not in a state to mark arrived".
+        if (STATUS_RANK[ride.status] < 0) throw new Error("Ride is cancelled");
+        if (STATUS_RANK[ride.status] >= STATUS_RANK[RideStatus.ARRIVED]) return ride;
+        if (STATUS_RANK[ride.status] < STATUS_RANK[RideStatus.ACCEPTED]) {
             throw new Error("Ride is not in a state to mark arrived");
         }
 
@@ -546,13 +571,23 @@ export class RideService {
     /**
      * Step 6: Start the ride
      */
-    async startRide(rideId: string): Promise<Ride> {
+    async startRide(rideId: string, code?: string): Promise<Ride> {
         const ride = await this.getRideOrFail(rideId);
 
-        // Allow starting from arrived (normal) or en route (if arrived was skipped).
-        const allowed = [RideStatus.ARRIVED, RideStatus.DRIVER_ENROUTE];
-        if (!allowed.includes(ride.status)) {
+        // Idempotent: already ongoing/completed is a no-op. Allow starting from any
+        // active pre-trip state (arrived normally, or enroute/accepted if a step was
+        // skipped) so the trip is never blocked from beginning.
+        if (STATUS_RANK[ride.status] < 0) throw new Error("Ride is cancelled");
+        if (STATUS_RANK[ride.status] >= STATUS_RANK[RideStatus.ONGOING]) return ride;
+        if (STATUS_RANK[ride.status] < STATUS_RANK[RideStatus.ACCEPTED]) {
             throw new Error("Driver must have arrived at pickup");
+        }
+
+        // If the rider opted into a safety code, the driver must enter it to start.
+        if (ride.requireCode && ride.pickupCode) {
+            if (!code || code.trim().toUpperCase() !== ride.pickupCode.toUpperCase()) {
+                throw new Error("Incorrect pickup code");
+            }
         }
 
         ride.status = RideStatus.ONGOING;
@@ -577,6 +612,8 @@ export class RideService {
     async completeRide(rideId: string, completedBy: string = "system", role: "driver" | "system" | "admin" = "system"): Promise<Ride> {
         const ride = await this.getRideOrFail(rideId);
 
+        // Idempotent: a ride already completed is returned as-is (never settle twice).
+        if (ride.status === RideStatus.COMPLETED) return ride;
         if (ride.status !== RideStatus.ONGOING) {
             throw new Error("Ride must be ongoing to complete");
         }
@@ -737,6 +774,35 @@ export class RideService {
     }
 
     /**
+     * Real, public driver stats shown to the customer on an active ride (replaces the
+     * hardcoded 4.9 / "1,242 rides"). Average star rating + count of completed trips.
+     */
+    async getDriverPublicStats(driverUserId: string): Promise<{ rating: number; ratingCount: number; completedTrips: number }> {
+        const agg = await this.rideRepo.manager
+            .getRepository(Rating)
+            .createQueryBuilder("r")
+            .select("COALESCE(AVG(r.rating), 0)", "avg")
+            .addSelect("COUNT(r.id)", "cnt")
+            .where("r.driverId = :driverUserId", { driverUserId })
+            .getRawOne<{ avg: string; cnt: string }>();
+        const completedTrips = await this.rideRepo.count({
+            where: { driverId: driverUserId, status: RideStatus.COMPLETED },
+        });
+        return {
+            rating: agg ? Number(Number(agg.avg).toFixed(1)) : 0,
+            ratingCount: agg ? Number(agg.cnt) : 0,
+            completedTrips,
+        };
+    }
+
+    /** Attach real driver stats to a customer-facing ride response (no-op if unassigned). */
+    async withDriverStats(ride: Ride | null): Promise<any> {
+        if (!ride || !ride.driverId) return ride;
+        const driverStats = await this.getDriverPublicStats(ride.driverId);
+        return { ...ride, driverStats };
+    }
+
+    /**
      * Get driver's current active ride
      */
     async getDriverActiveRide(driverId: string): Promise<Ride | null> {
@@ -749,6 +815,7 @@ export class RideService {
             .leftJoinAndSelect("ride.stops", "stops")
             .leftJoinAndSelect("ride.driver", "driver")
             .leftJoinAndSelect("driver.driverProfile", "driverProfile")
+            .leftJoinAndSelect("ride.customer", "customer")
             .getOne();
     }
 

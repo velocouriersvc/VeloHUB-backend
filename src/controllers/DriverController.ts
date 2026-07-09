@@ -153,7 +153,7 @@ export class DriverController {
      */
     startRide = async (req: AuthRequest, res: Response) => {
         try {
-            const ride = await this.rideService.startRide(req.params.id);
+            const ride = await this.rideService.startRide(req.params.id, req.body?.code);
             return res.json({ ride });
         } catch (error) {
             log.error("Error starting ride", { error: (error as Error).message });
@@ -185,7 +185,19 @@ export class DriverController {
             if (!userId) return res.status(401).json({ message: "User ID required" });
 
             const ride = await this.rideService.getDriverActiveRide(userId);
-            return res.json({ ride });
+            if (!ride) return res.json({ ride: null });
+            // Flatten the customer's identity so the driver's nav/active-trip screen can
+            // show the real name and call them; strip the raw customer entity. Never leak
+            // the pickupCode to the driver - they must get it from the rider - but do tell
+            // them whether a code is required.
+            const { customer, pickupCode, ...rest } = ride as any;
+            return res.json({
+                ride: {
+                    ...rest,
+                    customerName: customer?.fullName ?? null,
+                    customerPhone: customer?.phoneNumber ?? null,
+                },
+            });
         } catch (error) {
             log.error("Error getting active ride", { error: (error as Error).message });
             return res.status(500).json({ message: "Internal server error" });
