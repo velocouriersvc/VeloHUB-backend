@@ -105,18 +105,29 @@ export class FareService {
         country: string = "GH",
         vertical: PricingVertical = PricingVertical.RIDES
     ): Promise<FareBreakdown> {
-        // 1. Get vehicle pricing for this country
-        const pricing = await this.pricingRepo.findOne({
+        // 1. Get vehicle pricing for this country; fall back to the US/USD baseline so a
+        // country without its own row still gets a working fare (global operation).
+        let pricing = await this.pricingRepo.findOne({
             where: { vehicleType, country, isActive: true },
         });
         if (!pricing) {
-            throw new Error(`No pricing found for vehicle type: ${vehicleType} in country: ${country}`);
+            pricing = await this.pricingRepo.findOne({
+                where: { vehicleType, country: "US", isActive: true },
+            });
+        }
+        if (!pricing) {
+            throw new Error(`No pricing found for vehicle type: ${vehicleType}`);
         }
 
-        // 2. Get platform settings for surge / fee / commission config
-        const settings = await this.settingsRepo.findOne({
+        // 2. Get platform settings for surge / fee / commission config; fall back to the
+        // global DEFAULT (USD) row, then US, so unknown countries still resolve config.
+        let settings = await this.settingsRepo.findOne({
             where: { country, isActive: true },
         });
+        if (!settings) {
+            settings = (await this.settingsRepo.findOne({ where: { country: "DEFAULT", isActive: true } }))
+                || (await this.settingsRepo.findOne({ where: { country: "US", isActive: true } }));
+        }
         const commissionRate = settings ? Number(settings.rideCommissionRate) / 100 : PLATFORM_COMMISSION_RATE;
         const serviceFeeRate = settings ? Number(settings.defaultServiceFeeRate) / 100 : SERVICE_FEE_RATE;
         const maxSurge = settings ? Number(settings.maxSurgeMultiplier) : MAX_SURGE_MULTIPLIER;

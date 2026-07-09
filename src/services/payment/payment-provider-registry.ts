@@ -19,11 +19,15 @@ export class PaymentProviderRegistry {
     constructor() {
         const paystack = new PaystackProvider();
         this.stripeProvider = new StripeProvider();
-        this.defaultProvider = paystack;
+        // Global default is Stripe (worldwide card support). Paystack stays mapped to the
+        // specific African markets it supports (mobile money + cards) below.
+        this.defaultProvider = this.stripeProvider;
 
-        // Ghana & Nigeria - Paystack
+        // Paystack markets (mobile money + cards): Ghana, Nigeria, Kenya, South Africa.
         this.providers.set("GH", paystack);
         this.providers.set("NG", paystack);
+        this.providers.set("KE", paystack);
+        this.providers.set("ZA", paystack);
 
         // North America & Europe - Stripe
         const stripeCountries = [

@@ -399,17 +399,17 @@ export async function seedPlatformSettings(alreadyInitialised = false) {
 
     console.log(`✅ platform_settings: upserted ${upserted} rows`);
 
-    // Velo operates in Africa only - deactivate any non-African markets (US/CA/IN/etc.).
-    const AFRICAN_COUNTRIES = ["GH", "NG", "KE", "ZA", "TZ", "UG"];
-    const deactivated = await repo
-        .createQueryBuilder()
-        .update()
-        .set({ isActive: false })
-        .where("country NOT IN (:...countries)", { countries: AFRICAN_COUNTRIES })
-        .andWhere("isActive = true")
-        .execute();
-    if (deactivated.affected) {
-        console.log(`✅ platform_settings: deactivated ${deactivated.affected} non-African market(s)`);
+    // Velo operates globally now. Re-activate every seeded market and ensure a global
+    // "DEFAULT" (USD) row exists as the fallback for any country without a specific row.
+    await repo.createQueryBuilder().update().set({ isActive: true }).where("isActive = false").execute();
+    const hasDefault = await repo.findOne({ where: { country: "DEFAULT" } });
+    if (!hasDefault) {
+        const us = await repo.findOne({ where: { country: "US" } });
+        if (us) {
+            const { id, ...rest } = us as any;
+            await repo.save(repo.create({ ...rest, country: "DEFAULT", currency: "USD", isActive: true }));
+            console.log("✅ platform_settings: created global DEFAULT (USD) fallback row");
+        }
     }
 
     if (!alreadyInitialised) {
