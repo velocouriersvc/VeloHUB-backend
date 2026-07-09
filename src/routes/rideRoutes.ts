@@ -164,6 +164,20 @@ router.get("/scheduled", requireRole(["buyer"]), scheduledRideController.list);
 
 /**
  * @openapi
+ * /rides/{id}/messages:
+ *   get:
+ *     tags: [Rides]
+ *     summary: Chat history for a ride (customer or driver)
+ *     security:
+ *       - ApiKeyAuth: []
+ *     responses:
+ *       200:
+ *         description: Array of ride messages (oldest first)
+ */
+router.get("/:id/messages", requireRole(["buyer", "driver"]), rideController.getMessages);
+
+/**
+ * @openapi
  * /rides/scheduled/{id}/cancel:
  *   post:
  *     tags: [Rides]
