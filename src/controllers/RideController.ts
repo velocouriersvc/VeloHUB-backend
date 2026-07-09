@@ -129,7 +129,7 @@ export class RideController {
                 dropoffAddress, dropoffLat, dropoffLng,
                 vehicleType, distanceKm, durationMin,
                 passengerCount, promoCode, stops, sharedContacts,
-                country,
+                country, requireCode,
             } = req.body;
 
             if (!pickupAddress || !pickupLat || !dropoffAddress || !dropoffLat || !vehicleType || !distanceKm || !durationMin) {
@@ -151,6 +151,7 @@ export class RideController {
                 passengerCount,
                 promoCode,
                 country,
+                requireCode: !!requireCode,
                 stops,
                 sharedContacts,
             });

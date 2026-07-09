@@ -148,6 +148,14 @@ export class Ride {
     @Column({ type: "int", default: 15 })
     searchRadiusKm: number;
 
+    // Optional safety pickup code the rider opts into at booking. When set, the driver
+    // must enter it (obtained from the rider) to start the trip.
+    @Column({ type: "boolean", default: false })
+    requireCode: boolean;
+
+    @Column({ type: "varchar", length: 6, nullable: true })
+    pickupCode: string | null;
+
     // Timestamps
     @CreateDateColumn()
     createdAt: Date;

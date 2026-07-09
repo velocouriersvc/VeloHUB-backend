@@ -18,6 +18,7 @@ import { rideEventsTotal } from "../utils/metrics";
 import { PlatformSettings } from "../models/platform-settings";
 import { SettlementService } from "./settlement-service";
 import { Rating } from "../models/rating";
+import { PickupCodeService } from "./pickup-code-service";
 import { emitRideEvent } from "../socket-gateway";
 
 const log = createServiceLogger("RideService");
@@ -47,6 +48,7 @@ export interface RideRequest {
     passengerCount?: number;
     promoCode?: string;
     country?: string;
+    requireCode?: boolean;
     stops?: Array<{ address: string; lat: number; lng: number; stopOrder: number }>;
     sharedContacts?: Array<{ name: string; phone: string }>;
 }
@@ -244,6 +246,8 @@ export class RideService {
             commission: fareBreakdown.rideCommission,
             driverPayout: fareBreakdown.driverPayout,
             passengerCount: request.passengerCount || 1,
+            requireCode: !!request.requireCode,
+            pickupCode: request.requireCode ? new PickupCodeService().generate() : null,
             status: RideStatus.SEARCHING,
         });
 
@@ -567,7 +571,7 @@ export class RideService {
     /**
      * Step 6: Start the ride
      */
-    async startRide(rideId: string): Promise<Ride> {
+    async startRide(rideId: string, code?: string): Promise<Ride> {
         const ride = await this.getRideOrFail(rideId);
 
         // Idempotent: already ongoing/completed is a no-op. Allow starting from any
@@ -577,6 +581,13 @@ export class RideService {
         if (STATUS_RANK[ride.status] >= STATUS_RANK[RideStatus.ONGOING]) return ride;
         if (STATUS_RANK[ride.status] < STATUS_RANK[RideStatus.ACCEPTED]) {
             throw new Error("Driver must have arrived at pickup");
+        }
+
+        // If the rider opted into a safety code, the driver must enter it to start.
+        if (ride.requireCode && ride.pickupCode) {
+            if (!code || code.trim().toUpperCase() !== ride.pickupCode.toUpperCase()) {
+                throw new Error("Incorrect pickup code");
+            }
         }
 
         ride.status = RideStatus.ONGOING;
