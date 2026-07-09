@@ -207,7 +207,7 @@ export class RideController {
         try {
             const ride = await this.rideService.getRideById(req.params.id);
             if (!ride) return res.status(404).json({ message: "Ride not found" });
-            return res.json({ ride });
+            return res.json({ ride: await this.rideService.withDriverStats(ride) });
         } catch (error) {
             log.error("Error getting ride", { error: (error as Error).message });
             return res.status(500).json({ message: "Internal server error" });
@@ -224,7 +224,7 @@ export class RideController {
             if (!userId) return res.status(401).json({ message: "User ID required" });
 
             const ride = await this.rideService.getActiveRide(userId);
-            return res.json({ ride });
+            return res.json({ ride: await this.rideService.withDriverStats(ride) });
         } catch (error) {
             log.error("Error getting active ride", { error: (error as Error).message });
             return res.status(500).json({ message: "Internal server error" });

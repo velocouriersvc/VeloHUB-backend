@@ -9,8 +9,20 @@ import { emitToDriver } from "../socket-gateway";
 
 const log = createServiceLogger("DriverMatchService");
 
-// Search radius escalation in km
-const SEARCH_RADII = [15, 30, 45];
+// Driver search radius in km (20 km catchment per requirement)
+const SEARCH_RADII = [20];
+
+// A requested tier can be served by these driver vehicle types. Priority is a premium
+// car tier (car x1.25), so car and priority drivers are mutually compatible. Without
+// this, requests silently dropped when no driver held the EXACT tier - the reason some
+// drivers (e.g. a car driver in a market that requests priority) never saw requests.
+const VEHICLE_COMPATIBILITY: Record<string, VehicleType[]> = {
+    [VehicleType.BIKE]: [VehicleType.BIKE],
+    [VehicleType.CAR]: [VehicleType.CAR, VehicleType.PRIORITY],
+    [VehicleType.PRIORITY]: [VehicleType.PRIORITY, VehicleType.CAR],
+    [VehicleType.SUV]: [VehicleType.SUV],
+    [VehicleType.TRUCK]: [VehicleType.TRUCK],
+};
 
 export interface MatchedDriver {
     driverId: string;
@@ -97,8 +109,10 @@ export class DriverMatchService {
 
             if (!profile) continue;
 
-            // Match vehicle type
-            if (profile.vehicleType !== vehicleType) continue;
+            // Match vehicle type by compatibility (not strict equality), so a car/priority
+            // request reaches both car and priority drivers.
+            const compatible: string[] = VEHICLE_COMPATIBILITY[vehicleType] || [vehicleType];
+            if (!compatible.includes(profile.vehicleType)) continue;
 
             matched.push({
                 driverId: profile.id,
