@@ -194,7 +194,10 @@ export class DriverController {
             return res.json({
                 ride: {
                     ...rest,
-                    customerName: customer?.fullName ?? null,
+                    // User has no name column; resolve from the profile relations.
+                    customerName: customer?.buyerProfile?.fullName
+                        ?? customer?.userProfile?.fullName
+                        ?? null,
                     customerPhone: customer?.phoneNumber ?? null,
                 },
             });

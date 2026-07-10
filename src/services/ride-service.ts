@@ -816,6 +816,9 @@ export class RideService {
             .leftJoinAndSelect("ride.driver", "driver")
             .leftJoinAndSelect("driver.driverProfile", "driverProfile")
             .leftJoinAndSelect("ride.customer", "customer")
+            // User has no name column; display names live on the profile relations.
+            .leftJoinAndSelect("customer.buyerProfile", "customerBuyerProfile")
+            .leftJoinAndSelect("customer.userProfile", "customerUserProfile")
             .getOne();
     }
 
