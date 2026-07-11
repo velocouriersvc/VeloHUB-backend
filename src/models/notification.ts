@@ -71,6 +71,9 @@ export enum NotificationType {
     SERVICE_STARTED = "service_started",
     SERVICE_COMPLETED = "service_completed",
     SERVICE_CANCELLED = "service_cancelled",
+
+    // Chat
+    MESSAGE_RECEIVED = "message_received",
 }
 
 @Entity("notifications")

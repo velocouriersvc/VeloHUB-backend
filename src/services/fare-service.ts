@@ -25,13 +25,13 @@ const VEHICLE_DISPLAY_NAMES: Record<string, Record<string, string>> = {
     US: {
         bike:  "Velo Go",       // Entry-level, no physical bikes
         car:   "Velo Standard", // Standard sedan
-        suv:   "Velo Comfort",  // SUV (also shown as Velo XL on frontend - same pricing)
+        suv:   "Velo Premium",  // SUV tier (aligned with the global "Velo Premium" name)
         truck: "Velo Truck",    // Truck / heavy load
     },
     CA: {
         bike:  "Velo Go",
         car:   "Velo Standard",
-        suv:   "Velo Comfort",
+        suv:   "Velo Premium",
         truck: "Velo Truck",
     },
     // Ghana & Nigeria keep the original brand names

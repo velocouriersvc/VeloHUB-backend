@@ -2,6 +2,8 @@ import { Server as HttpServer } from "http";
 import { Server, Socket } from "socket.io";
 import { RedisLocationService } from "./services/redis-location-service";
 import { RideMessageService } from "./services/ride-message-service";
+import { NotificationService } from "./services/notification-service";
+import { NotificationType } from "./models/notification";
 import { createServiceLogger } from "./utils/logger";
 
 const log = createServiceLogger("SocketGateway");
@@ -29,6 +31,14 @@ export function initSocketGateway(httpServer: HttpServer): Server {
 
     const locationService = new RedisLocationService();
     const rideMessageService = new RideMessageService();
+    const notificationService = new NotificationService();
+
+    // Best-effort push + in-app notification for a chat message (never blocks the relay).
+    const notifyChatMessage = (recipientId: string, text: string, rideId: string, screen: string) => {
+        notificationService
+            .notify(recipientId, NotificationType.MESSAGE_RECEIVED, "New message 💬", text, { rideId, screen })
+            .catch((err) => log.warn("Chat push failed", { recipientId, error: (err as Error).message }));
+    };
 
     // ── /drivers namespace - used by driver apps ──
     const driversNs = io.of("/drivers");
@@ -96,6 +106,7 @@ export function initSocketGateway(httpServer: HttpServer): Server {
                 // Deliver to the customer's ride room and echo back to the driver.
                 io!.of("/rides").to(`ride:${data.rideId}`).emit("ride:message", msg);
                 socket.emit("ride:message", msg);
+                notifyChatMessage(msg.customerId, msg.text, data.rideId, "rides");
             } catch (err) {
                 log.error("Driver ride message failed", { driverId, error: (err as Error).message });
                 socket.emit("ride:message:error", { error: (err as Error).message });
@@ -157,6 +168,7 @@ export function initSocketGateway(httpServer: HttpServer): Server {
                 // Deliver to the assigned driver's personal room and echo to the ride room.
                 if (msg.driverUserId) {
                     io!.of("/drivers").to(`driver:${msg.driverUserId}`).emit("ride:message", msg);
+                    notifyChatMessage(msg.driverUserId, msg.text, data.rideId, "driver-rides");
                 }
                 io!.of("/rides").to(`ride:${data.rideId}`).emit("ride:message", msg);
             } catch (err) {

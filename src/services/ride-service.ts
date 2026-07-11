@@ -561,7 +561,8 @@ export class RideService {
         log.info("Driver arrived at pickup", { rideId });
 
         await this.redisLocation.setRideTracking(rideId, { status: RideStatus.ARRIVED });
-        await this.notificationService.notifyDriverArrived(ride.customerId, driverName, rideId);
+        // Include the safety PIN in the arrival push so it's on the lock screen when needed.
+        await this.notificationService.notifyDriverArrived(ride.customerId, driverName, rideId, ride.requireCode ? ride.pickupCode : null);
 
         emitRideEvent(rideId, "ride:status", { rideId, status: RideStatus.ARRIVED, driverName });
 
@@ -627,14 +628,18 @@ export class RideService {
 
         // Fetch refreshed ride
         const updated = await this.getRideOrFail(rideId);
-        
-        // Clean up Redis
-        await this.redisLocation.removeRideTracking(rideId);
-        if (updated.driverId) {
-            await this.redisLocation.setDriverStatus(updated.driverId, "online");
-        }
 
-        emitRideEvent(rideId, "ride:status", { rideId, status: RideStatus.COMPLETED });
+        // Best-effort cleanup: settlement is already durable, so a Redis/socket hiccup
+        // here must never bubble a 400 to the driver after their money has moved.
+        try {
+            await this.redisLocation.removeRideTracking(rideId);
+            if (updated.driverId) {
+                await this.redisLocation.setDriverStatus(updated.driverId, "online");
+            }
+            emitRideEvent(rideId, "ride:status", { rideId, status: RideStatus.COMPLETED });
+        } catch (err) {
+            log.warn("Post-settlement cleanup failed (ride is settled)", { rideId, error: (err as Error).message });
+        }
 
         return updated;
     }
@@ -777,7 +782,7 @@ export class RideService {
      * Real, public driver stats shown to the customer on an active ride (replaces the
      * hardcoded 4.9 / "1,242 rides"). Average star rating + count of completed trips.
      */
-    async getDriverPublicStats(driverUserId: string): Promise<{ rating: number; ratingCount: number; completedTrips: number }> {
+    async getDriverPublicStats(driverUserId: string): Promise<{ rating: number; ratingCount: number; completedTrips: number; totalEarnings: number }> {
         const agg = await this.rideRepo.manager
             .getRepository(Rating)
             .createQueryBuilder("r")
@@ -785,20 +790,26 @@ export class RideService {
             .addSelect("COUNT(r.id)", "cnt")
             .where("r.driverId = :driverUserId", { driverUserId })
             .getRawOne<{ avg: string; cnt: string }>();
-        const completedTrips = await this.rideRepo.count({
-            where: { driverId: driverUserId, status: RideStatus.COMPLETED },
-        });
+        const rideAgg = await this.rideRepo
+            .createQueryBuilder("ride")
+            .select("COUNT(ride.id)", "cnt")
+            .addSelect("COALESCE(SUM(ride.driverPayout), 0)", "earnings")
+            .where("ride.driverId = :driverUserId", { driverUserId })
+            .andWhere("ride.status = :status", { status: RideStatus.COMPLETED })
+            .getRawOne<{ cnt: string; earnings: string }>();
         return {
             rating: agg ? Number(Number(agg.avg).toFixed(1)) : 0,
             ratingCount: agg ? Number(agg.cnt) : 0,
-            completedTrips,
+            completedTrips: rideAgg ? Number(rideAgg.cnt) : 0,
+            totalEarnings: rideAgg ? Number(Number(rideAgg.earnings).toFixed(2)) : 0,
         };
     }
 
     /** Attach real driver stats to a customer-facing ride response (no-op if unassigned). */
     async withDriverStats(ride: Ride | null): Promise<any> {
         if (!ride || !ride.driverId) return ride;
-        const driverStats = await this.getDriverPublicStats(ride.driverId);
+        // Earnings are private to the driver - never expose them to the customer.
+        const { totalEarnings, ...driverStats } = await this.getDriverPublicStats(ride.driverId);
         return { ...ride, driverStats };
     }
 
