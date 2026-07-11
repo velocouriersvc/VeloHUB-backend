@@ -164,6 +164,12 @@ export function initSocketGateway(httpServer: HttpServer): Server {
         // Customer sends a chat message to the driver of a ride
         socket.on("ride:message", async (data: { rideId: string; text: string }) => {
             try {
+                // An unidentified socket (no userId in the handshake) cannot chat - fail
+                // cleanly instead of hitting the senderId NOT NULL constraint.
+                if (!userId) {
+                    socket.emit("ride:message:error", { error: "Not identified - reconnect and try again" });
+                    return;
+                }
                 const msg = await rideMessageService.send(data.rideId, userId, "customer", data.text);
                 // Deliver to the assigned driver's personal room and echo to the ride room.
                 if (msg.driverUserId) {
