@@ -65,6 +65,8 @@ export interface CheckoutInput {
     promoCode?: string;
     customerNote?: string;
     phoneNumber?: string;
+    /** Opt-in delivery PIN (off by default). */
+    requireDeliveryCode?: boolean;
 }
 
 export interface CheckoutResult {
@@ -312,13 +314,15 @@ export class OrderService {
             const settings = await this.getSettings(country);
             const currency = settings?.currency || "GHS";
 
-            // 8. Generate pickup and delivery codes for delivery orders
+            // 8. Generate pickup and delivery codes. The delivery PIN is opt-in at
+            // checkout (like ride pickup codes); the merchant pickup code stays as-is.
             let pickupCode: string | null = null;
             let deliveryCode: string | null = null;
             if (input.deliveryType === DeliveryType.PICKUP || input.deliveryType === DeliveryType.DELIVERY) {
                 pickupCode = this.pickupCodeService.generate();
             }
-            if (input.deliveryType === DeliveryType.DELIVERY) {
+            const requireDeliveryCode = !!input.requireDeliveryCode;
+            if (input.deliveryType === DeliveryType.DELIVERY && requireDeliveryCode) {
                 deliveryCode = this.pickupCodeService.generate();
             }
 
@@ -347,6 +351,7 @@ export class OrderService {
                 deliveryLng: input.deliveryLng || null,
                 pickupCode,
                 deliveryCode,
+                requireDeliveryCode,
                 pickupCodeVerifiedAt: null,
                 deliveryCodeVerifiedAt: null,
                 status: OrderStatus.PENDING,
@@ -503,7 +508,7 @@ export class OrderService {
                 await this.notificationService.notify(
                     userId,
                     NotificationType.PICKUP_CODE_GENERATED,
-                    input.deliveryType === DeliveryType.DELIVERY ? "Your Delivery Codes 🔐" : "Your Pickup Code 📦",
+                    deliveryCode ? "Your Delivery Codes 🔐" : "Your Pickup Code 📦",
                     codeMessage,
                     {
                         orderId: savedOrder.id,

@@ -326,8 +326,9 @@ export class NotificationService {
         return this.notify(customerId, NotificationType.DRIVER_ENROUTE, "Driver En Route 🛣️", `${driverName} is heading to your pickup`, { rideId, screen: "rides", deepLink: `velohub://rides?rideId=${rideId}` });
     }
 
-    async notifyDriverArrived(customerId: string, driverName: string, rideId: string) {
-        return this.notify(customerId, NotificationType.DRIVER_ARRIVED, "Driver Arrived! 📍", `${driverName} has arrived at your pickup location`, { rideId, screen: "rides", deepLink: `velohub://rides?rideId=${rideId}` });
+    async notifyDriverArrived(customerId: string, driverName: string, rideId: string, pickupCode?: string | null) {
+        const codeSuffix = pickupCode ? ` Your pickup code: ${pickupCode}` : "";
+        return this.notify(customerId, NotificationType.DRIVER_ARRIVED, "Driver Arrived! 📍", `${driverName} has arrived at your pickup location.${codeSuffix}`, { rideId, screen: "rides", deepLink: `velohub://rides?rideId=${rideId}` });
     }
 
     async notifyRideStarted(customerId: string, rideId: string) {

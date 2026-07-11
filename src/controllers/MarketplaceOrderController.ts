@@ -94,6 +94,7 @@ export class MarketplaceOrderController {
                 promoCode,
                 customerNote,
                 phoneNumber,
+                requireDeliveryCode,
             } = req.body;
 
             // Validate deliveryType
@@ -138,6 +139,7 @@ export class MarketplaceOrderController {
                 promoCode,
                 customerNote,
                 phoneNumber: phoneNumber || req.user?.phoneNumber,
+                requireDeliveryCode: !!requireDeliveryCode,
             };
 
             const result = await this.orderService.checkout(userId, input);

@@ -19,6 +19,10 @@ export class DriverProfile {
     @Column({ type: "varchar", length: 255 })
     fullName: string;
 
+    // Driver's portrait, shown to customers on the ride tracking card.
+    @Column({ type: "text", nullable: true })
+    photoUrl: string | null;
+
     @Column({ type: "varchar", length: 100 })
     licenseNumber: string;
 

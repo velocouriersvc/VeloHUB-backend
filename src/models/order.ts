@@ -151,6 +151,10 @@ export class Order {
     @Column({ type: "varchar", length: 6, nullable: true })
     deliveryCode: string | null;
 
+    // Customer opted into a delivery PIN at checkout (off by default, like ride codes).
+    @Column({ type: "boolean", default: false })
+    requireDeliveryCode: boolean;
+
     @Column({ type: "timestamp", nullable: true })
     pickupCodeVerifiedAt: Date | null;
 

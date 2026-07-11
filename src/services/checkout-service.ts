@@ -16,6 +16,7 @@ export interface ProductOrderCheckoutInput {
     promoCode?: string;
     customerNote?: string;
     phoneNumber?: string;
+    requireDeliveryCode?: boolean;
 }
 
 export interface ProductOrderWithDeliveryCheckoutInput {
@@ -34,6 +35,7 @@ export interface ProductOrderWithDeliveryCheckoutInput {
     promoCode?: string;
     customerNote?: string;
     phoneNumber?: string;
+    requireDeliveryCode?: boolean;
     stops?: Array<{ address: string; lat: number; lng: number; stopOrder: number }>;
     sharedContacts?: Array<{ name: string; phone: string }>;
 }
@@ -70,6 +72,7 @@ export class CheckoutService {
                 promoCode: input.promoCode,
                 customerNote: input.customerNote,
                 phoneNumber: input.phoneNumber,
+                requireDeliveryCode: input.requireDeliveryCode,
             });
             return {
                 kind: input.kind,
@@ -92,6 +95,7 @@ export class CheckoutService {
                 promoCode: input.promoCode,
                 customerNote: input.customerNote,
                 phoneNumber: input.phoneNumber,
+                requireDeliveryCode: input.requireDeliveryCode,
             });
 
             let ride = null;

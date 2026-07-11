@@ -253,8 +253,17 @@ export class DriverController {
             const userId = req.user?.id;
             if (!userId) return res.status(401).json({ message: "User ID required" });
 
-            const stats = await this.ratingService.getOrCreateDriverStats(userId);
-            return res.json({ stats });
+            // Compute live from rides + ratings so the dashboard is correct the moment a
+            // ride completes (the DriverStats table only updates when a rating arrives).
+            const live = await this.rideService.getDriverPublicStats(userId);
+            return res.json({
+                stats: {
+                    averageRating: live.rating,
+                    totalRatings: live.ratingCount,
+                    totalRides: live.completedTrips,
+                    totalEarnings: live.totalEarnings,
+                },
+            });
         } catch (error) {
             log.error("Error getting stats", { error: (error as Error).message });
             return res.status(500).json({ message: "Internal server error" });
@@ -338,11 +347,12 @@ export class DriverController {
                 return res.status(404).json({ message: "Driver profile not found" });
             }
 
-            const { fullName, vehicleModel, vehicleColor, plateNumber } = req.body;
+            const { fullName, vehicleModel, vehicleColor, plateNumber, photoUrl } = req.body;
             if (fullName) driverProfile.fullName = fullName;
             if (vehicleModel) driverProfile.vehicleModel = vehicleModel;
             if (vehicleColor) driverProfile.vehicleColor = vehicleColor;
             if (plateNumber) driverProfile.plateNumber = plateNumber;
+            if (photoUrl) driverProfile.photoUrl = photoUrl;
 
             await this.driverProfileRepo.save(driverProfile);
 
