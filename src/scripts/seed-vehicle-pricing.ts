@@ -1,24 +1,20 @@
 import "dotenv/config";
 import { AppDataSource } from "../db/data-source";
 import { VehiclePricing, VehicleType } from "../models/vehicle-pricing";
+import { Zone } from "../models/zone";
 
 /**
- * Vehicle pricing per country - client-specified rates.
+ * Vehicle pricing per country - client-specified rates (July 2026 price book).
  *
- * US (base market):
- *   Base Fare $2.00, Per Mile $1.00 (→ per-km ÷1.609), Per Minute $0.20
- *   Minimum Fare: ~$5.00
- *   Rider Service Fee: $1.99 (stored in platform_settings, not here)
- *
- * Nigeria:
- *   Base Fare ₦600, Per Km ₦120, Per Min ₦25
- *   Minimum Fare: ₦1,200
- *   Rider Service Fee: ₦400 (stored in platform_settings)
- *
- * Ghana / Canada / India: proportional to US base.
+ * VERSIONED SEEDING: the full upsert (which overwrites rows) only runs when
+ * PRICING_SEED_VERSION increases, so admin edits made in the dashboard SURVIVE
+ * pod restarts. On ordinary boots the seed only inserts missing rows.
+ * Bump PRICING_SEED_VERSION whenever the price book below changes.
  */
+export const PRICING_SEED_VERSION = 2;
 
 const MI_TO_KM = 1.60934;
+const perMile = (v: number) => +(v / MI_TO_KM).toFixed(4);
 
 interface PricingRow {
     vehicleType: VehicleType;
@@ -28,54 +24,50 @@ interface PricingRow {
     pricePerMin: number;
     minimumFare: number;
     bookingFee?: number;
+    bookingFeePercent?: number;
+    roadLevy?: number;
     riderServiceFee: number;
     maxPassengers: number;
 }
 
-// ── US: CLIENT PRICING April 23 2026 ───────────────────────────────
-// Per-mile rates converted to per-km (÷ 1.60934)
-// All US vehicles share $3.00 service fee per client spec
-//   Velo Go      $30 est  | bike  | base 1.00 | $1.30/mi → $0.81/km | $0.13/min | min $10
-//   Velo Standard $44 est | car   | base 2.50 | $1.90/mi → $1.18/km | $0.21/min | min $10
-//   Velo Comfort  $85 est | suv   | base 6.00 | $3.80/mi → $2.36/km | $0.38/min | min $15
-//   Velo XL       $85 est | suv   | (same as Comfort - frontend shows as separate tier)
-//   Velo Truck   $142 est | truck | base 15.00| $6.20/mi → $3.85/km | $0.72/min | min $25
-const US_PRICING: PricingRow[] = [
-    { vehicleType: VehicleType.BIKE,  country: "US", basePrice: 1.00,  pricePerKm: 0.81, pricePerMin: 0.13, minimumFare: 10.00, riderServiceFee: 3.00, maxPassengers: 1 },
-    { vehicleType: VehicleType.CAR,   country: "US", basePrice: 2.50,  pricePerKm: 1.18, pricePerMin: 0.21, minimumFare: 10.00, riderServiceFee: 3.00, maxPassengers: 4 },
-    { vehicleType: VehicleType.SUV,   country: "US", basePrice: 6.00,  pricePerKm: 2.36, pricePerMin: 0.38, minimumFare: 15.00, riderServiceFee: 3.00, maxPassengers: 6 },
-    { vehicleType: VehicleType.TRUCK, country: "US", basePrice: 15.00, pricePerKm: 3.85, pricePerMin: 0.72, minimumFare: 25.00, riderServiceFee: 3.00, maxPassengers: 2 },
-];
-
-// ── Nigeria: client pricing (NGN) - UPDATED July 2026 ──────────────────
-// Exact client-specified fares (NOT subject to the global 20% increase below).
-//   Velo Bikes    (bike)     base 500  | 95/km  | 20/min | booking 200
-//   Velo Basic    (car)      base 1000 | 150/km | 30/min | booking 350
-//   Velo Priority (priority) = Velo Basic x ~1.25 (client range 1.16-1.35)
-//   Velo Premium  (suv)      base 1200 | 210/km | 35/min | booking 500
-//   Velo Trucks   (truck)    base 2500 | 265/km | 35/min | booking 250
-// Service fee is 5% of subtotal (riderServiceFee column unused for NG).
-const NG_PRICING: PricingRow[] = [
-    { vehicleType: VehicleType.BIKE,     country: "NG", basePrice: 500,  pricePerKm: 95,    pricePerMin: 20,   minimumFare: 700,  bookingFee: 200,   riderServiceFee: 0, maxPassengers: 1 },
-    { vehicleType: VehicleType.CAR,      country: "NG", basePrice: 1000, pricePerKm: 150,   pricePerMin: 30,   minimumFare: 1350, bookingFee: 350,   riderServiceFee: 0, maxPassengers: 4 },
-    { vehicleType: VehicleType.PRIORITY, country: "NG", basePrice: 1250, pricePerKm: 187.50, pricePerMin: 37.50, minimumFare: 1690, bookingFee: 437.50, riderServiceFee: 0, maxPassengers: 4 },
-    { vehicleType: VehicleType.SUV,      country: "NG", basePrice: 1200, pricePerKm: 210,   pricePerMin: 35,   minimumFare: 1700, bookingFee: 500,   riderServiceFee: 0, maxPassengers: 6 },
-    { vehicleType: VehicleType.TRUCK,    country: "NG", basePrice: 2500, pricePerKm: 265,   pricePerMin: 35,   minimumFare: 2750, bookingFee: 250,   riderServiceFee: 0, maxPassengers: 2 },
-];
-
-// ── Ghana: Dynamic Fare Architecture (GHS) - UPDATED June 19, 2026 ──
-// Standard tier (car) is the client-spec baseline: Base GH₵6.00, GH₵2.20/km, GH₵0.40/min.
-// Other tiers scale off the standard: bike 0.75x, suv 1.5x, truck 2.5x.
-// Service fee is now 5% of subtotal (NOT a flat fee) - riderServiceFee column unused.
+// ── Ghana (GHS) - exact client spec, July 2026 ──────────────────────
+// bikes 10 + 1.50/km + 0.30/min + fee 2 | basic 15 + 2.20 + 0.45 + 3
+// premium(suv) 20 + 3.00 + 0.60 + 4.50 | trucks 40 + 4.50 + 0.80 + 7
+// minimumFare = base fare so small fees are never swallowed by the floor.
 const GH_PRICING: PricingRow[] = [
-    { vehicleType: VehicleType.BIKE, country: "GH", basePrice: 4.50,  pricePerKm: 1.65, pricePerMin: 0.30, minimumFare: 8.00,  riderServiceFee: 0, maxPassengers: 1 },
-    { vehicleType: VehicleType.CAR,  country: "GH", basePrice: 6.00,  pricePerKm: 2.20, pricePerMin: 0.40, minimumFare: 10.00, riderServiceFee: 0, maxPassengers: 4 },
-    { vehicleType: VehicleType.SUV,  country: "GH", basePrice: 9.00,  pricePerKm: 3.30, pricePerMin: 0.60, minimumFare: 15.00, riderServiceFee: 0, maxPassengers: 6 },
-    { vehicleType: VehicleType.TRUCK, country: "GH", basePrice: 15.00, pricePerKm: 5.50, pricePerMin: 1.00, minimumFare: 25.00, riderServiceFee: 0, maxPassengers: 2 },
+    { vehicleType: VehicleType.BIKE,  country: "GH", basePrice: 10.00, pricePerKm: 1.50, pricePerMin: 0.30, minimumFare: 10.00, bookingFee: 2.00, riderServiceFee: 0, maxPassengers: 1 },
+    { vehicleType: VehicleType.CAR,   country: "GH", basePrice: 15.00, pricePerKm: 2.20, pricePerMin: 0.45, minimumFare: 15.00, bookingFee: 3.00, riderServiceFee: 0, maxPassengers: 4 },
+    { vehicleType: VehicleType.SUV,   country: "GH", basePrice: 20.00, pricePerKm: 3.00, pricePerMin: 0.60, minimumFare: 20.00, bookingFee: 4.50, riderServiceFee: 0, maxPassengers: 6 },
+    { vehicleType: VehicleType.TRUCK, country: "GH", basePrice: 40.00, pricePerKm: 4.50, pricePerMin: 0.80, minimumFare: 40.00, bookingFee: 7.00, riderServiceFee: 0, maxPassengers: 2 },
 ];
 
-// ── Kenya (KES): competitive Nairobi rates (Bolt/Uber benchmarked) ──
-// Target ~KES 630 for a 10km/20min car trip. ⚠️ Validate against live market before launch.
+// ── USA (USD) - exact client spec, PER-MILE rates stored per-km ─────
+const US_PRICING: PricingRow[] = [
+    { vehicleType: VehicleType.BIKE,  country: "US", basePrice: 2.00,  pricePerKm: perMile(0.65), pricePerMin: 0.20, minimumFare: 2.00,  bookingFee: 2.50, riderServiceFee: 0, maxPassengers: 1 },
+    { vehicleType: VehicleType.CAR,   country: "US", basePrice: 3.00,  pricePerKm: perMile(1.35), pricePerMin: 0.35, minimumFare: 3.00,  bookingFee: 4.00, riderServiceFee: 0, maxPassengers: 4 },
+    { vehicleType: VehicleType.SUV,   country: "US", basePrice: 5.50,  pricePerKm: perMile(2.45), pricePerMin: 0.55, minimumFare: 5.50,  bookingFee: 5.50, riderServiceFee: 0, maxPassengers: 6 },
+    { vehicleType: VehicleType.TRUCK, country: "US", basePrice: 12.00, pricePerKm: perMile(3.75), pricePerMin: 0.70, minimumFare: 12.00, bookingFee: 8.00, riderServiceFee: 0, maxPassengers: 2 },
+];
+
+// ── Canada (CAD) - exact client spec (already per-km) ───────────────
+const CA_PRICING: PricingRow[] = [
+    { vehicleType: VehicleType.BIKE,  country: "CA", basePrice: 2.50,  pricePerKm: 0.45, pricePerMin: 0.25, minimumFare: 2.50,  bookingFee: 3.00, riderServiceFee: 0, maxPassengers: 1 },
+    { vehicleType: VehicleType.CAR,   country: "CA", basePrice: 3.75,  pricePerKm: 0.95, pricePerMin: 0.40, minimumFare: 3.75,  bookingFee: 4.50, riderServiceFee: 0, maxPassengers: 4 },
+    { vehicleType: VehicleType.SUV,   country: "CA", basePrice: 7.00,  pricePerKm: 1.75, pricePerMin: 0.65, minimumFare: 7.00,  bookingFee: 6.50, riderServiceFee: 0, maxPassengers: 6 },
+    { vehicleType: VehicleType.TRUCK, country: "CA", basePrice: 15.00, pricePerKm: 2.65, pricePerMin: 0.85, minimumFare: 15.00, bookingFee: 9.50, riderServiceFee: 0, maxPassengers: 2 },
+];
+
+// ── Nigeria (NGN) - exact client spec ───────────────────────────────
+// 5% platform booking fee (of base+distance+time) + flat 20 Lagos road levy per ride.
+// Geofence surcharges (airport, bridge) are seeded as zones below.
+const NG_PRICING: PricingRow[] = [
+    { vehicleType: VehicleType.BIKE,  country: "NG", basePrice: 350.00,  pricePerKm: 85.00,  pricePerMin: 15.00, minimumFare: 350.00,  bookingFee: 0, bookingFeePercent: 5, roadLevy: 20.00, riderServiceFee: 0, maxPassengers: 1 },
+    { vehicleType: VehicleType.CAR,   country: "NG", basePrice: 527.00,  pricePerKm: 130.00, pricePerMin: 23.30, minimumFare: 527.00,  bookingFee: 0, bookingFeePercent: 5, roadLevy: 20.00, riderServiceFee: 0, maxPassengers: 4 },
+    { vehicleType: VehicleType.SUV,   country: "NG", basePrice: 800.00,  pricePerKm: 220.00, pricePerMin: 40.00, minimumFare: 800.00,  bookingFee: 0, bookingFeePercent: 5, roadLevy: 20.00, riderServiceFee: 0, maxPassengers: 6 },
+    { vehicleType: VehicleType.TRUCK, country: "NG", basePrice: 2500.00, pricePerKm: 450.00, pricePerMin: 65.00, minimumFare: 2500.00, bookingFee: 0, bookingFeePercent: 5, roadLevy: 20.00, riderServiceFee: 0, maxPassengers: 2 },
+];
+
+// ── Kenya (KES): competitive Nairobi rates ──────────────────────────
 const KE_PRICING: PricingRow[] = [
     { vehicleType: VehicleType.BIKE,  country: "KE", basePrice: 50,  pricePerKm: 25,  pricePerMin: 3,   minimumFare: 150,  riderServiceFee: 30,  maxPassengers: 1 },
     { vehicleType: VehicleType.CAR,   country: "KE", basePrice: 100, pricePerKm: 45,  pricePerMin: 4,   minimumFare: 300,  riderServiceFee: 50,  maxPassengers: 4 },
@@ -83,8 +75,7 @@ const KE_PRICING: PricingRow[] = [
     { vehicleType: VehicleType.TRUCK, country: "KE", basePrice: 400, pricePerKm: 120, pricePerMin: 10,  minimumFare: 800,  riderServiceFee: 150, maxPassengers: 2 },
 ];
 
-// ── South Africa (ZAR): competitive Joburg/CT rates ─────────────────
-// Target ~R119 for a 10km/20min car trip. ⚠️ Validate before launch.
+// ── South Africa (ZAR) ──────────────────────────────────────────────
 const ZA_PRICING: PricingRow[] = [
     { vehicleType: VehicleType.BIKE,  country: "ZA", basePrice: 10, pricePerKm: 5,  pricePerMin: 0.80, minimumFare: 30,  riderServiceFee: 6,  maxPassengers: 1 },
     { vehicleType: VehicleType.CAR,   country: "ZA", basePrice: 15, pricePerKm: 8,  pricePerMin: 1.20, minimumFare: 45,  riderServiceFee: 8,  maxPassengers: 4 },
@@ -92,8 +83,7 @@ const ZA_PRICING: PricingRow[] = [
     { vehicleType: VehicleType.TRUCK, country: "ZA", basePrice: 50, pricePerKm: 22, pricePerMin: 3.00, minimumFare: 120, riderServiceFee: 25, maxPassengers: 2 },
 ];
 
-// ── Tanzania (TZS): competitive Dar es Salaam rates ─────────────────
-// Target ~TZS 9,100 for a 10km/20min car trip. ⚠️ Validate before launch.
+// ── Tanzania (TZS) ──────────────────────────────────────────────────
 const TZ_PRICING: PricingRow[] = [
     { vehicleType: VehicleType.BIKE,  country: "TZ", basePrice: 1000, pricePerKm: 350,  pricePerMin: 50,  minimumFare: 2500,  riderServiceFee: 500,  maxPassengers: 1 },
     { vehicleType: VehicleType.CAR,   country: "TZ", basePrice: 1500, pricePerKm: 600,  pricePerMin: 80,  minimumFare: 4000,  riderServiceFee: 700,  maxPassengers: 4 },
@@ -101,8 +91,7 @@ const TZ_PRICING: PricingRow[] = [
     { vehicleType: VehicleType.TRUCK, country: "TZ", basePrice: 6000, pricePerKm: 1800, pricePerMin: 250, minimumFare: 12000, riderServiceFee: 2000, maxPassengers: 2 },
 ];
 
-// ── Uganda (UGX): competitive Kampala rates ─────────────────────────
-// Target ~UGX 15,100 for a 10km/20min car trip. ⚠️ Validate before launch.
+// ── Uganda (UGX) ────────────────────────────────────────────────────
 const UG_PRICING: PricingRow[] = [
     { vehicleType: VehicleType.BIKE,  country: "UG", basePrice: 1500,  pricePerKm: 600,  pricePerMin: 80,  minimumFare: 3000,  riderServiceFee: 700,  maxPassengers: 1 },
     { vehicleType: VehicleType.CAR,   country: "UG", basePrice: 2500,  pricePerKm: 1000, pricePerMin: 130, minimumFare: 6000,  riderServiceFee: 1200, maxPassengers: 4 },
@@ -110,20 +99,7 @@ const UG_PRICING: PricingRow[] = [
     { vehicleType: VehicleType.TRUCK, country: "UG", basePrice: 10000, pricePerKm: 3000, pricePerMin: 400, minimumFare: 18000, riderServiceFee: 3500, maxPassengers: 2 },
 ];
 
-// ── Canada: ~1.35× USD ──────────────────────────────────────────────
-function caPricing(): PricingRow[] {
-    const m = 1.35;
-    return US_PRICING.map(r => ({
-        ...r,
-        country: "CA",
-        basePrice: +(r.basePrice * m).toFixed(2),
-        pricePerKm: +(Number(r.pricePerKm) * m).toFixed(4),
-        pricePerMin: +(r.pricePerMin * m).toFixed(2),
-        minimumFare: +(r.minimumFare * m).toFixed(2),
-    }));
-}
-
-// ── India: ~83× USD ─────────────────────────────────────────────────
+// ── India: ~83x USD (derived from the US book) ──────────────────────
 function inPricing(): PricingRow[] {
     const m = 83;
     return US_PRICING.map(r => ({
@@ -133,13 +109,12 @@ function inPricing(): PricingRow[] {
         pricePerKm: +(Number(r.pricePerKm) * m).toFixed(2),
         pricePerMin: +(r.pricePerMin * m).toFixed(2),
         minimumFare: +(r.minimumFare * m).toFixed(2),
+        bookingFee: +(Number(r.bookingFee ?? 0) * m).toFixed(2),
     }));
 }
 
-// ── Global fare increase ────────────────────────────────────────────
-// Client-requested 20% increase across all ride fares (June 2026). Applied as a
-// single multiplier over the static rates above so it stays idempotent: the seed
-// always derives prices from these constants, so re-running never compounds it.
+// Legacy +20% increase - now applies ONLY to markets without an exact client book
+// (GH/US/CA/NG are exact and exempt).
 const FARE_INCREASE = 1.2;
 function withIncrease(rows: PricingRow[]): PricingRow[] {
     return rows.map(r => ({
@@ -152,8 +127,9 @@ function withIncrease(rows: PricingRow[]): PricingRow[] {
     }));
 }
 
-// Add a Velo Priority tier per country (Velo Basic/car x 1.25) where one is not
-// already defined explicitly, so the tier is available everywhere.
+// Velo Priority tier = Velo Basic (car) x 1.25 (client range 1.16-1.35) wherever a
+// country has no explicit priority row. Percent fee / levy carry over unchanged
+// (the percent scales naturally with the larger base).
 const PRIORITY_MULTIPLIER = 1.25;
 function withPriority(rows: PricingRow[]): PricingRow[] {
     const countries = [...new Set(rows.map(r => r.country))];
@@ -177,78 +153,67 @@ function withPriority(rows: PricingRow[]): PricingRow[] {
     return [...rows, ...extra];
 }
 
-// NG uses exact client numbers (no global increase); every other market keeps
-// the +20% increase. Both get a Velo Priority tier.
 const ALL_PRICING: PricingRow[] = withPriority([
+    ...GH_PRICING,
+    ...US_PRICING,
+    ...CA_PRICING,
     ...NG_PRICING,
     ...withIncrease([
-        ...US_PRICING,
-        ...GH_PRICING,
         ...KE_PRICING,
         ...ZA_PRICING,
         ...TZ_PRICING,
         ...UG_PRICING,
-        ...caPricing(),
         ...inPricing(),
     ]),
 ]);
 
+// ── Geofence surcharge zones (find-or-create; admin-editable afterwards) ──
+const SURCHARGE_ZONES = [
+    { name: "LOS Airport Dropoff", city: "Lagos", country: "NG", latitude: 6.5774, longitude: 3.3212, radius_km: 3, flatSurcharge: 1500.00 },
+    { name: "Lekki-Ikoyi Link Bridge", city: "Lagos", country: "NG", latitude: 6.4478, longitude: 3.4344, radius_km: 1, flatSurcharge: 400.00 },
+];
+
+/** Read/write the applied pricing seed version from a tiny key-value table. */
+async function getAppliedVersion(): Promise<number> {
+    await AppDataSource.query(`CREATE TABLE IF NOT EXISTS seed_meta (key TEXT PRIMARY KEY, value TEXT)`);
+    const rows = await AppDataSource.query(`SELECT value FROM seed_meta WHERE key = 'pricing_seed_version'`);
+    return rows?.[0]?.value ? Number(rows[0].value) : 0;
+}
+async function setAppliedVersion(version: number): Promise<void> {
+    await AppDataSource.query(
+        `INSERT INTO seed_meta (key, value) VALUES ('pricing_seed_version', $1)
+         ON CONFLICT (key) DO UPDATE SET value = $1`,
+        [String(version)]
+    );
+}
+
 /**
- * Seed vehicle_pricing rows.
- * UPSERTS - existing rows are UPDATED to match the latest config.
+ * Seed vehicle_pricing rows + surcharge zones.
+ * Full upsert ONLY when PRICING_SEED_VERSION increases; otherwise insert-missing-only
+ * (protects admin dashboard edits from being clobbered on every boot).
  */
 export async function seedVehiclePricing(alreadyInitialised = false) {
     if (!alreadyInitialised) {
         await AppDataSource.initialize();
     }
 
-    // Auto-migration: Add riderServiceFee column if it doesn't exist
-    // This is safe to run multiple times - it checks before altering
-    try {
-        const queryRunner = AppDataSource.createQueryRunner();
-        await queryRunner.connect();
-        
-        // Check if column exists using precise query
-        const result = await queryRunner.query(`
-            SELECT column_name 
-            FROM information_schema.columns 
-            WHERE table_schema = 'public'
-              AND table_name = 'vehicle_pricing' 
-              AND column_name = 'riderServiceFee'
-        `);
-        
-        // Only add column if it truly doesn't exist
-        if (!result || result.length === 0) {
-            console.log("🔧 Adding riderServiceFee column to vehicle_pricing table...");
-            await queryRunner.query(`
-                ALTER TABLE vehicle_pricing 
-                ADD COLUMN "riderServiceFee" DECIMAL(8,2) NOT NULL DEFAULT 1.99
-            `);
-            console.log("✅ riderServiceFee column added successfully");
-        } else {
-            console.log("✓ riderServiceFee column already exists, skipping migration");
-        }
-        
-        await queryRunner.release();
-    } catch (err) {
-        // If any error occurs (column exists, permission issue, etc.), continue safely
-        const errorMsg = (err as Error).message;
-        if (errorMsg.includes('already exists')) {
-            console.log("✓ riderServiceFee column already exists, skipping migration");
-        } else {
-            console.warn("⚠️  Migration check failed (continuing anyway):", errorMsg);
+    // Auto-migrations (idempotent): columns synchronize does not reliably add.
+    const columnMigrations = [
+        `ALTER TABLE vehicle_pricing ADD COLUMN IF NOT EXISTS "riderServiceFee" DECIMAL(8,2) NOT NULL DEFAULT 1.99`,
+        `ALTER TABLE vehicle_pricing ADD COLUMN IF NOT EXISTS "bookingFee" DECIMAL(8,2) NOT NULL DEFAULT 0`,
+        `ALTER TABLE vehicle_pricing ADD COLUMN IF NOT EXISTS "bookingFeePercent" DECIMAL(5,2) NOT NULL DEFAULT 0`,
+        `ALTER TABLE vehicle_pricing ADD COLUMN IF NOT EXISTS "roadLevy" DECIMAL(8,2) NOT NULL DEFAULT 0`,
+        `ALTER TABLE zones ADD COLUMN IF NOT EXISTS "flatSurcharge" DECIMAL(10,2) NOT NULL DEFAULT 0`,
+    ];
+    for (const sql of columnMigrations) {
+        try {
+            await AppDataSource.query(sql);
+        } catch (err) {
+            console.warn("⚠️  column migration skipped:", (err as Error).message);
         }
     }
 
-    // Auto-migration: add the bookingFee column (synchronize does not always add it).
-    try {
-        await AppDataSource.query(`ALTER TABLE vehicle_pricing ADD COLUMN IF NOT EXISTS "bookingFee" DECIMAL(8,2) NOT NULL DEFAULT 0`);
-    } catch (err) {
-        console.warn("⚠️  bookingFee column migration skipped:", (err as Error).message);
-    }
-
-    // Auto-migration: ensure the vehicleType Postgres enum has every value (adds
-    // "priority"). synchronize does not reliably add values to an existing enum.
+    // Auto-migration: ensure the vehicleType Postgres enum has every value.
     try {
         const rows: Array<{ enum_name: string }> = await AppDataSource.query(`
             SELECT t.typname AS enum_name
@@ -264,51 +229,60 @@ export async function seedVehiclePricing(alreadyInitialised = false) {
             for (const value of Object.values(VehicleType)) {
                 await AppDataSource.query(`ALTER TYPE "${enumName}" ADD VALUE IF NOT EXISTS '${value}'`);
             }
-            console.log(`✓ vehicle type enum "${enumName}" synced (priority ensured)`);
         }
     } catch (err) {
         console.warn("⚠️  vehicle type enum sync skipped:", (err as Error).message);
     }
 
     const repo = AppDataSource.getRepository(VehiclePricing);
+    const appliedVersion = await getAppliedVersion();
+    const fullUpsert = appliedVersion < PRICING_SEED_VERSION;
 
-    let upserted = 0;
     let updated = 0;
     let created = 0;
-    
+    let skipped = 0;
+
     for (const data of ALL_PRICING) {
-        // Find existing row by unique combination of vehicleType + country
         const existing = await repo.findOne({
             where: { vehicleType: data.vehicleType, country: data.country },
         });
 
         if (existing) {
-            // UPDATE existing row - safe, no duplicates
-            Object.assign(existing, data);
-            existing.isActive = true;
-            await repo.save(existing);
-            updated++;
+            if (fullUpsert) {
+                Object.assign(existing, data);
+                existing.isActive = true;
+                await repo.save(existing);
+                updated++;
+            } else {
+                skipped++; // preserve admin edits between price-book versions
+            }
         } else {
-            // CREATE new row - only if doesn't exist
             await repo.save(repo.create({ ...data, isActive: true }));
             created++;
         }
-        upserted++;
     }
 
-    console.log(`✅ vehicle_pricing: upserted ${upserted} rows (${created} created, ${updated} updated)`);
+    if (fullUpsert) {
+        // New price book rollout: (re)activate every seeded market - Velo is global.
+        await repo.createQueryBuilder().update().set({ isActive: true }).where("isActive = false").execute();
+        await setAppliedVersion(PRICING_SEED_VERSION);
+        console.log(`✅ vehicle_pricing: price book v${PRICING_SEED_VERSION} applied (${created} created, ${updated} updated)`);
+    } else {
+        console.log(`✓ vehicle_pricing: v${appliedVersion} current (${created} created, ${skipped} admin-managed rows untouched)`);
+    }
 
-    // Velo operates in Africa only - deactivate any non-African vehicle pricing (US/CA/IN/etc.).
-    const AFRICAN_COUNTRIES = ["GH", "NG", "KE", "ZA", "TZ", "UG"];
-    const deactivated = await repo
-        .createQueryBuilder()
-        .update()
-        .set({ isActive: false })
-        .where("country NOT IN (:...countries)", { countries: AFRICAN_COUNTRIES })
-        .andWhere("isActive = true")
-        .execute();
-    if (deactivated.affected) {
-        console.log(`✅ vehicle_pricing: deactivated ${deactivated.affected} non-African row(s)`);
+    // Surcharge zones: find-or-create so admin edits persist.
+    try {
+        const zoneRepo = AppDataSource.getRepository(Zone);
+        for (const z of SURCHARGE_ZONES) {
+            const existing = await zoneRepo.findOne({ where: { name: z.name, country: z.country } });
+            if (!existing) {
+                await zoneRepo.save(zoneRepo.create({ ...z, status: "active" }));
+                console.log(`✅ zone created: ${z.name} (+${z.flatSurcharge})`);
+            }
+        }
+    } catch (err) {
+        console.warn("⚠️  surcharge zone seeding skipped:", (err as Error).message);
     }
 
     if (!alreadyInitialised) {

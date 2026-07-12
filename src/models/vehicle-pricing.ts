@@ -36,6 +36,14 @@ export class VehiclePricing {
     @Column({ type: "decimal", precision: 8, scale: 2, default: 0 })
     bookingFee: number;
 
+    /** Percentage booking fee: this % of (base + distance + time), e.g. NG uses 5. */
+    @Column({ type: "decimal", precision: 5, scale: 2, default: 0 })
+    bookingFeePercent: number;
+
+    /** Flat per-ride road levy (e.g. Lagos road levy), added like the booking fee. */
+    @Column({ type: "decimal", precision: 8, scale: 2, default: 0 })
+    roadLevy: number;
+
     @Column({ type: "decimal", precision: 8, scale: 2, default: 1.99 })
     riderServiceFee: number;
 

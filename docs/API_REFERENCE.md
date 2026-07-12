@@ -1,4 +1,4 @@
-# VeloHub Backend — API & Services Reference
+# VeloHub Backend - API & Services Reference
 
 > **Base URL:** `http://<host>:3000/api/v1`
 > **Currency:** GHS (Ghanaian Cedis)
@@ -56,15 +56,15 @@
 **Prefix:** `/api/v1/places`
 **Auth:** API key + phone + role (buyer or driver)
 
-### 3.1 Autocomplete — search places as user types
+### 3.1 Autocomplete - search places as user types
 
 ```
 GET /api/v1/places/autocomplete?input=Accra%20Mall&sessionToken=abc123
 ```
 
 **Query params:**
-- `input` (required) — search text
-- `sessionToken` (optional) — Google session token for billing grouping
+- `input` (required) - search text
+- `sessionToken` (optional) - Google session token for billing grouping
 
 **Response:**
 ```json
@@ -80,7 +80,7 @@ GET /api/v1/places/autocomplete?input=Accra%20Mall&sessionToken=abc123
 }
 ```
 
-### 3.2 Place Details — get coordinates from place ID
+### 3.2 Place Details - get coordinates from place ID
 
 ```
 GET /api/v1/places/details/:placeId?sessionToken=abc123
@@ -98,7 +98,7 @@ GET /api/v1/places/details/:placeId?sessionToken=abc123
 }
 ```
 
-### 3.3 Distance — driving distance & duration between two points
+### 3.3 Distance - driving distance & duration between two points
 
 ```
 POST /api/v1/places/distance
@@ -127,7 +127,7 @@ POST /api/v1/places/distance
 }
 ```
 
-### 3.4 Reverse Geocode — address from coordinates
+### 3.4 Reverse Geocode - address from coordinates
 
 ```
 POST /api/v1/places/reverse-geocode
@@ -312,9 +312,9 @@ POST /api/v1/rides/:id/payment
 
 **Payment methods:** `"momo"`, `"wallet"`, `"cash"`
 
-- **momo** — initiates Paystack charge, customer approves on their phone. Response may include `authorizationUrl`.
-- **wallet** — instant debit from wallet. Ride moves to `paid` status immediately.
-- **cash** — ride moves to `paid` status immediately. Driver collects cash after ride.
+- **momo** - initiates Paystack charge, customer approves on their phone. Response may include `authorizationUrl`.
+- **wallet** - instant debit from wallet. Ride moves to `paid` status immediately.
+- **cash** - ride moves to `paid` status immediately. Driver collects cash after ride.
 
 **Response:**
 ```json
@@ -583,7 +583,7 @@ GET /api/v1/driver/stats
 POST /api/v1/payments/webhook
 ```
 
-**Auth:** None — verified by `x-paystack-signature` header (HMAC SHA512).
+**Auth:** None - verified by `x-paystack-signature` header (HMAC SHA512).
 
 **Notes:** Paystack calls this when a momo payment is confirmed. The backend verifies the signature, finds the matching payment record, and updates the ride status to `paid`. **Frontend does not call this.**
 
@@ -841,7 +841,7 @@ PUT /api/v1/locations/:id
 }
 ```
 
-All fields except `phoneNumber` are optional — only send what you want to update.
+All fields except `phoneNumber` are optional - only send what you want to update.
 
 **Response:** `{ "location": { ... } }`
 
@@ -985,7 +985,7 @@ DELETE /api/v1/notifications/push-token
 
 ## 11. Services Overview
 
-These are internal backend services. Frontend doesn't call them directly — they power the endpoints above.
+These are internal backend services. Frontend doesn't call them directly - they power the endpoints above.
 
 | Service | What It Does |
 |---------|-------------|

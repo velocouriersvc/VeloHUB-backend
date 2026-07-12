@@ -115,7 +115,7 @@ Merchants can view their accumulated "Main Balance" in the Finances tab and requ
 | Driver | Accept Delivery Request → Pick Up → Navigate → Deliver → Collect Cash (if applicable) |
 | System | Quote Price → Process Payment → Split Funds → Manage Escrow → Settle Cash Deductions |
 
-Perfect 👌🏾 Peacefill — based on your **Velo Marketplace System & Logistics Guide**, I’ll now structure this into:
+Perfect 👌🏾 Peacefill - based on your **Velo Marketplace System & Logistics Guide**, I’ll now structure this into:
 
 1. ✅ **Core Database Design (Tables / Collections)**  
 2. ✅ **Key API Endpoints**  

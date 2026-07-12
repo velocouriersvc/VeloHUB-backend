@@ -1,5 +1,7 @@
 import { Server as HttpServer } from "http";
 import { Server, Socket } from "socket.io";
+import { createAdapter } from "@socket.io/redis-adapter";
+import { redis } from "./utils/redis";
 import { RedisLocationService } from "./services/redis-location-service";
 import { RideMessageService } from "./services/ride-message-service";
 import { NotificationService } from "./services/notification-service";
@@ -12,6 +14,41 @@ let io: Server | null = null;
 
 export function getIO(): Server | null {
     return io;
+}
+
+// Shared chat plumbing (used by the socket handlers AND the REST endpoint).
+const chatMessageService = new RideMessageService();
+const chatNotificationService = new NotificationService();
+
+/**
+ * Persist a ride chat message, relay it to both parties' socket rooms, and push-notify
+ * the recipient. The single source of truth for message delivery - REST and socket
+ * sends both land here, so a message is never "sent" without being persisted.
+ * senderRole "auto" resolves against the ride's customerId (REST path, uuid sender).
+ */
+export async function deliverRideMessage(
+    rideId: string,
+    senderId: string,
+    senderRole: "customer" | "driver" | "auto",
+    text: string
+) {
+    const msg = await chatMessageService.send(rideId, senderId, senderRole, text);
+    if (io) {
+        io.of("/rides").to(`ride:${rideId}`).emit("ride:message", msg);
+        if (msg.driverUserId) {
+            io.of("/drivers").to(`driver:${msg.driverUserId}`).emit("ride:message", msg);
+        }
+    }
+    const recipient = msg.senderRole === "customer" ? msg.driverUserId : msg.customerId;
+    if (recipient) {
+        chatNotificationService
+            .notify(recipient, NotificationType.MESSAGE_RECEIVED, "New message 💬", msg.text, {
+                rideId,
+                screen: msg.senderRole === "customer" ? "driver-rides" : "rides",
+            })
+            .catch((err) => log.warn("Chat push failed", { recipient, error: (err as Error).message }));
+    }
+    return msg;
 }
 
 /**
@@ -29,16 +66,17 @@ export function initSocketGateway(httpServer: HttpServer): Server {
         transports: ["websocket", "polling"],
     });
 
-    const locationService = new RedisLocationService();
-    const rideMessageService = new RideMessageService();
-    const notificationService = new NotificationService();
+    // CRITICAL for multi-replica deployments: without this adapter, rooms/emits only
+    // reach sockets on the SAME pod - customer and driver on different pods would never
+    // receive each other's chat messages or live locations.
+    try {
+        io.adapter(createAdapter(redis.duplicate(), redis.duplicate()));
+        log.info("Socket.IO Redis adapter attached (cross-pod rooms enabled)");
+    } catch (err) {
+        log.error("Failed to attach Redis adapter - sockets are single-pod only", { error: (err as Error).message });
+    }
 
-    // Best-effort push + in-app notification for a chat message (never blocks the relay).
-    const notifyChatMessage = (recipientId: string, text: string, rideId: string, screen: string) => {
-        notificationService
-            .notify(recipientId, NotificationType.MESSAGE_RECEIVED, "New message 💬", text, { rideId, screen })
-            .catch((err) => log.warn("Chat push failed", { recipientId, error: (err as Error).message }));
-    };
+    const locationService = new RedisLocationService();
 
     // ── /drivers namespace - used by driver apps ──
     const driversNs = io.of("/drivers");
@@ -60,6 +98,8 @@ export function initSocketGateway(httpServer: HttpServer): Server {
         socket.on("location:update", async (data: { lat: number; lng: number; heading?: number; rideId?: string }) => {
             try {
                 await locationService.updateDriverLocation(driverId, data.lat, data.lng);
+                // Streaming drivers stay visible to matching (status TTL refresh, value kept).
+                await locationService.touchDriverStatus(driverId);
 
                 // Broadcast to the riders namespace so nearby customers see the car move
                 io!.of("/rides").emit("driver:moved", {
@@ -102,11 +142,7 @@ export function initSocketGateway(httpServer: HttpServer): Server {
         // Driver sends a chat message to the customer of a ride
         socket.on("ride:message", async (data: { rideId: string; text: string }) => {
             try {
-                const msg = await rideMessageService.send(data.rideId, driverId, "driver", data.text);
-                // Deliver to the customer's ride room and echo back to the driver.
-                io!.of("/rides").to(`ride:${data.rideId}`).emit("ride:message", msg);
-                socket.emit("ride:message", msg);
-                notifyChatMessage(msg.customerId, msg.text, data.rideId, "rides");
+                await deliverRideMessage(data.rideId, driverId, "driver", data.text);
             } catch (err) {
                 log.error("Driver ride message failed", { driverId, error: (err as Error).message });
                 socket.emit("ride:message:error", { error: (err as Error).message });
@@ -132,7 +168,7 @@ export function initSocketGateway(httpServer: HttpServer): Server {
                 const nearby = await locationService.findNearbyDrivers(
                     data.lat,
                     data.lng,
-                    data.radiusKm || 10,
+                    data.radiusKm || 20, // match the ride-matching radius so the overlay agrees with booking
                 );
                 socket.emit("drivers:nearby:result", nearby);
             } catch (err) {
@@ -170,13 +206,7 @@ export function initSocketGateway(httpServer: HttpServer): Server {
                     socket.emit("ride:message:error", { error: "Not identified - reconnect and try again" });
                     return;
                 }
-                const msg = await rideMessageService.send(data.rideId, userId, "customer", data.text);
-                // Deliver to the assigned driver's personal room and echo to the ride room.
-                if (msg.driverUserId) {
-                    io!.of("/drivers").to(`driver:${msg.driverUserId}`).emit("ride:message", msg);
-                    notifyChatMessage(msg.driverUserId, msg.text, data.rideId, "driver-rides");
-                }
-                io!.of("/rides").to(`ride:${data.rideId}`).emit("ride:message", msg);
+                await deliverRideMessage(data.rideId, userId, "customer", data.text);
             } catch (err) {
                 log.error("Customer ride message failed", { userId, error: (err as Error).message });
                 socket.emit("ride:message:error", { error: (err as Error).message });

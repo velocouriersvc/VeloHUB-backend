@@ -67,8 +67,8 @@ sudo kubectl -n velo logs deploy/velo-api --tail=50 | grep -i redis
 ```
 
 This should now show:
-- `[Redis] Connecting to: redis://...` — what URL it's using
-- `[Redis] ✅ Connected` or `[Redis] ❌ Error: ...` — the result
+- `[Redis] Connecting to: redis://...` - what URL it's using
+- `[Redis] ✅ Connected` or `[Redis] ❌ Error: ...` - the result
 
 ## 9. Check if Redis requires a password (it shouldn't)
 

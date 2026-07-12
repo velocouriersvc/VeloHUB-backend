@@ -75,6 +75,19 @@ export class RedisLocationService {
     }
 
     /**
+     * Keep a streaming driver's status alive without changing its value ("busy" stays
+     * busy). If the status already expired, the driver is actively streaming, so restore
+     * "online". Prevents drivers silently dropping out of matching after 5 minutes.
+     */
+    async touchDriverStatus(driverId: string): Promise<void> {
+        const key = `${DRIVER_STATUS_KEY}:${driverId}`;
+        const refreshed = await redis.expire(key, DRIVER_STATUS_TTL);
+        if (!refreshed) {
+            await redis.set(key, "online", "EX", DRIVER_STATUS_TTL);
+        }
+    }
+
+    /**
      * Get driver status
      */
     async getDriverStatus(driverId: string): Promise<string | null> {

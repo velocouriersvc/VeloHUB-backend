@@ -113,15 +113,24 @@ export class RideService {
         pickupLng: number,
         promoCode?: string,
         country?: string,
-        vertical: PricingVertical = PricingVertical.RIDES
+        vertical: PricingVertical = PricingVertical.RIDES,
+        dropoffLat?: number,
+        dropoffLng?: number
     ): Promise<RideEstimate> {
+        // Geofence surcharges (airport dropoff, bridge levy) from admin-managed zones.
+        const zoneSurcharge = await this.fareService.getZoneSurcharge(country || "GH", [
+            { lat: pickupLat, lng: pickupLng },
+            { lat: dropoffLat, lng: dropoffLng },
+        ]);
+
         const fareBreakdown = await this.fareService.calculateFare(
             vehicleType,
             distanceKm,
             durationMin,
             promoCode,
             country || "GH",
-            vertical
+            vertical,
+            zoneSurcharge
         );
 
         // Check how many drivers are nearby
@@ -153,7 +162,9 @@ export class RideService {
         pickupLng: number,
         promoCode?: string,
         country?: string,
-        vertical: PricingVertical = PricingVertical.RIDES
+        vertical: PricingVertical = PricingVertical.RIDES,
+        dropoffLat?: number,
+        dropoffLng?: number
     ): Promise<RideEstimate[]> {
         const vehicleTypes = Object.values(VehicleType);
         const estimates: RideEstimate[] = [];
@@ -168,7 +179,9 @@ export class RideService {
                     pickupLng,
                     promoCode,
                     country,
-                    vertical
+                    vertical,
+                    dropoffLat,
+                    dropoffLng
                 );
                 estimates.push(estimate);
             } catch {
@@ -210,13 +223,19 @@ export class RideService {
         const vertical = request.type === RideType.DELIVERY
             ? PricingVertical.PACKAGE
             : PricingVertical.RIDES;
+        // Geofence surcharges (airport dropoff, bridge levy) from admin-managed zones.
+        const zoneSurcharge = await this.fareService.getZoneSurcharge(country, [
+            { lat: request.pickupLat, lng: request.pickupLng },
+            { lat: request.dropoffLat, lng: request.dropoffLng },
+        ]);
         const fareBreakdown = await this.fareService.calculateFare(
             request.vehicleType,
             request.distanceKm,
             request.durationMin,
             request.promoCode,
             country,
-            vertical
+            vertical,
+            zoneSurcharge
         );
 
         // Create ride record
@@ -417,7 +436,8 @@ export class RideService {
         rideId: string,
         paymentMethod: PaymentMethod,
         phoneNumber?: string,
-        email?: string
+        email?: string,
+        country?: string
     ): Promise<Ride> {
         const ride = await this.getRideOrFail(rideId);
 
@@ -444,6 +464,8 @@ export class RideService {
                 amount: Number(ride.finalFare),
                 riderServiceFee: Number(ride.riderServiceFee || 0),
                 method: methodMap[paymentMethod],
+                // Route to the right gateway/currency (was silently defaulting to GH/GHS).
+                country,
                 phoneNumber,
                 email,
             });

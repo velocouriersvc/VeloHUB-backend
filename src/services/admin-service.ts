@@ -2977,6 +2977,9 @@ export class AdminService {
             pricePerKm: number;
             pricePerMin: number;
             minimumFare: number;
+            bookingFee: number;
+            bookingFeePercent: number;
+            roadLevy: number;
             maxPassengers: number;
             isActive: boolean;
         }>,

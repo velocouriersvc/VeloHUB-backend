@@ -1,4 +1,4 @@
-# Email Setup Guide — Velo Courier Service
+# Email Setup Guide - Velo Courier Service
 
 > Self-hosted Postfix + OpenDKIM on the VPS so the API can send
 > transactional emails (order confirmations, OTPs, driver notifications, etc.)
@@ -29,7 +29,7 @@
 
 ---
 
-## 1 — Install Postfix + OpenDKIM
+## 1 - Install Postfix + OpenDKIM
 
 SSH into the VPS:
 
@@ -65,7 +65,7 @@ which mail                   # should show /usr/bin/mail
 
 ---
 
-## 2 — Configure Postfix
+## 2 - Configure Postfix
 
 Open the main config:
 
@@ -73,7 +73,7 @@ Open the main config:
 sudo nano /etc/postfix/main.cf
 ```
 
-Find and set (or add) these values — leave everything else at defaults:
+Find and set (or add) these values - leave everything else at defaults:
 
 ```
 # Identity
@@ -88,7 +88,7 @@ inet_protocols = ipv4
 # Accept mail for these destinations
 mydestination = $myhostname, localhost.$mydomain, localhost
 
-# No relay — send directly to recipient mail servers
+# No relay - send directly to recipient mail servers
 relayhost =
 
 # TLS (use the default snakeoil cert)
@@ -124,7 +124,7 @@ sudo postconf -e 'non_smtpd_milters = $smtpd_milters'
 
 ---
 
-## 3 — Configure OpenDKIM
+## 3 - Configure OpenDKIM
 
 Edit the main config:
 
@@ -166,17 +166,17 @@ Create the supporting config files:
 sudo mkdir -p /etc/opendkim/keys/velocouriersvc.com
 sudo mkdir -p /var/spool/postfix/opendkim
 
-# key.table — maps selector to key file
+# key.table - maps selector to key file
 sudo tee /etc/opendkim/key.table > /dev/null <<'EOF'
 mail._domainkey.velocouriersvc.com velocouriersvc.com:mail:/etc/opendkim/keys/velocouriersvc.com/mail.private
 EOF
 
-# signing.table — maps sender addresses to key table entry
+# signing.table - maps sender addresses to key table entry
 sudo tee /etc/opendkim/signing.table > /dev/null <<'EOF'
 *@velocouriersvc.com mail._domainkey.velocouriersvc.com
 EOF
 
-# trusted.hosts — hosts that can send signed mail
+# trusted.hosts - hosts that can send signed mail
 sudo tee /etc/opendkim/trusted.hosts > /dev/null <<'EOF'
 127.0.0.1
 localhost
@@ -187,15 +187,15 @@ EOF
 
 ---
 
-## 4 — Generate DKIM Keys
+## 4 - Generate DKIM Keys
 
 ```bash
 sudo opendkim-genkey -b 2048 -d velocouriersvc.com -D /etc/opendkim/keys/velocouriersvc.com/ -s mail -v
 ```
 
 This creates two files:
-- `/etc/opendkim/keys/velocouriersvc.com/mail.private` — private key (stays on server)
-- `/etc/opendkim/keys/velocouriersvc.com/mail.txt` — public key (goes in DNS)
+- `/etc/opendkim/keys/velocouriersvc.com/mail.private` - private key (stays on server)
+- `/etc/opendkim/keys/velocouriersvc.com/mail.txt` - public key (goes in DNS)
 
 Set ownership:
 
@@ -222,7 +222,7 @@ For the **Namecheap DNS record**, combine into one continuous string (no quotes 
 
 ---
 
-## 5 — Wire OpenDKIM Socket into Postfix
+## 5 - Wire OpenDKIM Socket into Postfix
 
 Postfix runs in a chroot, so OpenDKIM must create its socket inside the Postfix spool:
 
@@ -251,7 +251,7 @@ EOF
 
 ---
 
-## 6 — Start & Enable Services
+## 6 - Start & Enable Services
 
 ```bash
 # Restart both services
@@ -275,7 +275,7 @@ If OpenDKIM fails, check:
 sudo journalctl -u opendkim -n 30 --no-pager
 ```
 
-Common fix — socket permissions:
+Common fix - socket permissions:
 
 ```bash
 sudo chown opendkim:postfix /var/spool/postfix/opendkim
@@ -286,7 +286,7 @@ sudo systemctl restart postfix
 
 ---
 
-## 7 — DNS Records (Namecheap)
+## 7 - DNS Records (Namecheap)
 
 Go to **Namecheap → Domain List → velocouriersvc.com → Advanced DNS**.
 
@@ -332,7 +332,7 @@ dig A mail.velocouriersvc.com +short
 
 ---
 
-## 8 — Reverse DNS / PTR Record (Contabo)
+## 8 - Reverse DNS / PTR Record (Contabo)
 
 **This is critical for deliverability.** Gmail/Outlook check that your IP's
 PTR record matches your mail hostname. Without it, emails go to spam.
@@ -351,12 +351,12 @@ dig -x 38.242.149.20 +short
 
 ---
 
-## 9 — Connect Node.js API (K8s) to Postfix
+## 9 - Connect Node.js API (K8s) to Postfix
 
 The Velo API runs inside K8s (K3s) pods. Postfix runs on the **host** (the VPS itself).
 Pods reach the host via the **pod gateway IP**.
 
-### 9.1 — Find the pod gateway IP
+### 9.1 - Find the pod gateway IP
 
 ```bash
 sudo kubectl -n velo exec deploy/velo-api -- ip route | grep default
@@ -364,7 +364,7 @@ sudo kubectl -n velo exec deploy/velo-api -- ip route | grep default
 # The gateway IP is: 10.42.0.1
 ```
 
-### 9.2 — Update the K8s ConfigMap
+### 9.2 - Update the K8s ConfigMap
 
 Add SMTP env vars to the existing configmap:
 
@@ -379,14 +379,14 @@ sudo kubectl -n velo patch configmap velo-config --type merge -p '{
 }'
 ```
 
-### 9.3 — Restart the API pods (to pick up new env vars)
+### 9.3 - Restart the API pods (to pick up new env vars)
 
 ```bash
 sudo kubectl -n velo rollout restart deployment/velo-api
 sudo kubectl -n velo rollout status deployment/velo-api
 ```
 
-### 9.4 — Verify env vars inside a pod
+### 9.4 - Verify env vars inside a pod
 
 ```bash
 sudo kubectl -n velo exec deploy/velo-api -- printenv | grep SMTP
@@ -396,7 +396,7 @@ sudo kubectl -n velo exec deploy/velo-api -- printenv | grep SMTP
 # SMTP_FROM_NAME=Velo Courier
 ```
 
-### 9.5 — Firewall: Allow pods to reach Postfix
+### 9.5 - Firewall: Allow pods to reach Postfix
 
 If UFW is enabled, K3s pod traffic to port 25 on the host must be allowed:
 
@@ -408,7 +408,7 @@ sudo ufw reload
 
 ---
 
-## 10 — Test Sending
+## 10 - Test Sending
 
 ### From the VPS host (direct Postfix test)
 
@@ -422,7 +422,7 @@ echo "Hello from Velo Courier" | mail -s "Velo Test Email" -a "From: noreply@vel
 sudo tail -f /var/log/mail.log
 ```
 
-Look for `status=sent` — that means Postfix delivered it.
+Look for `status=sent` - that means Postfix delivered it.
 
 ### From inside a K8s pod (test pod → Postfix connectivity)
 
@@ -449,17 +449,17 @@ sudo postsuper -d ALL      # delete all queued messages
 After sending a test, check the raw email headers in Gmail:
 - Click the ⋮ menu → "Show original"
 - Look for `DKIM-Signature: v=1; a=rsa-sha256; d=velocouriersvc.com; s=mail; ...`
-- Look for `Authentication-Results:` — it should show `dkim=pass`
+- Look for `Authentication-Results:` - it should show `dkim=pass`
 
 ### Online verification tools
 
-- **Mail-tester:** https://www.mail-tester.com — send to their address, get a score /10
-- **MXToolbox:** https://mxtoolbox.com/dkim.aspx — test DKIM record
+- **Mail-tester:** https://www.mail-tester.com - send to their address, get a score /10
+- **MXToolbox:** https://mxtoolbox.com/dkim.aspx - test DKIM record
 - **DMARC Check:** https://dmarcian.com/dmarc-inspector/
 
 ---
 
-## 11 — Service Management
+## 11 - Service Management
 
 ```bash
 # Restart Postfix
@@ -482,24 +482,24 @@ sudo opendkim-testkey -d velocouriersvc.com -s mail -vvv
 
 ---
 
-## 12 — Troubleshooting
+## 12 - Troubleshooting
 
 | Problem | Fix |
 |---------|-----|
 | `Permission denied` on opendkim.sock | `sudo chown opendkim:postfix /var/spool/postfix/opendkim && sudo chmod 750 /var/spool/postfix/opendkim` then restart both services |
-| `valid hostname required in server description: =` | `relayhost` line is malformed — run `sudo postconf -e 'relayhost ='` |
+| `valid hostname required in server description: =` | `relayhost` line is malformed - run `sudo postconf -e 'relayhost ='` |
 | Gmail rejects with `no PTR record` | Either Postfix used IPv6 (`sudo postconf -e 'inet_protocols = ipv4'`) or PTR not set in Contabo panel |
-| Gmail rejects with `SPF did not pass` | Verify SPF TXT record: `dig TXT velocouriersvc.com +short` — must contain `ip4:38.242.149.20` |
+| Gmail rejects with `SPF did not pass` | Verify SPF TXT record: `dig TXT velocouriersvc.com +short` - must contain `ip4:38.242.149.20` |
 | Emails land in spam | 1) Set PTR record (Step 8), 2) Verify DKIM (`opendkim-testkey -d velocouriersvc.com -s mail -vvv`), 3) Check score at mail-tester.com |
-| `Connection refused` from K8s pod to port 25 | UFW blocking — run `sudo ufw allow from 10.42.0.0/16 to any port 25 proto tcp` |
-| `Connection timed out` sending to Gmail | Contabo may block port 25 outbound — contact support to unblock, or use Gmail SMTP (Step 13) |
-| OpenDKIM won't start | Check `sudo journalctl -u opendkim -n 30` — usually syntax error in config or missing key file |
+| `Connection refused` from K8s pod to port 25 | UFW blocking - run `sudo ufw allow from 10.42.0.0/16 to any port 25 proto tcp` |
+| `Connection timed out` sending to Gmail | Contabo may block port 25 outbound - contact support to unblock, or use Gmail SMTP (Step 13) |
+| OpenDKIM won't start | Check `sudo journalctl -u opendkim -n 30` - usually syntax error in config or missing key file |
 | `key not secure` in opendkim-testkey | Normal warning (no DNSSEC). DKIM still works. Only worry if `key FAILED` |
 | Bounce messages fill the queue | Add VPS hostname to `mydestination`: `sudo postconf -e 'mydestination = $myhostname, localhost.$mydomain, localhost, YOUR_VPS_HOSTNAME'` then flush |
 
 ---
 
-## 13 — Alternative: Gmail SMTP
+## 13 - Alternative: Gmail SMTP
 
 If Contabo blocks port 25 outbound or deliverability is poor, use Gmail as a relay.
 
@@ -554,7 +554,7 @@ If Contabo blocks port 25 outbound or deliverability is poor, use Gmail as a rel
 
 ---
 
-## Summary — All DNS Records for `velocouriersvc.com`
+## Summary - All DNS Records for `velocouriersvc.com`
 
 | # | Type | Host | Value |
 |---|------|------|-------|
@@ -564,7 +564,7 @@ If Contabo blocks port 25 outbound or deliverability is poor, use Gmail as a rel
 | 4 | TXT | `_dmarc` | `v=DMARC1; p=none; rua=mailto:admin@velocouriersvc.com` |
 | 5 | TXT | `mail._domainkey` | *(full DKIM value below)* |
 
-**Record #5 — DKIM value** (copy-paste ready for Namecheap):
+**Record #5 - DKIM value** (copy-paste ready for Namecheap):
 
 ```
 v=DKIM1; h=sha256; k=rsa; p=MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEApsQJqfn27vLojUBJDDnLMFWkR0nH6LeL6bpkNfgv1D5hcLDTB9is9G2oxTJ2GcjpEjPA/uPF2D7FrJFBVF5wBS6gsl9+1B8pY6zGsgju69doaz25D3Vt5+UHbi01I0RCPZtNwVQFtXHd12116BH/3EcgYuA12dUgw2Pk2rdGf7CKr7jtz3Ji3eUXC/UxDQQ2C6iyvan7qCtptna9C0bioOsbPg4HLy3CNEukKqVZQxN5T5dSEpeJAEtBO4RiHWzZLPlyvAoks9E2YQSEsAU9MdzZyTDtcMzrH8WPWw0B6a/T574IC08wqhvpgyZQx93HbZoyH5gQJwlJApqZS3HsOQIDAQAB

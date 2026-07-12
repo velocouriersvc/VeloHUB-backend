@@ -47,6 +47,11 @@ export class Zone {
     @Column("integer", { default: 50 })
     demandLevel: number;
 
+    /** Flat surcharge added to a ride whose pickup or dropoff falls inside this zone
+     *  (e.g. airport dropoff fee, bridge levy). 0 = no surcharge. */
+    @Column("decimal", { precision: 10, scale: 2, default: 0 })
+    flatSurcharge: number;
+
     @Column({ nullable: true })
     country: string;
 

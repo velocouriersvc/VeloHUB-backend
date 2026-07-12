@@ -2,6 +2,7 @@ import { Response } from "express";
 import { AuthRequest } from "../middleware/role-middleware";
 import { RideService } from "../services/ride-service";
 import { RideMessageService } from "../services/ride-message-service";
+import { deliverRideMessage } from "../socket-gateway";
 import { RideType, CancelledBy, PaymentMethod } from "../models/ride";
 import { VehicleType } from "../models/vehicle-pricing";
 import { PricingVertical } from "../config/pricing";
@@ -56,12 +57,30 @@ export class RideController {
     };
 
     /**
+     * POST /rides/:id/messages
+     * Send a chat message over REST (guaranteed persistence even when the socket is
+     * flaky); delivery to the other party still happens via the socket rooms + push.
+     */
+    sendMessage = async (req: AuthRequest, res: Response) => {
+        try {
+            const userId = req.user?.id;
+            if (!userId) return res.status(401).json({ message: "User ID required" });
+            const message = await deliverRideMessage(req.params.id, userId, "auto", req.body?.text);
+            return res.status(201).json({ message });
+        } catch (error) {
+            const msg = (error as Error).message || "Internal server error";
+            log.error("Error sending ride message", { error: msg });
+            return res.status(/not found|required|too long/i.test(msg) ? 400 : 500).json({ message: msg });
+        }
+    };
+
+    /**
      * POST /rides/estimate
      * Get fare estimates for all vehicle types
      */
     getEstimates = async (req: AuthRequest, res: Response) => {
         try {
-            const { distanceKm, durationMin, pickupLat, pickupLng, promoCode, country } = req.body;
+            const { distanceKm, durationMin, pickupLat, pickupLng, dropoffLat, dropoffLng, promoCode, country } = req.body;
 
             if (!distanceKm || !durationMin || !pickupLat || !pickupLng) {
                 return res.status(400).json({ message: "distanceKm, durationMin, pickupLat, pickupLng are required" });
@@ -74,7 +93,9 @@ export class RideController {
                 Number(pickupLng),
                 promoCode,
                 country,
-                parseVertical(req.body.vertical)
+                parseVertical(req.body.vertical),
+                dropoffLat != null ? Number(dropoffLat) : undefined,
+                dropoffLng != null ? Number(dropoffLng) : undefined
             );
 
             return res.json({ estimates });
@@ -91,7 +112,7 @@ export class RideController {
     getEstimate = async (req: AuthRequest, res: Response) => {
         try {
             const vehicleType = mapVehicleType(req.params.vehicleType);
-            const { distanceKm, durationMin, pickupLat, pickupLng, promoCode, country } = req.body;
+            const { distanceKm, durationMin, pickupLat, pickupLng, dropoffLat, dropoffLng, promoCode, country } = req.body;
 
             if (!distanceKm || !durationMin || !pickupLat || !pickupLng) {
                 return res.status(400).json({ message: "distanceKm, durationMin, pickupLat, pickupLng are required" });
@@ -105,7 +126,9 @@ export class RideController {
                 Number(pickupLng),
                 promoCode,
                 country,
-                parseVertical(req.body.vertical)
+                parseVertical(req.body.vertical),
+                dropoffLat != null ? Number(dropoffLat) : undefined,
+                dropoffLng != null ? Number(dropoffLng) : undefined
             );
 
             return res.json({ estimate });
@@ -170,7 +193,7 @@ export class RideController {
     setPayment = async (req: AuthRequest, res: Response) => {
         try {
             const rideId = req.params.id;
-            const { paymentMethod, email } = req.body;
+            const { paymentMethod, email, country } = req.body;
             const phoneNumber = req.body.phoneNumber;
 
             if (!paymentMethod) {
@@ -181,7 +204,8 @@ export class RideController {
                 rideId,
                 paymentMethod as PaymentMethod,
                 phoneNumber,
-                email
+                email,
+                country
             );
 
             return res.json({ ride });
@@ -285,7 +309,7 @@ export class RideController {
             const nearby = await locationService.findNearbyDrivers(
                 Number(lat),
                 Number(lng),
-                Number(radiusKm) || 10,
+                Number(radiusKm) || 20, // match the ride-matching radius
             );
             return res.json({ drivers: nearby });
         } catch (error) {
