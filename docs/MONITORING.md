@@ -1,4 +1,4 @@
-# 📊 VeloHub API — Monitoring & Observability Setup
+# 📊 VeloHub API - Monitoring & Observability Setup
 
 Complete guide for setting up **Prometheus**, **Grafana**, and **Loki** to monitor the VeloHub API on your K3s/Kubernetes cluster.
 
@@ -37,9 +37,9 @@ Complete guide for setting up **Prometheus**, **Grafana**, and **Loki** to monit
                                             └──────────────┘
 ```
 
-- **Prometheus** — Scrapes `/metrics` from the API, stores time-series data
-- **Grafana** — Dashboards & alerting UI
-- **Loki + Promtail** — Collects container logs (replaces ELK stack, much lighter)
+- **Prometheus** - Scrapes `/metrics` from the API, stores time-series data
+- **Grafana** - Dashboards & alerting UI
+- **Loki + Promtail** - Collects container logs (replaces ELK stack, much lighter)
 
 ---
 
@@ -188,7 +188,7 @@ spec:
 EOF
 ```
 
-### 5. Deploy Node Exporter (system metrics — CPU, RAM, disk)
+### 5. Deploy Node Exporter (system metrics - CPU, RAM, disk)
 
 ```bash
 cat <<'EOF' | kubectl apply -f -
@@ -378,7 +378,7 @@ EOF
 
 ## Loki Setup (Log Aggregation)
 
-Loki collects all your container logs so you can search and view them in Grafana — much lighter than ELK.
+Loki collects all your container logs so you can search and view them in Grafana - much lighter than ELK.
 
 ### 1. Deploy Loki
 
@@ -675,7 +675,7 @@ data:
     groups:
       - name: velo-api-alerts
         rules:
-          # High error rate — more than 5% of requests returning 5xx
+          # High error rate - more than 5% of requests returning 5xx
           - alert: HighErrorRate
             expr: |
               sum(rate(http_requests_total{status_code=~"5.."}[5m]))
@@ -687,7 +687,7 @@ data:
               summary: "High error rate on VeloHub API"
               description: "More than 5% of requests are returning 5xx errors for the last 5 minutes."
 
-          # Slow responses — p95 latency above 2 seconds
+          # Slow responses - p95 latency above 2 seconds
           - alert: SlowResponses
             expr: |
               histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m])) > 2
@@ -698,7 +698,7 @@ data:
               summary: "Slow API responses"
               description: "95th percentile response time is above 2 seconds."
 
-          # API is down — no requests received for 2 minutes
+          # API is down - no requests received for 2 minutes
           - alert: APIDown
             expr: |
               up{job="velo-api"} == 0
@@ -709,7 +709,7 @@ data:
               summary: "VeloHub API is down"
               description: "Prometheus cannot reach the VeloHub API metrics endpoint."
 
-          # High memory usage — over 512MB
+          # High memory usage - over 512MB
           - alert: HighMemoryUsage
             expr: |
               process_resident_memory_bytes{job="velo-api"} > 536870912
@@ -720,7 +720,7 @@ data:
               summary: "High memory usage"
               description: "VeloHub API is using more than 512MB of memory."
 
-          # Server disk almost full — over 85%
+          # Server disk almost full - over 85%
           - alert: DiskAlmostFull
             expr: |
               (1 - node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"}) * 100 > 85
@@ -731,7 +731,7 @@ data:
               summary: "Disk space is running low"
               description: "Root filesystem is more than 85% full."
 
-          # High CPU — over 80% for 10 minutes
+          # High CPU - over 80% for 10 minutes
           - alert: HighCPU
             expr: |
               100 - (avg(rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 80
@@ -914,9 +914,9 @@ kubectl apply -f prometheus-config.yaml -f prometheus.yaml -f node-exporter.yaml
 | Component | Port | Access |
 |---|---|---|
 | VeloHub API `/metrics` | `30080` | `http://38.242.149.20:30080/metrics` |
-| Prometheus | `9090` | Internal (ClusterIP) — port-forward to access |
+| Prometheus | `9090` | Internal (ClusterIP) - port-forward to access |
 | Grafana | `30300` | `https://monitoring.velocouriersvc.com` |
-| Loki | `3100` | Internal (ClusterIP) — queried via Grafana |
-| Node Exporter | `9100` | Internal (ClusterIP) — scraped by Prometheus |
+| Loki | `3100` | Internal (ClusterIP) - queried via Grafana |
+| Node Exporter | `9100` | Internal (ClusterIP) - scraped by Prometheus |
 
-**Stack**: Prometheus + Grafana + Loki + Promtail + Node Exporter — the industry-standard open-source monitoring stack. 🚀
+**Stack**: Prometheus + Grafana + Loki + Promtail + Node Exporter - the industry-standard open-source monitoring stack. 🚀

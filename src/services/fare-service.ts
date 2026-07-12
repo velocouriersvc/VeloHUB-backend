@@ -3,6 +3,7 @@ import { VehiclePricing, VehicleType } from "../models/vehicle-pricing";
 import { PlatformSettings } from "../models/platform-settings";
 import { SurgeRule, DayType } from "../models/surge-rule";
 import { PromoCode } from "../models/promo-code";
+import { Zone } from "../models/zone";
 import { createServiceLogger } from "../utils/logger";
 import { currencyForCountry } from "../utils/currency";
 import {
@@ -82,6 +83,7 @@ export class FareService {
     private settingsRepo = AppDataSource.getRepository(PlatformSettings);
     private surgeRepo = AppDataSource.getRepository(SurgeRule);
     private promoRepo = AppDataSource.getRepository(PromoCode);
+    private zoneRepo = AppDataSource.getRepository(Zone);
 
     /**
      * Calculate full fare breakdown for a ride or delivery.
@@ -103,7 +105,8 @@ export class FareService {
         durationMin: number,
         promoCode?: string,
         country: string = "GH",
-        vertical: PricingVertical = PricingVertical.RIDES
+        vertical: PricingVertical = PricingVertical.RIDES,
+        zoneSurcharge: number = 0
     ): Promise<FareBreakdown> {
         // 1. Get vehicle pricing for this country; fall back to the US/USD baseline so a
         // country without its own row still gets a working fare (global operation).
@@ -146,6 +149,9 @@ export class FareService {
             durationMin,
             minimumFare: Number(pricing.minimumFare),
             bookingFee: Number(pricing.bookingFee ?? 0),
+            bookingFeePercent: Number(pricing.bookingFeePercent ?? 0),
+            roadLevy: Number(pricing.roadLevy ?? 0),
+            zoneSurcharge,
             surgeMultiplier: rawSurge,
             maxSurge,
             serviceFeeRate,
@@ -204,6 +210,39 @@ export class FareService {
             where: { isActive: true, country },
             order: { basePrice: "ASC" },
         });
+    }
+
+    /**
+     * Sum of flat geofence surcharges for zones containing the pickup or dropoff point
+     * (e.g. airport dropoff fee, bridge levy). Zones are admin-managed (lat/lng/radius).
+     */
+    async getZoneSurcharge(
+        country: string,
+        points: Array<{ lat?: number | null; lng?: number | null } | null | undefined>
+    ): Promise<number> {
+        const zones = await this.zoneRepo.find({ where: { country, status: "active" } });
+        if (zones.length === 0) return 0;
+
+        const toRad = (d: number) => (d * Math.PI) / 180;
+        const kmBetween = (aLat: number, aLng: number, bLat: number, bLng: number) => {
+            const R = 6371;
+            const dLat = toRad(bLat - aLat);
+            const dLng = toRad(bLng - aLng);
+            const s = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(aLat)) * Math.cos(toRad(bLat)) * Math.sin(dLng / 2) ** 2;
+            return 2 * R * Math.asin(Math.sqrt(s));
+        };
+
+        let total = 0;
+        for (const zone of zones) {
+            const surcharge = Number(zone.flatSurcharge || 0);
+            if (surcharge <= 0 || zone.latitude == null || zone.longitude == null) continue;
+            const hit = points.some((p) =>
+                p?.lat != null && p?.lng != null &&
+                kmBetween(Number(p.lat), Number(p.lng), Number(zone.latitude), Number(zone.longitude)) <= Number(zone.radius_km || 0)
+            );
+            if (hit) total += surcharge;
+        }
+        return total;
     }
 
     /**

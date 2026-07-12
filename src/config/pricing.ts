@@ -146,6 +146,12 @@ export interface RideFareInput {
     minimumFare?: number;
     /** Flat booking fee added to the fare (base + distance + time + booking). */
     bookingFee?: number;
+    /** Percentage booking fee: this % of (base + distance + time). E.g. NG uses 5. */
+    bookingFeePercent?: number;
+    /** Flat per-ride road levy (e.g. Lagos road levy), folded in like the booking fee. */
+    roadLevy?: number;
+    /** Flat geofence surcharge (airport dropoff, bridge levy) from matched zones. */
+    zoneSurcharge?: number;
     /** Raw surge (uncapped); will be clamped to [1, maxSurge]. */
     surgeMultiplier?: number;
     maxSurge?: number;
@@ -191,9 +197,16 @@ export function computeRideFare(input: RideFareInput): RideFareResult {
     const baseFare = round2(input.basePrice * profile.baseMultiplier);
     const distanceCost = round2(input.pricePerKm * profile.perKmMultiplier * billableKm);
     const timeCost = round2(input.pricePerMin * profile.perMinMultiplier * input.durationMin);
-    // Flat booking fee is part of the fare (and therefore the driver's 85% share).
-    const bookingFee = round2(input.bookingFee ?? 0);
-    const subtotal = round2(baseFare + distanceCost + timeCost + bookingFee);
+    // Booking fees, road levy and zone surcharges are part of the fare subtotal.
+    // bookingFeePercent applies to the trip portion (base + distance + time) only.
+    const tripPortion = baseFare + distanceCost + timeCost;
+    const bookingFee = round2(
+        (input.bookingFee ?? 0)
+        + tripPortion * ((input.bookingFeePercent ?? 0) / 100)
+        + (input.roadLevy ?? 0)
+        + (input.zoneSurcharge ?? 0)
+    );
+    const subtotal = round2(tripPortion + bookingFee);
 
     const surgedSubtotal = round2(subtotal * surge);
     const surgeAmount = round2(surgedSubtotal - subtotal);

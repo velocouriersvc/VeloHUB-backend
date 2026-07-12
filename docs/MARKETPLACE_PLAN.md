@@ -1,4 +1,4 @@
-# 🏪 Velo Marketplace & Services — Phase 2 Master Plan
+# 🏪 Velo Marketplace & Services - Phase 2 Master Plan
 
 > **Date:** 11 March 2026
 > **Status:** Planning
@@ -17,7 +17,7 @@
 7. [Services to Create](#7-services-to-create)
 8. [Admin Back-Office Endpoints](#8-admin-back-office-endpoints)
 9. [Cash Settlement & Wallet Logic](#9-cash-settlement--wallet-logic)
-10. [Infrastructure — Redis & MinIO Usage](#10-infrastructure--redis--minio-usage)
+10. [Infrastructure - Redis & MinIO Usage](#10-infrastructure--redis--minio-usage)
 11. [K8s / Deployment Impact](#11-k8s--deployment-impact)
 12. [Migration & Rollout Strategy](#12-migration--rollout-strategy)
 13. [Implementation Phases](#13-implementation-phases)
@@ -120,7 +120,7 @@
 
 | Model | Change |
 |---|---|
-| `Payment` | Already has `orderId` column ✅ — just need to use it |
+| `Payment` | Already has `orderId` column ✅ - just need to use it |
 | `MerchantProfile` | Add: `commissionRate`, `serviceFeeRate`, `pickupFeeRate`, `operatingHours`, `isOpen`, `coverImageUrl`, `description` |
 | `NotificationType` enum | Add order-related types |
 | `UploadCategory` | Add `products` category |
@@ -465,7 +465,7 @@ MERCHANT_SUSPENDED = "merchant_suspended",
 
 ---
 
-## 5.5 Multi-Country Readiness — Gap Analysis & Changes
+## 5.5 Multi-Country Readiness - Gap Analysis & Changes
 
 ### The Problem
 
@@ -476,7 +476,7 @@ The current codebase is **hardcoded to Ghana** in 6 critical places. To operate 
 | File | Line | What's Hardcoded | Fix |
 |---|---|---|---|
 | `payment-service.ts` | L55 | `currency: "GHS"` in payment record creation | Resolve from `platform_settings` via user country |
-| `payment-service.ts` | L97 | `currency: "GHS"` in momo payment initiation | Same — pass currency from caller |
+| `payment-service.ts` | L97 | `currency: "GHS"` in momo payment initiation | Same - pass currency from caller |
 | `wallet-service.ts` | L20 | `currency: "GHS"` in `createWallet()` | Resolve from user's country → `platform_settings.currency` |
 | `paystack-provider.ts` | L50 | `request.currency \|\| "GHS"` fallback | Always require currency, no GHS fallback |
 | `paystack-provider.ts` | L118 | `currency: "GHS"` in failed verify response | Use request currency, not hardcoded |
@@ -487,7 +487,7 @@ The current codebase is **hardcoded to Ghana** in 6 critical places. To operate 
 
 ### 5.5.2 Model Changes Required
 
-#### `User` — Add `country` column
+#### `User` - Add `country` column
 
 ```
 users (ALTER)
@@ -496,7 +496,7 @@ users (ALTER)
 
 This is the **anchor**. Every downstream service resolves currency, payment provider, and fee structure from `user.country` → `platform_settings`.
 
-#### `VehiclePricing` — Add `country` column + rename `basePriceCedis`
+#### `VehiclePricing` - Add `country` column + rename `basePriceCedis`
 
 ```
 vehicle_pricing (ALTER)
@@ -507,7 +507,7 @@ vehicle_pricing (ALTER)
 Currently one global set of pricing. Needs per-country pricing so a bike ride in Ghana costs GHS 5 but in Nigeria costs NGN 500.
 Drop the `UNIQUE` constraint on `vehicleType` alone → make it `UNIQUE(vehicleType, country)`.
 
-#### `SurgeRule` — Add `country` column
+#### `SurgeRule` - Add `country` column
 
 ```
 surge_rules (ALTER)
@@ -516,7 +516,7 @@ surge_rules (ALTER)
 
 Surge rules need to be country-specific (peak hours differ by timezone/region).
 
-#### `Ride` — Add `currency` column
+#### `Ride` - Add `currency` column
 
 ```
 rides (ALTER)
@@ -525,20 +525,20 @@ rides (ALTER)
 
 Freeze the currency on the ride so historical rides show the correct currency even if settings change.
 
-#### `Order` — Add `currency` column
+#### `Order` - Add `currency` column
 
 ```
 orders (ALTER)
 ├── currency            VARCHAR(3) DEFAULT 'GHS'
 ```
 
-Same — freeze currency at checkout time.
+Same - freeze currency at checkout time.
 
 ### 5.5.3 Payment Provider Strategy
 
 Current: `PaymentService` hardcodes `new PaystackProvider()`.
 
-Paystack supports: **GH, NG, ZA, KE, CI** — that's it. US/CA/IN need different providers.
+Paystack supports: **GH, NG, ZA, KE, CI** - that's it. US/CA/IN need different providers.
 
 **Solution: Provider Registry**
 
@@ -571,7 +571,7 @@ function getSupportedMethods(country: string): PaymentMethodType[] { ... }
 
 > **Note:** `RazorpayProvider` (India) is Phase 3. For now, register it as a stub. Start with Paystack (GH/NG) + Stripe (US/CA).
 
-### 5.5.4 PaymentMethodType — Expand
+### 5.5.4 PaymentMethodType - Expand
 
 ```typescript
 enum PaymentMethodType {
@@ -585,7 +585,7 @@ enum PaymentMethodType {
 }
 ```
 
-Add `CARD` to `PaymentMethodType` — it's missing from the current enum but Paystack already supports card charges.
+Add `CARD` to `PaymentMethodType` - it's missing from the current enum but Paystack already supports card charges.
 
 ### 5.5.5 Service Changes Required
 
@@ -595,9 +595,9 @@ Add `CARD` to `PaymentMethodType` — it's missing from the current enum but Pay
 |---|---|---|
 | `processRidePayment()` | Hardcodes `currency: "GHS"`, `new PaystackProvider()` | Accept `country` param → resolve currency from `platform_settings`, resolve provider from registry |
 | `processMomoPayment()` | Hardcodes `currency: "GHS"` in request | Pass currency from caller |
-| `processOrderPayment()` | (new — not built yet) | Build country-aware from day one |
+| `processOrderPayment()` | (new - not built yet) | Build country-aware from day one |
 | `creditDriverEarnings()` | Hardcodes 80/20 split | Read commission from `platform_settings` or merchant override |
-| constructor | `this.provider = new PaystackProvider()` | Remove — resolve per-call from registry |
+| constructor | `this.provider = new PaystackProvider()` | Remove - resolve per-call from registry |
 
 #### `WalletService`
 
@@ -695,7 +695,7 @@ User signs up → country set (from phone prefix or onboarding)
 
 | Task | When | Why |
 |---|---|---|
-| Add `country` to `User` model | **Now (Phase 2A+)** | Anchor point — everything else depends on this |
+| Add `country` to `User` model | **Now (Phase 2A+)** | Anchor point - everything else depends on this |
 | Add `currency` to `Order` model | **Now** | New model, build it right |
 | Add `currency` to `Ride` model | **Now** | One column, cheap |
 | Add `country` to `VehiclePricing` + rename column | **Now** | Needed before rides go multi-country |
@@ -709,7 +709,7 @@ User signs up → country set (from phone prefix or onboarding)
 | Refactor `NotificationService` currency | **Now** | Use currency symbol helper |
 | Create `StripeProvider` | **Later (Phase 3)** | Not launching in US/CA yet |
 | Create `RazorpayProvider` | **Later (Phase 3)** | Not launching in India yet |
-| Multi-currency wallets | **Later (Phase 3)** | Complex — currency conversion, etc. |
+| Multi-currency wallets | **Later (Phase 3)** | Complex - currency conversion, etc. |
 
 ---
 
@@ -718,7 +718,7 @@ User signs up → country set (from phone prefix or onboarding)
 ### 6.1 Product APIs (`/api/v1/products`)
 
 #### `GET /api/v1/products?merchantId=&category=&search=&page=&limit=`
-**Public — no auth required**
+**Public - no auth required**
 
 ```json
 // Response 200
@@ -803,8 +803,8 @@ Returns single product with full customizations.
 ```
 
 #### `PUT /api/v1/products/:id` (Merchant only)
-#### `DELETE /api/v1/products/:id` (Merchant only — soft delete)
-#### `POST /api/v1/products/:id/images` (Merchant only — multipart upload to MinIO)
+#### `DELETE /api/v1/products/:id` (Merchant only - soft delete)
+#### `POST /api/v1/products/:id/images` (Merchant only - multipart upload to MinIO)
 
 ---
 
@@ -882,7 +882,7 @@ Returns single product with full customizations.
 ### 6.3 Order APIs (`/api/v1/orders`)
 
 #### `POST /api/v1/orders/quote`
-**Auth required — get price breakdown before checkout**
+**Auth required - get price breakdown before checkout**
 
 ```json
 // Request
@@ -955,7 +955,7 @@ Returns single product with full customizations.
 }
 ```
 
-#### `GET /api/v1/orders` (Customer — my orders)
+#### `GET /api/v1/orders` (Customer - my orders)
 ```json
 // Response 200
 {
@@ -1130,7 +1130,7 @@ Returns nearby orders with status `ready_for_pickup` + `deliveryType = delivery`
 #### `POST /api/v1/driver/accept-delivery/:orderId`
 #### `PATCH /api/v1/driver/delivery/:orderId/status`
 ```json
-// Request — driver updates delivery status
+// Request - driver updates delivery status
 { "status": "picked_up" }
 // Allowed: driver_assigned → picked_up → in_transit → delivered
 ```
@@ -1188,9 +1188,9 @@ Triggers settlement for delivery orders.
 
 | Service | New Methods |
 |---|---|
-| `PaymentService` | `processOrderPayment()` — reuse Paystack/wallet/cash flow for orders |
-| `WalletService` | No changes needed — credit/debit already generic ✅ |
-| `NotificationService` | No structural changes — just use new `NotificationType` values |
+| `PaymentService` | `processOrderPayment()` - reuse Paystack/wallet/cash flow for orders |
+| `WalletService` | No changes needed - credit/debit already generic ✅ |
+| `NotificationService` | No structural changes - just use new `NotificationType` values |
 | `UploadService` | Add `"products"` to `UploadCategory` type |
 
 ---
@@ -1266,7 +1266,7 @@ Triggers settlement for delivery orders.
 
 ## 9. Cash Settlement & Wallet Logic
 
-### 9.1 Delivery Order — Cash Payment
+### 9.1 Delivery Order - Cash Payment
 
 Driver collects cash from customer.
 
@@ -1284,7 +1284,7 @@ On order completion (driver confirms delivered):
   5. Platform keeps platformFee (already deducted from driver)
 ```
 
-### 9.2 Pickup Order — Cash Payment
+### 9.2 Pickup Order - Cash Payment
 
 Merchant collects cash from customer.
 
@@ -1296,7 +1296,7 @@ On pickup code verification:
      Description: "Pickup fee: Order ORD-A1B2C3"
 ```
 
-### 9.3 Online Payment (Momo/Card) — Delivery
+### 9.3 Online Payment (Momo/Card) - Delivery
 
 ```
 On checkout:
@@ -1311,7 +1311,7 @@ On order completion:
   6. Platform retains: commission + serviceFee
 ```
 
-### 9.4 Online Payment (Momo/Card) — Pickup
+### 9.4 Online Payment (Momo/Card) - Pickup
 
 ```
 On checkout:
@@ -1344,9 +1344,9 @@ Every wallet transaction should carry metadata for audit:
 
 ---
 
-## 10. Infrastructure — Redis & MinIO Usage
+## 10. Infrastructure - Redis & MinIO Usage
 
-### Redis (Already deployed — no changes needed)
+### Redis (Already deployed - no changes needed)
 
 | Use Case | Key Pattern | TTL | Purpose |
 |---|---|---|---|
@@ -1361,7 +1361,7 @@ Every wallet transaction should carry metadata for audit:
 > **Current Redis config:** 128MB, allkeys-lru, no persistence.
 > This is fine for caching. Cart data is also persisted in PostgreSQL, Redis is just a fast layer.
 
-### MinIO (Already deployed — no changes needed)
+### MinIO (Already deployed - no changes needed)
 
 | Use Case | Bucket | Prefix | Purpose |
 |---|---|---|---|
@@ -1373,7 +1373,7 @@ Every wallet transaction should carry metadata for audit:
 | **New** | `velo-uploads` | `merchants/` | Merchant cover images, logos |
 
 > **Action:** Add `"products"` and `"merchants"` to the `UploadCategory` type in `upload-service.ts`.
-> **No bucket creation needed** — same `velo-uploads` bucket, just new prefixes.
+> **No bucket creation needed** - same `velo-uploads` bucket, just new prefixes.
 
 ---
 
@@ -1412,8 +1412,8 @@ Since we use `synchronize: true`, TypeORM will auto-create new tables on startup
 
 However, we need **seed data** for:
 
-1. **`platform_settings`** — Insert rows for GH, NG, etc.
-2. **`roles`** — Admin role already exists ✅
+1. **`platform_settings`** - Insert rows for GH, NG, etc.
+2. **`roles`** - Admin role already exists ✅
 
 ### Seed Script (`src/scripts/seed-platform-settings.ts`)
 
@@ -1432,7 +1432,7 @@ const settings = [
 
 ## 13. Implementation Phases
 
-### Phase 2A — Foundation (Week 1-2)
+### Phase 2A - Foundation (Week 1-2)
 
 1. ☐ Create all new TypeORM models (11 new entities)
 2. ☐ Modify existing models (MerchantProfile, Notification, PromoCode, UploadCategory)
@@ -1441,7 +1441,7 @@ const settings = [
 5. ☐ Add `products` and `merchants` upload categories
 6. ☐ Deploy & verify tables are created
 
-### Phase 2A+ — Multi-Country Readiness (Week 2)
+### Phase 2A+ - Multi-Country Readiness (Week 2)
 
 1. ☐ Add `country` to User, VehiclePricing, SurgeRule models
 2. ☐ Add `currency` to Ride, Order models
@@ -1450,40 +1450,40 @@ const settings = [
 5. ☐ Create migration `AddMultiCountrySupport`
 6. ☐ Create `src/utils/currency.ts` (symbol map + `formatCurrency()`)
 7. ☐ Create `src/services/payment/payment-provider-registry.ts`
-8. ☐ Refactor `PaymentService` — remove GHS hardcoding, use provider registry
-9. ☐ Refactor `WalletService.createWallet()` — currency from country
-10. ☐ Refactor `FareService` — filter pricing/surge by country
-11. ☐ Refactor `NotificationService` — use `formatCurrency()` helper
+8. ☐ Refactor `PaymentService` - remove GHS hardcoding, use provider registry
+9. ☐ Refactor `WalletService.createWallet()` - currency from country
+10. ☐ Refactor `FareService` - filter pricing/surge by country
+11. ☐ Refactor `NotificationService` - use `formatCurrency()` helper
 
-### Phase 2B — Products & Merchant (Week 2-3)
+### Phase 2B - Products & Merchant (Week 2-3)
 
-1. ☐ `ProductService` — full CRUD with customizations
+1. ☐ `ProductService` - full CRUD with customizations
 2. ☐ `ProductController` + routes
 3. ☐ Product image upload (multipart → MinIO)
-4. ☐ `MerchantService` — dashboard, operating hours, stats
+4. ☐ `MerchantService` - dashboard, operating hours, stats
 5. ☐ `MerchantController` + routes
-6. ☐ `SearchService` — product/merchant search + location filter
+6. ☐ `SearchService` - product/merchant search + location filter
 
-### Phase 2C — Cart & Checkout (Week 3-4)
+### Phase 2C - Cart & Checkout (Week 3-4)
 
-1. ☐ `CartService` — add/remove/update, single-merchant enforcement, Redis caching
+1. ☐ `CartService` - add/remove/update, single-merchant enforcement, Redis caching
 2. ☐ `CartController` + routes
-3. ☐ `OrderService` — quote, checkout, status transitions
+3. ☐ `OrderService` - quote, checkout, status transitions
 4. ☐ `OrderController` + routes
-5. ☐ `PickupCodeService` — generate & verify codes
-6. ☐ `DeliveryFeeService` — distance-based delivery fee calculation
+5. ☐ `PickupCodeService` - generate & verify codes
+6. ☐ `DeliveryFeeService` - distance-based delivery fee calculation
 7. ☐ Extend `PaymentService` for order payments
 
-### Phase 2D — Settlement & Delivery (Week 4-5)
+### Phase 2D - Settlement & Delivery (Week 4-5)
 
-1. ☐ `SettlementService` — all 4 settlement flows
+1. ☐ `SettlementService` - all 4 settlement flows
 2. ☐ Driver delivery acceptance + status updates
 3. ☐ Pickup code verification → settlement trigger
 4. ☐ Order completion → wallet credits/debits
 5. ☐ `OrderRating` flow
 6. ☐ Order-related notifications (merchant, customer, driver)
 
-### Phase 2E — Admin Back-Office (Week 5-6)
+### Phase 2E - Admin Back-Office (Week 5-6)
 
 1. ☐ Extend `AdminController` with all new endpoints
 2. ☐ Admin dashboard aggregations
@@ -1493,7 +1493,7 @@ const settings = [
 6. ☐ Platform settings management
 7. ☐ Revenue & order reports
 
-### Phase 2F — Polish & Testing (Week 6-7)
+### Phase 2F - Polish & Testing (Week 6-7)
 
 1. ☐ Swagger documentation for all new endpoints
 2. ☐ Edge cases: stock management, out-of-stock handling

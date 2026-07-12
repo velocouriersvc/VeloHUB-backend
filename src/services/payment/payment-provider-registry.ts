@@ -23,11 +23,18 @@ export class PaymentProviderRegistry {
         // specific African markets it supports (mobile money + cards) below.
         this.defaultProvider = this.stripeProvider;
 
-        // Paystack markets (mobile money + cards): Ghana, Nigeria, Kenya, South Africa.
-        this.providers.set("GH", paystack);
-        this.providers.set("NG", paystack);
-        this.providers.set("KE", paystack);
-        this.providers.set("ZA", paystack);
+        // African countries route to Paystack (mobile money + cards); everywhere else
+        // falls through to the Stripe default. ISO 3166-1 alpha-2, whole continent.
+        const AFRICAN_COUNTRIES = [
+            "DZ", "AO", "BJ", "BW", "BF", "BI", "CM", "CV", "CF", "TD", "KM", "CG",
+            "CD", "CI", "DJ", "EG", "GQ", "ER", "SZ", "ET", "GA", "GM", "GH", "GN",
+            "GW", "KE", "LS", "LR", "LY", "MG", "MW", "ML", "MR", "MU", "MA", "MZ",
+            "NA", "NE", "NG", "RW", "ST", "SN", "SC", "SL", "SO", "ZA", "SS", "SD",
+            "TZ", "TG", "TN", "UG", "ZM", "ZW",
+        ];
+        for (const code of AFRICAN_COUNTRIES) {
+            this.providers.set(code, paystack);
+        }
 
         // North America & Europe - Stripe
         const stripeCountries = [

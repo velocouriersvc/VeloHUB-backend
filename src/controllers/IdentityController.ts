@@ -1,6 +1,9 @@
 import { Request, Response } from "express";
 import { AuthRequest } from "../middleware/role-middleware";
 import { IdentityVerificationService } from "../services/identity/identity-verification-service";
+import { AppDataSource } from "../db/data-source";
+import { User } from "../models/user";
+import { Identification } from "../models/identification";
 import { createServiceLogger } from "../utils/logger";
 
 const log = createServiceLogger("IdentityController");
@@ -55,14 +58,31 @@ export class IdentityController {
 
     /**
      * GET /auth/identity-status
-     * Get current identity status for the logged in user
+     * Get current identity status for the logged in user (any role).
      */
     getStatus = async (req: AuthRequest, res: Response) => {
         try {
             const userId = (req as any).user?.id;
-            // ... status logic ...
-            return res.json({ status: "pending" }); // stub
+            if (!userId) return res.status(401).json({ message: "UserId required" });
+
+            const user = await AppDataSource.getRepository(User).findOne({
+                where: { id: userId },
+                relations: ["driverProfile", "merchantProfile", "buyerProfile"],
+            });
+            const identificationId = user?.driverProfile?.identificationId
+                || user?.merchantProfile?.identificationId
+                || user?.buyerProfile?.identificationId;
+            if (!identificationId) return res.json({ status: "unverified" });
+
+            const identification = await AppDataSource.getRepository(Identification).findOne({
+                where: { id: identificationId },
+            });
+            return res.json({
+                status: identification?.status ?? "unverified",
+                updatedAt: identification?.updatedAt ?? null,
+            });
         } catch (error) {
+            log.error("Error getting identity status", { error: (error as Error).message });
             return res.status(500).json({ message: "Internal server error" });
         }
     };

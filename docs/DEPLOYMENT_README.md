@@ -1,4 +1,4 @@
-VeloHub — K8s production deployment (pull image from GitHub Container Registry)
+VeloHub - K8s production deployment (pull image from GitHub Container Registry)
 
 This guide shows how to deploy the backend to the `velo` namespace using images published to GitHub Container Registry (GHCR). It creates an image pull secret, deploys Redis and MinIO, and deploys the API using the registry image. It also describes how to inject environment variables and secrets.
 

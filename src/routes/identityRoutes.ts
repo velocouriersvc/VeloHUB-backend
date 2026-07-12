@@ -59,4 +59,18 @@ router.use(apiKeyMiddleware);
 // Typically drivers and merchants need this.
 router.post("/identity-session", requireRole(["driver", "merchant", "buyer"]), identityController.createSession);
 
+/**
+ * @openapi
+ * /auth/identity-status:
+ *   get:
+ *     tags: [Identity]
+ *     summary: Current Stripe Identity verification status for the logged-in user
+ *     security:
+ *       - ApiKeyAuth: []
+ *     responses:
+ *       200:
+ *         description: Status (unverified | pending | verified | failed) + updatedAt
+ */
+router.get("/identity-status", requireRole(["driver", "merchant", "buyer"]), identityController.getStatus);
+
 export default router;

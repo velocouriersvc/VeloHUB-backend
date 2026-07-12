@@ -6,7 +6,7 @@
 
 ## TL;DR
 
-Yes — you can add a brand-new payment provider (Stripe, Flutterwave, Razorpay, etc.) by creating **one file** that implements the `PaymentProvider` interface, then registering it in the registry with a country code. Everything else — `PaymentService`, `WalletService`, webhooks — resolves automatically.
+Yes - you can add a brand-new payment provider (Stripe, Flutterwave, Razorpay, etc.) by creating **one file** that implements the `PaymentProvider` interface, then registering it in the registry with a country code. Everything else - `PaymentService`, `WalletService`, webhooks - resolves automatically.
 
 ---
 
@@ -69,7 +69,7 @@ It handles:
 
 ### 3. `PaymentProviderRegistry` (`payment-provider-registry.ts`)
 
-This is the **router** — a simple `Map<country, provider>`:
+This is the **router** - a simple `Map<country, provider>`:
 
 ```typescript
 // Current mappings (in the constructor):
@@ -79,7 +79,7 @@ This is the **router** — a simple `Map<country, provider>`:
 // Unmapped countries fall back to the default (Paystack)
 ```
 
-It's a **singleton** — one instance shared across the entire app:
+It's a **singleton** - one instance shared across the entire app:
 
 ```typescript
 import { paymentProviderRegistry } from "./payment-provider-registry";
@@ -114,7 +114,7 @@ Every payment method (`processRidePayment`, `processOrderPayment`, `creditDriver
 
 ### Example: Adding Stripe for the US
 
-**Step 1 — Create the provider file**
+**Step 1 - Create the provider file**
 
 ```
 src/services/payment/stripe-provider.ts
@@ -150,7 +150,7 @@ export class StripeProvider implements PaymentProvider {
 }
 ```
 
-**Step 2 — Register it in the registry**
+**Step 2 - Register it in the registry**
 
 Open `payment-provider-registry.ts` and add one line in the constructor:
 
@@ -168,7 +168,7 @@ constructor() {
 }
 ```
 
-**Step 3 — Make sure the country has `platform_settings`**
+**Step 3 - Make sure the country has `platform_settings`**
 
 The US and CA rows already exist in `platform_settings` (from the seed script):
 
@@ -177,7 +177,7 @@ The US and CA rows already exist in `platform_settings` (from the seed script):
 | US | USD | 20% |
 | CA | CAD | 20% |
 
-**Step 4 — Add the env var**
+**Step 4 - Add the env var**
 
 ```env
 STRIPE_SECRET_KEY=sk_live_...
@@ -261,10 +261,10 @@ This is a future task for Phase 2C/2D when order payments go live.
 | Decision | Why |
 |---|---|
 | **Registry is a singleton** | One instance, no duplicate provider objects, import anywhere |
-| **Default fallback is Paystack** | Unmapped countries still work — won't crash |
+| **Default fallback is Paystack** | Unmapped countries still work - won't crash |
 | **`country` param defaults to `"GH"`** | All existing code (ride-service, wallet-controller) works without changes |
 | **Commission comes from DB, not constants** | Each country can have different rates, changeable at runtime via admin |
-| **Interface method is called `initiateMomoPayment`** | Naming is legacy from Ghana-first — it handles card payments too (Paystack's charge endpoint accepts both) |
+| **Interface method is called `initiateMomoPayment`** | Naming is legacy from Ghana-first - it handles card payments too (Paystack's charge endpoint accepts both) |
 
 ---
 
@@ -274,10 +274,10 @@ This is a future task for Phase 2C/2D when order payments go live.
 No. The provider only knows about `amount`, `currency`, `phoneNumber`, and `reference`. The country-awareness lives in the registry + `platform_settings`. The provider is a dumb API wrapper.
 
 **Q: Can one country use multiple providers?**
-Not currently — it's a 1:1 mapping (one provider per country). If needed later, extend the registry to support an array of providers per country with a priority/fallback chain.
+Not currently - it's a 1:1 mapping (one provider per country). If needed later, extend the registry to support an array of providers per country with a priority/fallback chain.
 
 **Q: What if I need card payments but not momo?**
-The interface method is called `initiateMomoPayment` but it works for cards too. For Stripe you'd use Payment Intents which handle cards natively. The name is a bit misleading — think of it as `initiatePayment`. We can rename it in a future refactor.
+The interface method is called `initiateMomoPayment` but it works for cards too. For Stripe you'd use Payment Intents which handle cards natively. The name is a bit misleading - think of it as `initiatePayment`. We can rename it in a future refactor.
 
 **Q: Where do I add the API keys?**
 Each provider reads its own env var in its constructor. Paystack reads `PAYSTACK_SECRET_KEY`. Your new provider reads whatever you define (e.g. `STRIPE_SECRET_KEY`). Add them to your `.env` and K8s secrets.

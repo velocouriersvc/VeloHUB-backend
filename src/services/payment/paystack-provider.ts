@@ -30,7 +30,11 @@ export class PaystackProvider implements PaymentProvider {
     }
 
     /**
-     * Initiate a mobile money charge via Paystack
+     * Initiate a mobile money payment via Paystack's HOSTED checkout, restricted to the
+     * mobile_money channel. The old raw `/charge` push flow silently dropped Paystack's
+     * follow-up states (pay_offline / send_otp / display_text) and returned no URL, so
+     * customers never received an actionable prompt. The hosted page drives the telco
+     * prompt/OTP end to end and reports back through the same charge.success webhook.
      */
     async initiateMomoPayment(request: MomoPaymentRequest): Promise<{
         success: boolean;
@@ -39,20 +43,16 @@ export class PaystackProvider implements PaymentProvider {
         authorizationUrl?: string;
     }> {
         try {
-            // Paystack amounts are in pesewas (smallest currency unit)
-            const amountInPesewas = Math.round(request.amount * 100);
+            const amountInSubunits = Math.round(request.amount * 100);
 
             const response = await axios.post(
-                `${PAYSTACK_BASE_URL}/charge`,
+                `${PAYSTACK_BASE_URL}/transaction/initialize`,
                 {
                     email: request.email,
-                    amount: amountInPesewas,
+                    amount: amountInSubunits,
                     currency: request.currency || "GHS",
                     reference: request.reference,
-                    mobile_money: {
-                        phone: request.phoneNumber,
-                        provider: this.detectMomoProvider(request.phoneNumber),
-                    },
+                    channels: ["mobile_money"],
                     metadata: {
                         ...request.metadata,
                         custom_fields: [
@@ -71,14 +71,14 @@ export class PaystackProvider implements PaymentProvider {
             const data = response.data.data;
 
             return {
-                success: response.data.status === true,
+                success: response.data.status === true && !!data?.authorization_url,
                 reference: request.reference,
-                providerRef: data.reference || data.id?.toString() || "",
-                authorizationUrl: data.authorization_url,
+                providerRef: data?.reference || "",
+                authorizationUrl: data?.authorization_url,
             };
         } catch (error) {
             const axErr = error as AxiosError<{ message?: string }>;
-            log.error("Paystack charge error", { error: axErr.response?.data?.message || axErr.message });
+            log.error("Paystack momo initialize error", { error: axErr.response?.data?.message || axErr.message });
             return {
                 success: false,
                 reference: request.reference,
@@ -177,33 +177,4 @@ export class PaystackProvider implements PaymentProvider {
         return hash === signature;
     }
 
-    /**
-     * Detect mobile money provider from phone number.
-     * Currently supports Ghana & Nigeria prefixes.
-     *
-     * Ghana - MTN: 024,054,055,059 | Vodafone: 020,050 | AirtelTigo: 027,057,026,056
-     * Nigeria - MTN: 0803,0806,0703,0903 | Airtel: 0802,0708,0902 | Glo: 0805,0705,0905 | 9mobile: 0809,0909
-     */
-    private detectMomoProvider(phone: string): string {
-        // Strip common country codes
-        let local = phone.replace(/^\+233/, "0").replace(/^\+234/, "0");
-
-        // Ghana detection (3-digit prefix)
-        const ghPrefix = local.substring(0, 3);
-        const ghMtn = ["024", "054", "055", "059"];
-        const ghVoda = ["020", "050"];
-
-        if (ghMtn.includes(ghPrefix)) return "mtn";
-        if (ghVoda.includes(ghPrefix)) return "vod";
-
-        // Nigeria detection (4-digit prefix)
-        const ngPrefix = local.substring(0, 4);
-        const ngMtn = ["0803", "0806", "0703", "0903", "0816"];
-        const ngAirtel = ["0802", "0708", "0902", "0812"];
-
-        if (ngMtn.includes(ngPrefix)) return "mtn";
-        if (ngAirtel.includes(ngPrefix)) return "airtel";
-
-        return "tgo"; // AirtelTigo as default fallback
-    }
 }

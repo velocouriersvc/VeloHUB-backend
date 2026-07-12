@@ -178,6 +178,20 @@ router.get("/:id/messages", requireRole(["buyer", "driver"]), rideController.get
 
 /**
  * @openapi
+ * /rides/{id}/messages:
+ *   post:
+ *     tags: [Rides]
+ *     summary: Send a chat message on a ride (customer or driver)
+ *     security:
+ *       - ApiKeyAuth: []
+ *     responses:
+ *       201:
+ *         description: The persisted message (also relayed live + push-notified)
+ */
+router.post("/:id/messages", requireRole(["buyer", "driver"]), rideController.sendMessage);
+
+/**
+ * @openapi
  * /rides/scheduled/{id}/cancel:
  *   post:
  *     tags: [Rides]

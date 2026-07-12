@@ -25,6 +25,9 @@ metadata:
   namespace: velo
 spec:
   type: NodePort
+  # Pin each client IP to one pod so the socket.io HTTP-polling fallback (multiple
+  # requests per session) always lands on the pod that owns the session.
+  sessionAffinity: ClientIP
   selector:
     app: velo-api
   ports:
