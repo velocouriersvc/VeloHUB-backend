@@ -69,8 +69,22 @@ export function initSocketGateway(httpServer: HttpServer): Server {
     // CRITICAL for multi-replica deployments: without this adapter, rooms/emits only
     // reach sockets on the SAME pod - customer and driver on different pods would never
     // receive each other's chat messages or live locations.
+    //
+    // The duplicates MUST override the app client's options: the app client uses
+    // enableOfflineQueue:false (adapter psubscribe would throw before the connection is
+    // ready and crash the boot) and a give-up retryStrategy (the adapter would die
+    // permanently on a Redis restart). Pub/sub connections queue + retry forever.
     try {
-        io.adapter(createAdapter(redis.duplicate(), redis.duplicate()));
+        const adapterOverrides = {
+            enableOfflineQueue: true,
+            maxRetriesPerRequest: null as null,
+            retryStrategy: (times: number) => Math.min(times * 1000, 5000),
+        };
+        const pubClient = redis.duplicate(adapterOverrides);
+        const subClient = redis.duplicate(adapterOverrides);
+        pubClient.on("error", (err) => log.warn("Adapter pub client error", { error: err.message }));
+        subClient.on("error", (err) => log.warn("Adapter sub client error", { error: err.message }));
+        io.adapter(createAdapter(pubClient, subClient));
         log.info("Socket.IO Redis adapter attached (cross-pod rooms enabled)");
     } catch (err) {
         log.error("Failed to attach Redis adapter - sockets are single-pod only", { error: (err as Error).message });
