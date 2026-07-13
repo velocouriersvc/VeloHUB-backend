@@ -1524,6 +1524,19 @@ export class AdminController {
         }
     }
 
+    /** GET /support - the requesting user's own tickets. */
+    getMySupportTickets = async (req: AuthRequest, res: Response) => {
+        try {
+            const userId = req.user?.id;
+            if (!userId) return res.status(401).json({ message: "User ID required" });
+            const tickets = await this.adminService.getUserSupportTickets(userId);
+            return res.json({ tickets });
+        } catch (error) {
+            log.error("Error fetching user tickets", { error: (error as Error).message });
+            return res.status(500).json({ message: "Internal server error" });
+        }
+    }
+
     // ════════════════════════════════════════════════════════════════
     //  FINANCE & SETTINGS
     // ════════════════════════════════════════════════════════════════

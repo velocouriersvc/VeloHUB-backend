@@ -86,13 +86,16 @@ export class WalletService {
     }
 
     /**
-     * Debit wallet (remove funds)
+     * Debit wallet (remove funds). `allowNegative` lets the balance go below zero -
+     * used for cash-ride commission collection where the driver holds the fare and
+     * OWES the platform (reconciled at their next top-up/cash-out).
      */
     async debit(
         userId: string,
         amount: number,
         description: string,
-        metadata?: Record<string, any>
+        metadata?: Record<string, any>,
+        allowNegative: boolean = false
     ): Promise<WalletTransaction> {
         if (amount <= 0) throw new Error("Debit amount must be positive");
 
@@ -100,7 +103,7 @@ export class WalletService {
         if (!wallet) throw new Error("Wallet not found");
 
         const balanceBefore = Number(wallet.balance);
-        if (balanceBefore < amount) {
+        if (!allowNegative && balanceBefore < amount) {
             throw new Error("Insufficient wallet balance");
         }
 

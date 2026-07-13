@@ -258,8 +258,15 @@ export class SettlementService {
         const settings = await this.settingsRepo.findOne({ where: { country, isActive: true } });
         const currency = ride.currency || settings?.currency || "GHS";
 
-        // Determine settlement type
-        const isCash = ride.paymentMethod === RidePaymentMethod.CASH;
+        // Determine settlement type. The driver is credited ONLY when the platform
+        // actually collected the fare online (paid + a non-cash method). Cash, a null
+        // method (e.g. checkout-created rides), or unpaid rides all settle as cash:
+        // the driver holds the money and owes the platform its commission. Crediting a
+        // ride the platform never collected paid drivers from thin air.
+        const collectedOnline = ride.paymentStatus === RidePaymentStatus.PAID
+            && !!ride.paymentMethod
+            && ride.paymentMethod !== RidePaymentMethod.CASH;
+        const isCash = !collectedOnline;
         const settlementType: SettlementType = isCash ? "cash_ride" : "online_ride";
 
         // Calculate amounts
@@ -351,19 +358,35 @@ export class SettlementService {
 
         if (ride.driverId && platformFee > 0) {
             try {
+                // allowNegative: the driver collected the fare in cash and OWES this
+                // commission - the balance goes below zero and is reconciled at their
+                // next top-up/cash-out (standard ride-hailing behavior).
                 await this.walletService.debit(
                     ride.driverId,
                     platformFee,
                     `Platform commission: Ride #${metadata.rideReference}`,
-                    metadata
+                    metadata,
+                    true
                 );
                 driverDebited = true;
             } catch (err) {
-                log.warn("Driver wallet debit failed for ride commission", {
-                    driverId: ride.driverId,
-                    amount: platformFee,
-                    error: (err as Error).message,
-                });
+                // With negative balances allowed this should only be a missing wallet -
+                // auto-create it and retry once so commission is never silently lost.
+                if (/Wallet not found/i.test((err as Error).message)) {
+                    try {
+                        await this.walletService.createWallet(ride.driverId);
+                        await this.walletService.debit(ride.driverId, platformFee, `Platform commission: Ride #${metadata.rideReference}`, metadata, true);
+                        driverDebited = true;
+                    } catch (retryErr) {
+                        log.error("Cash commission debit failed after wallet create", { driverId: ride.driverId, amount: platformFee, error: (retryErr as Error).message });
+                    }
+                } else {
+                    log.error("Cash commission debit failed - commission uncollected", {
+                        driverId: ride.driverId,
+                        amount: platformFee,
+                        error: (err as Error).message,
+                    });
+                }
             }
         }
 

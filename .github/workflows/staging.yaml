@@ -54,4 +54,4 @@ jobs:
           TRIVY_USERNAME: ${{ github.actor }}
           TRIVY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
 
-      # ArgoCD picks up the new :staging image automatically — nothing else needed here
+      # ArgoCD picks up the new :staging image automatically - nothing else needed here
