@@ -20,7 +20,7 @@ spec:
         - name: regcred
       containers:
         - name: velo-api
-          # Image hosted on GitHub Container Registry — change owner/name/tag if needed
+          # Image hosted on GitHub Container Registry - change owner/name/tag if needed
           image: ghcr.io/velocouriersvc/velo-backend:latest
           imagePullPolicy: Always
           ports:

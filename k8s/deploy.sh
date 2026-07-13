@@ -1,5 +1,5 @@
 #!/bin/bash
-# deploy.sh — Build, push, and apply all K8s manifests
+# deploy.sh - Build, push, and apply all K8s manifests
 # Run from the velo-backend directory
 
 set -e

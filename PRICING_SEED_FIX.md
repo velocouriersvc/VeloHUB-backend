@@ -12,8 +12,8 @@
 
 Every time the backend server restarted, two seed scripts were automatically running:
 
-1. **`seed-vehicle-pricing.ts`** — Overwrote vehicle pricing
-2. **`seed-platform-settings.ts`** — Overwrote platform settings (including rider service fee)
+1. **`seed-vehicle-pricing.ts`** - Overwrote vehicle pricing
+2. **`seed-platform-settings.ts`** - Overwrote platform settings (including rider service fee)
 
 ### Why Fares Were Wrong
 
@@ -254,5 +254,5 @@ docker run -p 3000:3000 velo-backend
 ---
 
 **Status:** ✅ Fixed and ready for deployment  
-**Impact:** HIGH — All Ghana ride fares were 30-40% too expensive  
-**Priority:** CRITICAL — Deploy ASAP to production
+**Impact:** HIGH - All Ghana ride fares were 30-40% too expensive  
+**Priority:** CRITICAL - Deploy ASAP to production

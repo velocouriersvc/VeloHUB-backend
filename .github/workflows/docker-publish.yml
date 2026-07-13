@@ -163,7 +163,7 @@ jobs:
             else
               echo ""
               echo "=========================================="
-              echo "❌ ROLLOUT FAILED — COLLECTING DIAGNOSTICS"
+              echo "❌ ROLLOUT FAILED - COLLECTING DIAGNOSTICS"
               echo "=========================================="
 
               echo ""

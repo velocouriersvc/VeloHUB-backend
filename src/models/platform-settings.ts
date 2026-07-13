@@ -10,8 +10,10 @@ export class PlatformSettings {
     @PrimaryGeneratedColumn("uuid")
     id: string;
 
-    @Column({ type: "varchar", length: 3, unique: true })
-    country: string; // ISO 3166-1 alpha-2: 'GH','NG','IN','US','CA'
+    // length 8 so the global "DEFAULT" fallback row fits (varchar(3) made its
+    // insert fail on every boot, which aborted ALL seed scripts after it)
+    @Column({ type: "varchar", length: 8, unique: true })
+    country: string; // ISO 3166-1 alpha-2 ('GH','NG','US','CA') or 'DEFAULT'
 
     @Column({ type: "varchar", length: 3 })
     currency: string; // 'GHS','NGN','INR','USD','CAD','EUR'

@@ -1,7 +1,7 @@
 import { OrderService } from "./order-service";
 import { RideService } from "./ride-service";
 import { DeliveryType, OrderPaymentMethod } from "../models/order";
-import { RideType } from "../models/ride";
+import { RideType, PaymentMethod } from "../models/ride";
 import { VehicleType } from "../models/vehicle-pricing";
 
 export type UnifiedCheckoutKind = "product_order" | "product_order_with_delivery" | "package_ride";
@@ -123,6 +123,9 @@ export class CheckoutService {
                     distanceKm: input.distanceKm,
                     durationMin: input.durationMin,
                     promoCode: input.promoCode,
+                    // Classify cash vs online at creation so settlement never credits
+                    // a fare the platform did not collect.
+                    paymentMethod: input.paymentMethod as unknown as PaymentMethod,
                     stops: input.stops,
                     sharedContacts: input.sharedContacts,
                 });
@@ -153,6 +156,7 @@ export class CheckoutService {
             distanceKm: packageRideInput.distanceKm,
             durationMin: packageRideInput.durationMin,
             promoCode: packageRideInput.promoCode,
+            paymentMethod: (packageRideInput.paymentMethod as PaymentMethod) || undefined,
         });
 
         return {

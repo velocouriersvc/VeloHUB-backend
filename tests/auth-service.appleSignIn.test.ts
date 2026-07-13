@@ -2,10 +2,10 @@
  * Unit tests for AuthService Apple Sign-In
  *
  * Two suites:
- *   1. appleSignIn  — exercises user creation, lookup, email-linking, role assignment.
+ *   1. appleSignIn  - exercises user creation, lookup, email-linking, role assignment.
  *      verifyAppleToken is stubbed so no real crypto or network is needed.
  *
- *   2. verifyAppleToken — exercises JWT claim validation and signature verification.
+ *   2. verifyAppleToken - exercises JWT claim validation and signature verification.
  *      axios.get (Apple JWKS) and crypto.createVerify are mocked so the test is
  *      fully offline.
  *
@@ -13,7 +13,7 @@
  * Repos that are assigned to service instance properties are replaced via
  * `(svc as any).repo = mockRepo` (same pattern as admin-service tests).
  * Inline AppDataSource.getRepository calls (UserProfile, BuyerProfile) return
- * the stub repo from the mock — findOne returns undefined, which is fine.
+ * the stub repo from the mock - findOne returns undefined, which is fine.
  */
 
 // Must be declared before any imports so Jest hoists them.
@@ -289,7 +289,7 @@ describe('AuthService.appleSignIn', () => {
 
 // ── Suite 2: verifyAppleToken ─────────────────────────────────────────────────
 
-describe('AuthService.verifyAppleToken — claim validation and signature check', () => {
+describe('AuthService.verifyAppleToken - claim validation and signature check', () => {
     let svc: AuthService;
 
     beforeEach(() => {
@@ -297,7 +297,7 @@ describe('AuthService.verifyAppleToken — claim validation and signature check'
 
         svc = new AuthService();
 
-        // Mock Apple JWKS endpoint — returns a single key matching 'test-kid'
+        // Mock Apple JWKS endpoint - returns a single key matching 'test-kid'
         mockedAxios.get = jest.fn().mockResolvedValue({
             data: {
                 keys: [{ kid: 'test-kid', kty: 'RSA', n: 'modulus', e: 'AQAB' }],

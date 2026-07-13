@@ -24,29 +24,33 @@ const log = createServiceLogger("FareService");
  */
 const VEHICLE_DISPLAY_NAMES: Record<string, Record<string, string>> = {
     US: {
-        bike:  "Velo Go",       // Entry-level, no physical bikes
-        car:   "Velo Standard", // Standard sedan
-        suv:   "Velo Premium",  // SUV tier (aligned with the global "Velo Premium" name)
-        truck: "Velo Truck",    // Truck / heavy load
+        bike:     "Velo Go",       // Entry-level, no physical bikes
+        car:      "Velo Standard", // Standard sedan
+        priority: "Velo Priority", // Premium car tier
+        suv:      "Velo Premium",  // SUV tier (aligned with the global "Velo Premium" name)
+        truck:    "Velo Truck",    // Truck / heavy load
     },
     CA: {
-        bike:  "Velo Go",
-        car:   "Velo Standard",
-        suv:   "Velo Premium",
-        truck: "Velo Truck",
+        bike:     "Velo Go",
+        car:      "Velo Standard",
+        priority: "Velo Priority",
+        suv:      "Velo Premium",
+        truck:    "Velo Truck",
     },
     // Ghana & Nigeria keep the original brand names
     GH: {
-        bike:  "Velo Bikes",
-        car:   "Velo Basic",
-        suv:   "Velo Premium",
-        truck: "Velo Trucks",
+        bike:     "Velo Bikes",
+        car:      "Velo Basic",
+        priority: "Velo Priority",
+        suv:      "Velo Premium",
+        truck:    "Velo Trucks",
     },
     NG: {
-        bike:  "Velo Bikes",
-        car:   "Velo Basic",
-        suv:   "Velo Premium",
-        truck: "Velo Trucks",
+        bike:     "Velo Bikes",
+        car:      "Velo Basic",
+        priority: "Velo Priority",
+        suv:      "Velo Premium",
+        truck:    "Velo Trucks",
     },
 };
 

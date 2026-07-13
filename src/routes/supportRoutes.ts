@@ -10,5 +10,7 @@ router.use(apiKeyMiddleware);
 // Public website contact form (anonymous): emails support + confirmation.
 router.post("/contact", adminController.contactForm);
 router.post("/", requireAuth, adminController.createSupportTicket);
+// The user's own tickets (status + resolution visible in-app).
+router.get("/", requireAuth, adminController.getMySupportTickets);
 
 export default router;

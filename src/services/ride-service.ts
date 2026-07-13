@@ -49,6 +49,9 @@ export interface RideRequest {
     promoCode?: string;
     country?: string;
     requireCode?: boolean;
+    /** Known payment method at creation (e.g. checkout package rides) so settlement
+     *  classifies cash vs online correctly even if setPayment is never called. */
+    paymentMethod?: PaymentMethod;
     stops?: Array<{ address: string; lat: number; lng: number; stopOrder: number }>;
     sharedContacts?: Array<{ name: string; phone: string }>;
 }
@@ -267,6 +270,7 @@ export class RideService {
             passengerCount: request.passengerCount || 1,
             requireCode: !!request.requireCode,
             pickupCode: request.requireCode ? new PickupCodeService().generate() : null,
+            paymentMethod: request.paymentMethod ?? null,
             status: RideStatus.SEARCHING,
         });
 

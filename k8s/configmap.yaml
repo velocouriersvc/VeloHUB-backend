@@ -21,7 +21,7 @@ data:
   # During the maintenance window, set DATABASE_URL (in velo-secrets) to the Supabase
   # session-pooler connection string, then flip the two values below:
   #   DB_SSL: "true"
-  #   DB_SYNCHRONIZE: "false"   # schema already restored — stop TypeORM auto-altering it
+  #   DB_SYNCHRONIZE: "false"   # schema already restored - stop TypeORM auto-altering it
   # DATABASE_URL (when set) takes precedence over DB_HOST/DB_PORT/DB_USERNAME/DB_NAME above,
   # so you can leave those in place for instant rollback.
   DB_SYNCHRONIZE: "true"
@@ -38,7 +38,7 @@ data:
   # Should point to the HTTPS domain fronting /velo-uploads via Nginx/Ingress.
   MINIO_PUBLIC_URL: "https://api.velocouriersvc.com"
 
-  # SMTP (Postfix on VPS host — see docs/K8S_EMAIL_SETUP.md)
+  # SMTP (Postfix on VPS host - see docs/K8S_EMAIL_SETUP.md)
   SMTP_HOST: "10.42.0.1"                    # pod gateway → host Postfix
   SMTP_PORT: "25"
   SMTP_FROM: "noreply@velocouriersvc.com"

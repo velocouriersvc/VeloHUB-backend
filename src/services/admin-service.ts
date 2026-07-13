@@ -2333,6 +2333,15 @@ export class AdminService {
         });
     }
 
+    /** A user's own tickets (for the in-app "My tickets" list). */
+    async getUserSupportTickets(userId: string, limit = 50) {
+        return this.supportTicketRepo.find({
+            where: { userId },
+            order: { created_date: "DESC" },
+            take: limit,
+        });
+    }
+
     async createSupportTicket(data: { userId: string; subject: string; description: string; category?: string; priority?: SupportTicketPriority }) {
         const ticket = this.supportTicketRepo.create({
             ...data,
@@ -2360,6 +2369,17 @@ export class AdminService {
         Object.assign(ticket, data);
         await this.supportTicketRepo.save(ticket);
         log.info("Admin updated support ticket", { id, status: ticket.status, adminId });
+
+        // Tell the user support responded (push + in-app), so replies are never invisible.
+        if (data.status || data.resolution) {
+            const title = ticket.status === "resolved" ? "Support ticket resolved ✅" : "Support update 💬";
+            const body = ticket.resolution
+                ? `${ticket.ticket_number}: ${ticket.resolution}`
+                : `${ticket.ticket_number} is now ${String(ticket.status || "updated").replace("_", " ")}.`;
+            this.notificationService
+                .notify(ticket.userId, NotificationType.SYSTEM, title, body, { ticketId: ticket.id, ticketNumber: ticket.ticket_number })
+                .catch((err) => log.warn("Support reply notification failed", { id, error: (err as Error).message }));
+        }
         return ticket;
     }
 
