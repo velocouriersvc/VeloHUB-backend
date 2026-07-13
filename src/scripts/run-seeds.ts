@@ -15,28 +15,34 @@ import { backfillProductImages } from "./backfill-product-images";
  * pass `alreadyInitialised = true` so seeds don't try to re-connect.
  */
 export async function runSeeds(): Promise<void> {
-    try {
+    // Each seed is isolated: one failure must never starve the seeds after it
+    // (a platform-settings varchar overflow silently blocked the price-book seed
+    // in production for a full release).
+    const seeds: Array<[string, () => Promise<unknown>]> = [
         // Platform settings first (vehicle pricing references the same countries)
-        await seedPlatformSettings(true);
-        await seedVehiclePricing(true);
-        await seedProductCategories(true);
+        ["platform-settings", () => seedPlatformSettings(true)],
+        ["vehicle-pricing", () => seedVehiclePricing(true)],
+        ["product-categories", () => seedProductCategories(true)],
         // Ensure the notifications enum has every value (fixes setup 500s caused by
         // missing enum values like "profile_created"/"welcome" on synchronize-only DBs).
-        await syncNotificationTypeEnum(true);
-
-        // Placeholder images for blank products are now OPT-IN only. Merchants list
-        // products with (or without) their own images, and new listings must never be
-        // switched to a generic image. Run it once manually if ever needed by setting
-        // ENABLE_PRODUCT_IMAGE_BACKFILL=true (or `npm run seed:product-images`).
-        if (process.env.ENABLE_PRODUCT_IMAGE_BACKFILL === "true") {
-            await backfillProductImages(true);
-        }
-
-        logger.info("All seed scripts completed");
-    } catch (err) {
-        // Non-fatal - the server can still run without seeds
-        logger.warn("Seed scripts failed (data may need manual seeding)", {
-            error: (err as Error).message,
-        });
+        ["notification-enum", () => syncNotificationTypeEnum(true)],
+    ];
+    // Placeholder images for blank products are OPT-IN only. Merchants list products
+    // with (or without) their own images, and new listings must never be switched to
+    // a generic image. Enable via ENABLE_PRODUCT_IMAGE_BACKFILL=true if ever needed.
+    if (process.env.ENABLE_PRODUCT_IMAGE_BACKFILL === "true") {
+        seeds.push(["product-image-backfill", () => backfillProductImages(true)]);
     }
+
+    for (const [name, run] of seeds) {
+        try {
+            await run();
+        } catch (err) {
+            // Non-fatal - the server can still run without this seed
+            logger.warn(`Seed script failed: ${name} (data may need manual seeding)`, {
+                error: (err as Error).message,
+            });
+        }
+    }
+    logger.info("Seed scripts finished");
 }
