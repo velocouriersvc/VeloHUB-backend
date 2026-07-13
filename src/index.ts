@@ -248,8 +248,38 @@ app.get("/", (_req: Request, res: Response) => {
   `);
 });
 
+// Widen platform_settings.country BEFORE schema sync: the entity needs varchar(8)
+// for the global "DEFAULT" row, but TypeORM synchronize cannot widen a varchar in
+// place (it drops + re-adds the column and crashes with "contains null values" on
+// populated tables). Idempotent; no-op once the column is already varchar(8).
+async function preSyncFixes() {
+  const { Client } = await import("pg");
+  const client = new Client({
+    host: process.env.DB_HOST,
+    port: Number(process.env.DB_PORT || 5432),
+    user: process.env.DB_USERNAME,
+    password: process.env.DB_PASSWORD,
+    database: process.env.DB_NAME,
+  });
+  try {
+    await client.connect();
+    await client.query(`DO $$ BEGIN
+      IF EXISTS (SELECT 1 FROM information_schema.columns
+                 WHERE table_name='platform_settings' AND column_name='country'
+                   AND character_maximum_length < 8) THEN
+        ALTER TABLE platform_settings ALTER COLUMN country TYPE varchar(8);
+      END IF;
+    END $$`);
+  } catch (err) {
+    logger.warn("Pre-sync fixes skipped", { error: (err as Error).message });
+  } finally {
+    await client.end().catch(() => {});
+  }
+}
+
 // Initialize database connection
-AppDataSource.initialize()
+preSyncFixes()
+  .then(() => AppDataSource.initialize())
   .then(async () => {
     logger.info("Data Source has been initialized");
 
