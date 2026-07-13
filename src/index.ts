@@ -253,7 +253,8 @@ app.get("/", (_req: Request, res: Response) => {
 // place (it drops + re-adds the column and crashes with "contains null values" on
 // populated tables). Idempotent; no-op once the column is already varchar(8).
 async function preSyncFixes() {
-  const { Client } = await import("pg");
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { Client } = require("pg") as { Client: new (config: object) => any };
   const client = new Client({
     host: process.env.DB_HOST,
     port: Number(process.env.DB_PORT || 5432),
