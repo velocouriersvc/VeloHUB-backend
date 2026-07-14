@@ -1055,6 +1055,48 @@ export class AdminController {
         }
     };
 
+    // ── Gateway payments (Paystack / Stripe) ──
+    getGatewayPayments = async (req: AuthRequest, res: Response) => {
+        try {
+            const { provider, status, method, from, to, search, page, limit } = req.query as any;
+            const result = await this.adminService.getGatewayPayments({
+                provider, status, method, from, to, search,
+                page: page ? Number(page) : 1,
+                limit: limit ? Number(limit) : 50,
+            });
+            return res.json(result);
+        } catch (error) {
+            log.error("Error getting gateway payments", { error: (error as Error).message });
+            return res.status(500).json({ message: "Internal server error" });
+        }
+    };
+
+    reverifyGatewayPayment = async (req: AuthRequest, res: Response) => {
+        try {
+            const payment = await this.adminService.reverifyGatewayPayment(req.params.id);
+            return res.json({ payment });
+        } catch (error) {
+            const msg = (error as Error).message;
+            if (/not found|no provider reference/i.test(msg)) return res.status(404).json({ message: msg });
+            log.error("Error reverifying payment", { error: msg });
+            return res.status(500).json({ message: "Internal server error" });
+        }
+    };
+
+    refundGatewayPayment = async (req: AuthRequest, res: Response) => {
+        try {
+            const adminId = req.user?.id || "admin";
+            const payment = await this.adminService.refundGatewayPaymentToWallet(req.params.id, adminId);
+            return res.json({ payment });
+        } catch (error) {
+            const msg = (error as Error).message;
+            if (/not found/i.test(msg)) return res.status(404).json({ message: msg });
+            if (/Only successful/i.test(msg)) return res.status(409).json({ message: msg });
+            log.error("Error refunding payment", { error: msg });
+            return res.status(500).json({ message: "Internal server error" });
+        }
+    };
+
     getOrderReport = async (req: AuthRequest, res: Response) => {
         try {
             const { from, to } = req.query;

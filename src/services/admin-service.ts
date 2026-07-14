@@ -23,6 +23,8 @@ import { NotificationService } from "./notification-service";
 import { supabaseAdmin } from "../utils/supabase-client";
 import { SupportTicket, SupportTicketStatus, SupportTicketPriority } from "../models/support-ticket";
 import { SupportTicketMessage } from "../models/support-ticket-message";
+import { Payment, PaymentRecordStatus } from "../models/payment";
+import type { PaymentService } from "./payment/payment-service";
 import { Notification, NotificationType } from "../models/notification";
 import { PromoCode } from "../models/promo-code";
 import { Banner } from "../models/banner";
@@ -137,12 +139,21 @@ export class AdminService {
     private userRoleRepo = AppDataSource.getRepository(UserRole);
     private walletRepo = AppDataSource.getRepository(Wallet);
     private walletTxRepo = AppDataSource.getRepository(WalletTransaction);
+    private paymentRepo = AppDataSource.getRepository(Payment);
     private rideRepo = AppDataSource.getRepository(Ride);
     private serviceBookingRepo = AppDataSource.getRepository(ServiceBooking);
     private zoneRepo = AppDataSource.getRepository(Zone);
     private vehiclePricingRepo = AppDataSource.getRepository(VehiclePricing);
 
     private walletService = new WalletService();
+    private _paymentService?: PaymentService;
+    private get paymentService(): PaymentService {
+        if (!this._paymentService) {
+            const { PaymentService } = require("./payment/payment-service");
+            this._paymentService = new PaymentService();
+        }
+        return this._paymentService!;
+    }
     private productService = new ProductService();
     private notificationService = new NotificationService();
 
@@ -1693,6 +1704,68 @@ export class AdminService {
         });
 
         return { transactions, total };
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    //  GATEWAY PAYMENTS (Paystack / Stripe)
+    // ════════════════════════════════════════════════════════════════
+
+    async getGatewayPayments(filters: {
+        provider?: string; status?: string; method?: string;
+        from?: string; to?: string; search?: string;
+        page?: number; limit?: number;
+    }) {
+        const page = Math.max(1, Number(filters.page) || 1);
+        const limit = Math.min(200, Number(filters.limit) || 50);
+        const qb = this.paymentRepo.createQueryBuilder("p")
+            .leftJoinAndSelect("p.user", "user")
+            .orderBy("p.createdAt", "DESC")
+            .skip((page - 1) * limit)
+            .take(limit);
+
+        if (filters.provider) qb.andWhere("p.provider = :provider", { provider: filters.provider });
+        if (filters.status) qb.andWhere("p.status = :status", { status: filters.status });
+        if (filters.method) qb.andWhere("p.method = :method", { method: filters.method });
+        if (filters.from) qb.andWhere("p.createdAt >= :from", { from: filters.from });
+        if (filters.to) qb.andWhere("p.createdAt <= :to", { to: filters.to });
+        if (filters.search) {
+            qb.andWhere(
+                "(p.providerRef ILIKE :s OR p.metadata ->> 'reference' ILIKE :s OR user.email ILIKE :s OR user.phoneNumber ILIKE :s OR user.name ILIKE :s)",
+                { s: `%${filters.search}%` }
+            );
+        }
+        const [items, total] = await qb.getManyAndCount();
+        return { items, total, page, limit };
+    }
+
+    /** Re-verify a stuck payment with the provider (also advances its ride/order). */
+    async reverifyGatewayPayment(paymentId: string) {
+        const payment = await this.paymentRepo.findOne({ where: { id: paymentId } });
+        if (!payment) throw new Error("Payment not found");
+        const reference = (payment.metadata as any)?.reference;
+        if (!reference) throw new Error("Payment has no provider reference");
+        return this.paymentService.confirmPayment(reference);
+    }
+
+    /** Refund a successful gateway payment to the customer's wallet. */
+    async refundGatewayPaymentToWallet(paymentId: string, adminId: string) {
+        const payment = await this.paymentRepo.findOne({ where: { id: paymentId } });
+        if (!payment) throw new Error("Payment not found");
+        if (payment.status !== PaymentRecordStatus.SUCCESS) throw new Error("Only successful payments can be refunded");
+
+        if (payment.rideId) {
+            await this.paymentService.refundRidePayment(payment.rideId);
+        } else {
+            await this.walletService.credit(
+                payment.userId, Number(payment.amount),
+                "Gateway payment refund",
+                { paymentId: payment.id, providerRef: payment.providerRef, refundedBy: adminId }
+            );
+            payment.status = PaymentRecordStatus.REFUNDED;
+            await this.paymentRepo.save(payment);
+        }
+        log.info("Gateway payment refunded to wallet", { paymentId, adminId });
+        return this.paymentRepo.findOne({ where: { id: paymentId } });
     }
 
     // ════════════════════════════════════════════════════════════════

@@ -1265,6 +1265,10 @@ router.get("/wallets/:id/transactions", adminRole, adminController.getWalletTran
  *         description: List of transactions
  */
 router.get("/transactions", adminRole, adminController.getAllTransactions);
+// Gateway payments (Paystack / Stripe) from the payments table
+router.get("/payments", adminRole, adminController.getGatewayPayments);
+router.post("/payments/:id/reverify", adminRole, adminController.reverifyGatewayPayment);
+router.post("/payments/:id/refund-to-wallet", adminRole, adminController.refundGatewayPayment);
 
 /**
  * @openapi
