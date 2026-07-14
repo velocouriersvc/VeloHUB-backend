@@ -504,9 +504,11 @@ export class RideService {
             }
 
             // Expose the Paystack authorization URL (card / momo) so the client can
-            // open it to complete payment. Attached as a transient field on the ride.
+            // open it to complete payment. Attached as a transient field on the ride,
+            // plus the reference so the app can poll GET /payments/status/:reference.
             const finalRide = await this.getRideOrFail(rideId);
             (finalRide as any).authorizationUrl = result.authorizationUrl;
+            (finalRide as any).paymentReference = result.reference;
             return finalRide;
         }
 

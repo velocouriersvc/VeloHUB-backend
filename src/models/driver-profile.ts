@@ -60,6 +60,15 @@ export class DriverProfile {
     @Column({ type: "uuid", nullable: true })
     identificationId: string | null;
 
+    // ── Off-boarding flag ──
+    // Set when a driver cancels after pickup or a delivery is disputed. If not
+    // cleared by an admin within 6 hours, the account is auto-suspended.
+    @Column({ type: "timestamp", nullable: true })
+    flaggedAt: Date | null;
+
+    @Column({ type: "varchar", length: 255, nullable: true })
+    flagReason: string | null;
+
     @OneToOne(() => User, (user: User) => user.driverProfile, { onDelete: "CASCADE" })
     @JoinColumn({ name: "userId" })
     user: User;

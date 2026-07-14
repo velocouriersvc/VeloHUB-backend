@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { ProductController } from "../controllers/ProductController";
 import { apiKeyMiddleware } from "../middleware/api-key-middleware";
-import { requireRole } from "../middleware/role-middleware";
+import { requireRole, requireAuth } from "../middleware/role-middleware";
 import { upload } from "../middleware/upload-middleware";
 import { validate, body } from "../middleware/validate";
 
@@ -557,6 +557,16 @@ router.put("/:id", merchantRole, productController.updateProduct);
  *         description: Product not found
  */
 router.delete("/:id", merchantRole, productController.deleteProduct);
+
+// ── Variants (color/size SKUs) ─────────────────────────────────────
+router.get("/:id/variants", productController.getVariants);
+router.post("/:id/variants", merchantRole, productController.createVariant);
+router.patch("/variants/:variantId", merchantRole, productController.updateVariant);
+router.delete("/variants/:variantId", merchantRole, productController.deleteVariant);
+
+// ── Reviews ────────────────────────────────────────────────────────
+router.get("/:id/reviews", productController.getReviews);
+router.post("/:id/reviews", requireAuth, productController.createReview);
 
 // ── Image endpoints (on :id) ───────────────────────────────────────
 

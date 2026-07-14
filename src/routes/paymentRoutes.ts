@@ -52,8 +52,53 @@ router.post("/webhook", paymentController.handleWebhook);
  */
 router.post("/stripe-webhook", paymentController.handleStripeWebhook);
 
+/**
+ * @openapi
+ * /payments/callback:
+ *   get:
+ *     tags: [Payments]
+ *     summary: Browser return page after gateway checkout
+ *     description: |
+ *       Paystack redirects the customer's browser/WebView here after checkout.
+ *       **No API key needed.** Verifies the reference with the provider, advances
+ *       the payment plus its ride/order, and renders a friendly HTML result page.
+ *     security: []
+ *     parameters:
+ *       - name: reference
+ *         in: query
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: HTML result page (success, failed, or pending)
+ */
+router.get("/callback", paymentController.handlePaymentCallback);
+
 // Protected routes
 router.use(apiKeyMiddleware);
+
+/**
+ * @openapi
+ * /payments/status/{reference}:
+ *   get:
+ *     tags: [Payments]
+ *     summary: Poll payment status by reference
+ *     description: Returns the payment status for the authenticated user. Used by the in-app payment WebView.
+ *     security:
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - name: reference
+ *         in: path
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: "{ status, providerStatus }"
+ *       404:
+ *         description: Payment not found
+ */
+router.get("/status/:reference", requireRole(["buyer", "driver"]), paymentController.getPaymentStatus);
 
 /**
  * @openapi

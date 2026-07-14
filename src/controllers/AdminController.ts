@@ -1055,6 +1055,85 @@ export class AdminController {
         }
     };
 
+    // ── Driver off-boarding ──
+    getFlaggedDrivers = async (_req: AuthRequest, res: Response) => {
+        try {
+            const drivers = await this.adminService.getFlaggedDrivers();
+            return res.json({ drivers });
+        } catch (error) {
+            log.error("Error getting flagged drivers", { error: (error as Error).message });
+            return res.status(500).json({ message: "Internal server error" });
+        }
+    };
+
+    flagDriver = async (req: AuthRequest, res: Response) => {
+        try {
+            const { reason } = req.body;
+            if (!reason?.trim()) return res.status(400).json({ message: "Reason is required" });
+            const profile = await this.adminService.flagDriver(req.params.id, reason.trim());
+            return res.json({ profile });
+        } catch (error) {
+            const msg = (error as Error).message;
+            if (/not found/i.test(msg)) return res.status(404).json({ message: msg });
+            log.error("Error flagging driver", { error: msg });
+            return res.status(500).json({ message: "Internal server error" });
+        }
+    };
+
+    clearDriverFlag = async (req: AuthRequest, res: Response) => {
+        try {
+            const profile = await this.adminService.clearDriverFlag(req.params.id);
+            return res.json({ profile });
+        } catch (error) {
+            const msg = (error as Error).message;
+            if (/not found/i.test(msg)) return res.status(404).json({ message: msg });
+            log.error("Error clearing driver flag", { error: msg });
+            return res.status(500).json({ message: "Internal server error" });
+        }
+    };
+
+    // ── Gateway payments (Paystack / Stripe) ──
+    getGatewayPayments = async (req: AuthRequest, res: Response) => {
+        try {
+            const { provider, status, method, from, to, search, page, limit } = req.query as any;
+            const result = await this.adminService.getGatewayPayments({
+                provider, status, method, from, to, search,
+                page: page ? Number(page) : 1,
+                limit: limit ? Number(limit) : 50,
+            });
+            return res.json(result);
+        } catch (error) {
+            log.error("Error getting gateway payments", { error: (error as Error).message });
+            return res.status(500).json({ message: "Internal server error" });
+        }
+    };
+
+    reverifyGatewayPayment = async (req: AuthRequest, res: Response) => {
+        try {
+            const payment = await this.adminService.reverifyGatewayPayment(req.params.id);
+            return res.json({ payment });
+        } catch (error) {
+            const msg = (error as Error).message;
+            if (/not found|no provider reference/i.test(msg)) return res.status(404).json({ message: msg });
+            log.error("Error reverifying payment", { error: msg });
+            return res.status(500).json({ message: "Internal server error" });
+        }
+    };
+
+    refundGatewayPayment = async (req: AuthRequest, res: Response) => {
+        try {
+            const adminId = req.user?.id || "admin";
+            const payment = await this.adminService.refundGatewayPaymentToWallet(req.params.id, adminId);
+            return res.json({ payment });
+        } catch (error) {
+            const msg = (error as Error).message;
+            if (/not found/i.test(msg)) return res.status(404).json({ message: msg });
+            if (/Only successful/i.test(msg)) return res.status(409).json({ message: msg });
+            log.error("Error refunding payment", { error: msg });
+            return res.status(500).json({ message: "Internal server error" });
+        }
+    };
+
     getOrderReport = async (req: AuthRequest, res: Response) => {
         try {
             const { from, to } = req.query;
@@ -1533,6 +1612,71 @@ export class AdminController {
             return res.json({ tickets });
         } catch (error) {
             log.error("Error fetching user tickets", { error: (error as Error).message });
+            return res.status(500).json({ message: "Internal server error" });
+        }
+    }
+
+    /** GET /support/:id/messages - thread on the user's OWN ticket. */
+    getMyTicketMessages = async (req: AuthRequest, res: Response) => {
+        try {
+            const userId = req.user?.id;
+            if (!userId) return res.status(401).json({ message: "User ID required" });
+            const owned = (await this.adminService.getUserSupportTickets(userId, 200))
+                .find((t) => t.id === req.params.id);
+            if (!owned) return res.status(404).json({ message: "Ticket not found" });
+            const messages = await this.adminService.getTicketMessages(req.params.id);
+            return res.json({ ticket: owned, messages });
+        } catch (error) {
+            log.error("Error fetching ticket messages", { error: (error as Error).message });
+            return res.status(500).json({ message: "Internal server error" });
+        }
+    }
+
+    /** POST /support/:id/messages - user replies on their own ticket. */
+    postMyTicketMessage = async (req: AuthRequest, res: Response) => {
+        try {
+            const userId = req.user?.id;
+            if (!userId) return res.status(401).json({ message: "User ID required" });
+            const { message } = req.body;
+            if (!message?.trim()) return res.status(400).json({ message: "Message required" });
+            const owned = (await this.adminService.getUserSupportTickets(userId, 200))
+                .find((t) => t.id === req.params.id);
+            if (!owned) return res.status(404).json({ message: "Ticket not found" });
+            const msg = await this.adminService.addTicketMessage(req.params.id, userId, "user", message.trim());
+            return res.status(201).json({ message: msg });
+        } catch (error) {
+            const emsg = (error as Error).message;
+            if (emsg === "Ticket is closed") return res.status(409).json({ message: emsg });
+            log.error("Error posting ticket message", { error: emsg });
+            return res.status(500).json({ message: "Internal server error" });
+        }
+    }
+
+    /** GET /admin/support-tickets/:id/messages */
+    getTicketMessagesAdmin = async (req: AuthRequest, res: Response) => {
+        try {
+            const messages = await this.adminService.getTicketMessages(req.params.id);
+            return res.json({ messages });
+        } catch (error) {
+            log.error("Error fetching ticket messages", { error: (error as Error).message });
+            return res.status(500).json({ message: "Internal server error" });
+        }
+    }
+
+    /** POST /admin/support-tickets/:id/messages - support responds to the user. */
+    postTicketMessageAdmin = async (req: AuthRequest, res: Response) => {
+        try {
+            const adminId = req.user?.id;
+            if (!adminId) return res.status(401).json({ message: "User ID required" });
+            const { message } = req.body;
+            if (!message?.trim()) return res.status(400).json({ message: "Message required" });
+            const msg = await this.adminService.addTicketMessage(req.params.id, adminId, "admin", message.trim());
+            return res.status(201).json({ message: msg });
+        } catch (error) {
+            const emsg = (error as Error).message;
+            if (emsg === "Ticket is closed") return res.status(409).json({ message: emsg });
+            if (emsg === "Ticket not found") return res.status(404).json({ message: emsg });
+            log.error("Error posting admin ticket message", { error: emsg });
             return res.status(500).json({ message: "Internal server error" });
         }
     }

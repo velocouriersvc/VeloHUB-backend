@@ -8,6 +8,8 @@ import { MerchantProfile } from "../models/merchant-profile";
 import { createServiceLogger } from "../utils/logger";
 import { cartEventsTotal } from "../utils/metrics";
 
+import { ProductVariant } from "../models/product-variant";
+
 const log = createServiceLogger("CartService");
 
 // ── Input Types ─────────────────────────────────────────────────────
@@ -19,6 +21,10 @@ export interface AddToCartInput {
         customizationId: string;
         optionId: string;
     }>;
+    /** Chosen color/size SKU. */
+    variantId?: string;
+    /** Free-text instructions for this item. */
+    instructions?: string;
 }
 
 export interface CartResponse {
@@ -63,6 +69,7 @@ export class CartService {
     private optionRepo = AppDataSource.getRepository(CustomizationOption);
     private customizationRepo = AppDataSource.getRepository(ProductCustomization);
     private merchantRepo = AppDataSource.getRepository(MerchantProfile);
+    private variantRepo = AppDataSource.getRepository(ProductVariant);
 
     // ── Get Cart ────────────────────────────────────────────────────
 
@@ -123,8 +130,24 @@ export class CartService {
             throw new Error("Product not found or is inactive");
         }
 
-        // 2. Check stock
-        if (product.stockQuantity < input.quantity) {
+        // Prescription-required products cannot be purchased through the app.
+        if (product.prescriptionRequired) {
+            throw new Error("This item requires a prescription and is not available for purchase.");
+        }
+
+        // 2. Resolve variant (color/size SKU) and check stock against it.
+        let variant: ProductVariant | null = null;
+        let variantLabel: string | null = null;
+        let priceDelta = 0;
+        if (input.variantId) {
+            variant = await this.variantRepo.findOne({ where: { id: input.variantId, productId: product.id, isActive: true } });
+            if (!variant) throw new Error("Selected variant is unavailable");
+            if (variant.stockQuantity < input.quantity) {
+                throw new Error(`Insufficient stock for the selected option. Available: ${variant.stockQuantity}`);
+            }
+            priceDelta = Number(variant.priceDelta);
+            variantLabel = [variant.color, variant.size].filter(Boolean).join(" / ") || null;
+        } else if (product.stockQuantity < input.quantity) {
             throw new Error(
                 `Insufficient stock for "${product.name}". Available: ${product.stockQuantity}`
             );
@@ -191,8 +214,8 @@ export class CartService {
         // 6. Validate required customizations
         await this.validateRequiredCustomizations(product.id, input.selectedOptions || []);
 
-        // 7. Calculate item total
-        const unitPrice = Number(product.price);
+        // 7. Calculate item total (base price + variant delta + options)
+        const unitPrice = Number(product.price) + priceDelta;
         const itemTotal = Math.round((unitPrice + optionsTotal) * input.quantity * 100) / 100;
 
         // 8. Check if this exact product+options combo already exists in cart → update qty
@@ -213,6 +236,9 @@ export class CartService {
                 unitPrice,
                 selectedOptions: resolvedOptions,
                 itemTotal,
+                variantId: input.variantId || null,
+                variantLabel,
+                instructions: input.instructions || null,
             });
             await this.cartItemRepo.save(cartItem);
         }

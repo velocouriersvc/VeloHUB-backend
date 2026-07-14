@@ -113,6 +113,10 @@ export class PlatformSettings {
     @Column({ type: "integer", default: 10 })
     leaderboardLimit: number;
 
+    // Local sales tax rate (percent) applied to the order subtotal at checkout.
+    @Column({ type: "decimal", precision: 5, scale: 2, default: 0 })
+    taxRate: number;
+
     @Column({ type: "boolean", default: false })
     isGlobalSurgeActive: boolean;
 

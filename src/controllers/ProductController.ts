@@ -149,6 +149,90 @@ export class ProductController {
     /**
      * POST /products - Create a new product.
      */
+    // ── Variants ──
+    getVariants = async (req: AuthRequest, res: Response) => {
+        try {
+            const variants = await this.productService.getVariants(req.params.id);
+            return res.json({ variants });
+        } catch (error) {
+            log.error("Error getting variants", { error: (error as Error).message });
+            return res.status(500).json({ message: "Internal server error" });
+        }
+    };
+
+    createVariant = async (req: AuthRequest, res: Response) => {
+        try {
+            const merchantId = req.user?.id;
+            if (!merchantId) return res.status(401).json({ message: "User ID required" });
+            const variant = await this.productService.createVariant(merchantId, req.params.id, req.body);
+            return res.status(201).json({ variant });
+        } catch (error) {
+            const msg = (error as Error).message;
+            if (/not found/i.test(msg)) return res.status(404).json({ message: msg });
+            log.error("Error creating variant", { error: msg });
+            return res.status(500).json({ message: "Internal server error" });
+        }
+    };
+
+    updateVariant = async (req: AuthRequest, res: Response) => {
+        try {
+            const merchantId = req.user?.id;
+            if (!merchantId) return res.status(401).json({ message: "User ID required" });
+            const variant = await this.productService.updateVariant(merchantId, req.params.variantId, req.body);
+            return res.json({ variant });
+        } catch (error) {
+            const msg = (error as Error).message;
+            if (/not found/i.test(msg)) return res.status(404).json({ message: msg });
+            log.error("Error updating variant", { error: msg });
+            return res.status(500).json({ message: "Internal server error" });
+        }
+    };
+
+    deleteVariant = async (req: AuthRequest, res: Response) => {
+        try {
+            const merchantId = req.user?.id;
+            if (!merchantId) return res.status(401).json({ message: "User ID required" });
+            await this.productService.deleteVariant(merchantId, req.params.variantId);
+            return res.json({ message: "Variant deleted" });
+        } catch (error) {
+            const msg = (error as Error).message;
+            if (/not found/i.test(msg)) return res.status(404).json({ message: msg });
+            log.error("Error deleting variant", { error: msg });
+            return res.status(500).json({ message: "Internal server error" });
+        }
+    };
+
+    // ── Reviews ──
+    getReviews = async (req: AuthRequest, res: Response) => {
+        try {
+            const rating = req.query.rating ? Number(req.query.rating) : undefined;
+            const variant = req.query.variant as string | undefined;
+            const result = await this.productService.getReviews(req.params.id, { rating, variant });
+            return res.json(result);
+        } catch (error) {
+            log.error("Error getting reviews", { error: (error as Error).message });
+            return res.status(500).json({ message: "Internal server error" });
+        }
+    };
+
+    createReview = async (req: AuthRequest, res: Response) => {
+        try {
+            const userId = req.user?.id;
+            if (!userId) return res.status(401).json({ message: "User ID required" });
+            const { orderId, rating, comment } = req.body;
+            if (!orderId) return res.status(400).json({ message: "orderId is required" });
+            const review = await this.productService.createReview(userId, req.params.id, { orderId, rating, comment });
+            return res.status(201).json({ review });
+        } catch (error) {
+            const msg = (error as Error).message;
+            if (/only review|already reviewed|does not contain|Order not found|Rating must/i.test(msg)) {
+                return res.status(400).json({ message: msg });
+            }
+            log.error("Error creating review", { error: msg });
+            return res.status(500).json({ message: "Internal server error" });
+        }
+    };
+
     createProduct = async (req: AuthRequest, res: Response) => {
         try {
             const merchantId = req.user?.id;

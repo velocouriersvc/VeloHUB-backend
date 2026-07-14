@@ -253,6 +253,13 @@ router.get("/me", requireAuth, authController.getMe);
 router.post("/identity-session", requireRole(["driver", "merchant", "buyer"]), identityController.createSession);
 
 /**
+ * GET /auth/identity-status
+ * Returns the caller's Stripe Identity verification status. The app polls this
+ * after a signup identity step and shows it on the profile screen.
+ */
+router.get("/identity-status", requireRole(["driver", "merchant", "buyer"]), identityController.getStatus);
+
+/**
  * GET /auth/platform-config/:country
  * Public endpoint - returns service availability flags for the given country.
  */

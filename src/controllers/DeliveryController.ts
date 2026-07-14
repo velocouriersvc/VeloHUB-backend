@@ -276,6 +276,24 @@ export class DeliveryController {
         }
     };
 
+    // ── Proof of delivery photo ─────────────────────────────────────
+    savePodPhoto = async (req: AuthRequest, res: Response) => {
+        try {
+            const driverId = req.user?.id;
+            if (!driverId) return res.status(401).json({ message: "User ID required" });
+            const { orderId } = req.params;
+            const { photoUrl } = req.body;
+            if (!photoUrl) return res.status(400).json({ message: "photoUrl is required" });
+            const order = await this.deliveryService.savePodPhoto(driverId, orderId, photoUrl);
+            return res.status(200).json({ message: "Proof of delivery saved", order });
+        } catch (error) {
+            const msg = (error as Error).message;
+            if (msg.includes("not found") || msg.includes("not assigned")) return res.status(404).json({ message: msg });
+            log.error("Error saving POD photo", { error: msg });
+            return res.status(400).json({ message: msg });
+        }
+    };
+
     // ── Delivery History ────────────────────────────────────────────
 
     /**

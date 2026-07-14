@@ -1265,6 +1265,13 @@ router.get("/wallets/:id/transactions", adminRole, adminController.getWalletTran
  *         description: List of transactions
  */
 router.get("/transactions", adminRole, adminController.getAllTransactions);
+// Gateway payments (Paystack / Stripe) from the payments table
+router.get("/drivers/flagged", adminRole, adminController.getFlaggedDrivers);
+router.post("/drivers/:id/flag", adminRole, adminController.flagDriver);
+router.post("/drivers/:id/clear-flag", adminRole, adminController.clearDriverFlag);
+router.get("/payments", adminRole, adminController.getGatewayPayments);
+router.post("/payments/:id/reverify", adminRole, adminController.reverifyGatewayPayment);
+router.post("/payments/:id/refund-to-wallet", adminRole, adminController.refundGatewayPayment);
 
 /**
  * @openapi
@@ -1612,6 +1619,8 @@ router.patch("/referrals/:id", adminRole, adminController.updateReferralStatus);
 
 router.get("/support-tickets", adminRole, adminController.getSupportTickets);
 router.patch("/support-tickets/:id", adminRole, adminController.updateSupportTicket);
+router.get("/support-tickets/:id/messages", adminRole, adminController.getTicketMessagesAdmin);
+router.post("/support-tickets/:id/messages", adminRole, adminController.postTicketMessageAdmin);
 
 router.get("/export-orders", adminRole, adminController.exportOrdersCSV);
 router.get("/platform-settings", adminRole, adminController.getPlatformSettings);
