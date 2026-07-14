@@ -1,4 +1,6 @@
 import { AppDataSource } from "../db/data-source";
+import { ProductVariant } from "../models/product-variant";
+import { ProductReview } from "../models/product-review";
 import { Product, ProductCategory } from "../models/product";
 import { ProductCategory as ProductCategoryEntity } from "../models/product-category";
 import { ProductCustomization } from "../models/product-customization";
@@ -97,6 +99,9 @@ export interface CreateOptionInput {
 
 export class ProductService {
     private productRepo = AppDataSource.getRepository(Product);
+    private variantRepo = AppDataSource.getRepository(ProductVariant);
+    private reviewRepo = AppDataSource.getRepository(ProductReview);
+    private orderRepo = AppDataSource.getRepository(Order);
     private productCategoryRepo = AppDataSource.getRepository(ProductCategoryEntity);
     private customizationRepo = AppDataSource.getRepository(ProductCustomization);
     private optionRepo = AppDataSource.getRepository(CustomizationOption);
@@ -323,10 +328,94 @@ export class ProductService {
 
         if (product) {
             productViewsTotal.inc({ category: product.category || "unknown" });
+            // Attach active variants (color/size SKUs) so the PDP can render selectors.
+            (product as any).variants = await this.variantRepo.find({
+                where: { productId, isActive: true },
+                order: { createdAt: "ASC" },
+            });
+            (product as any).reviewSummary = await this.getReviewSummary(productId);
             return toPublicImages(product);
         }
 
         return product;
+    }
+
+    // ── Variants (color/size SKUs) ──────────────────────────────────
+
+    async getVariants(productId: string) {
+        return this.variantRepo.find({ where: { productId }, order: { createdAt: "ASC" } });
+    }
+
+    async createVariant(merchantId: string, productId: string, input: { color?: string; size?: string; stockQuantity?: number; priceDelta?: number; imageUrl?: string }) {
+        const product = await this.productRepo.findOne({ where: { id: productId, merchantId } });
+        if (!product) throw new Error("Product not found");
+        const variant = this.variantRepo.create({
+            productId,
+            color: input.color || null,
+            size: input.size || null,
+            stockQuantity: input.stockQuantity ?? 0,
+            priceDelta: input.priceDelta ?? 0,
+            imageUrl: input.imageUrl || null,
+        });
+        return this.variantRepo.save(variant);
+    }
+
+    async updateVariant(merchantId: string, variantId: string, input: Partial<{ color: string; size: string; stockQuantity: number; priceDelta: number; imageUrl: string; isActive: boolean }>) {
+        const variant = await this.variantRepo.findOne({ where: { id: variantId }, relations: { product: true } });
+        if (!variant || variant.product.merchantId !== merchantId) throw new Error("Variant not found");
+        Object.assign(variant, input);
+        return this.variantRepo.save(variant);
+    }
+
+    async deleteVariant(merchantId: string, variantId: string) {
+        const variant = await this.variantRepo.findOne({ where: { id: variantId }, relations: { product: true } });
+        if (!variant || variant.product.merchantId !== merchantId) throw new Error("Variant not found");
+        await this.variantRepo.remove(variant);
+    }
+
+    // ── Reviews ─────────────────────────────────────────────────────
+
+    /** Aggregate rating + count for a product (for the PDP summary). */
+    async getReviewSummary(productId: string): Promise<{ average: number; count: number }> {
+        const row = await this.reviewRepo.createQueryBuilder("r")
+            .select("AVG(r.rating)", "avg").addSelect("COUNT(*)", "count")
+            .where("r.productId = :productId", { productId })
+            .getRawOne();
+        return { average: Math.round((Number(row?.avg) || 0) * 10) / 10, count: Number(row?.count) || 0 };
+    }
+
+    async getReviews(productId: string, filters: { rating?: number; variant?: string } = {}) {
+        const qb = this.reviewRepo.createQueryBuilder("r")
+            .leftJoinAndSelect("r.user", "user")
+            .where("r.productId = :productId", { productId })
+            .orderBy("r.createdAt", "DESC");
+        if (filters.rating) qb.andWhere("r.rating = :rating", { rating: filters.rating });
+        if (filters.variant) qb.andWhere("r.variantLabel ILIKE :variant", { variant: `%${filters.variant}%` });
+        const reviews = await qb.getMany();
+        const summary = await this.getReviewSummary(productId);
+        return { reviews, summary };
+    }
+
+    /** Create a review. Only valid for a delivered/completed order that contained the product. */
+    async createReview(userId: string, productId: string, input: { orderId: string; rating: number; comment?: string }) {
+        if (!input.rating || input.rating < 1 || input.rating > 5) throw new Error("Rating must be 1-5");
+        const order = await this.orderRepo.findOne({ where: { id: input.orderId, customerId: userId } });
+        if (!order) throw new Error("Order not found");
+        if (![OrderStatus.DELIVERED, OrderStatus.COMPLETED].includes(order.status)) {
+            throw new Error("You can only review items from a completed order");
+        }
+        const line = (order.items || []).find((i: any) => i.productId === productId);
+        if (!line) throw new Error("This order does not contain that product");
+
+        const existing = await this.reviewRepo.findOne({ where: { productId, userId, orderId: input.orderId } });
+        if (existing) throw new Error("You already reviewed this item for this order");
+
+        const review = this.reviewRepo.create({
+            productId, userId, orderId: input.orderId,
+            rating: input.rating, comment: input.comment || null,
+            variantLabel: (line as any).variantLabel || null,
+        });
+        return this.reviewRepo.save(review);
     }
 
     /**
@@ -853,24 +942,25 @@ export class ProductService {
 
     /**
      * Decrement stock for ordered items (called during checkout).
-     * Returns false if any item is out of stock.
+     * When an item carries a variantId, the variant's stock is used instead of
+     * the product's. Returns false if any item is out of stock.
      */
     async decrementStock(
-        items: { productId: string; quantity: number }[]
+        items: { productId: string; quantity: number; variantId?: string | null }[]
     ): Promise<{ success: boolean; outOfStock?: string[] }> {
         const outOfStock: string[] = [];
 
         for (const item of items) {
+            if (item.variantId) {
+                const variant = await this.variantRepo.findOne({ where: { id: item.variantId, isActive: true } });
+                if (!variant || variant.stockQuantity < item.quantity) outOfStock.push(item.productId);
+                continue;
+            }
             const product = await this.productRepo.findOne({
                 where: { id: item.productId, isActive: true },
             });
 
-            if (!product) {
-                outOfStock.push(item.productId);
-                continue;
-            }
-
-            if (product.stockQuantity < item.quantity) {
+            if (!product || product.stockQuantity < item.quantity) {
                 outOfStock.push(item.productId);
                 continue;
             }
@@ -882,11 +972,15 @@ export class ProductService {
 
         // All items in stock - decrement
         for (const item of items) {
+            if (item.variantId) {
+                await this.variantRepo.decrement({ id: item.variantId }, "stockQuantity", item.quantity);
+                continue;
+            }
             const product = await this.productRepo.findOne({ where: { id: item.productId } });
             if (!product) continue;
 
             const newQuantity = product.stockQuantity - item.quantity;
-            
+
             await this.productRepo.update(
                 { id: item.productId },
                 { stockQuantity: newQuantity }
@@ -910,8 +1004,12 @@ export class ProductService {
     /**
      * Restore stock when an order is cancelled.
      */
-    async restoreStock(items: { productId: string; quantity: number }[]): Promise<void> {
+    async restoreStock(items: { productId: string; quantity: number; variantId?: string | null }[]): Promise<void> {
         for (const item of items) {
+            if (item.variantId) {
+                await this.variantRepo.increment({ id: item.variantId }, "stockQuantity", item.quantity);
+                continue;
+            }
             await this.productRepo
                 .createQueryBuilder()
                 .update(Product)

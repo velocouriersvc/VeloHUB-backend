@@ -37,6 +37,17 @@ export class CartItem {
     @Column({ type: "decimal", precision: 10, scale: 2 })
     itemTotal: number;
 
+    // ── Variant (color/size) ──
+    @Column({ type: "uuid", nullable: true })
+    variantId: string | null;
+
+    @Column({ type: "varchar", length: 120, nullable: true })
+    variantLabel: string | null;
+
+    // ── Free-text instructions the customer added for this item ──
+    @Column({ type: "text", nullable: true })
+    instructions: string | null;
+
     @CreateDateColumn()
     createdAt: Date;
 

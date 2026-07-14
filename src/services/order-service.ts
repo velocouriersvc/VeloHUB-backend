@@ -49,6 +49,7 @@ export interface OrderQuoteResult {
     smallOrderFee: number;
     commission: number;
     deliveryFee: number;
+    tax: number;
     discount: number;
     totalAmount: number;
     merchantEarnings: number;
@@ -214,8 +215,12 @@ export class OrderService {
             }
         }
 
-        // 9. Total & merchant earnings
-        const totalAmount = Math.round((subtotal + serviceFee + smallOrderFee + deliveryFee - discount) * 100) / 100;
+        // 9. Local sales tax on the (discounted) subtotal
+        const taxRate = settings ? Number(settings.taxRate) || 0 : 0;
+        const tax = Math.round((subtotal - discount) * (taxRate / 100) * 100) / 100;
+
+        // 10. Total & merchant earnings
+        const totalAmount = Math.round((subtotal + serviceFee + smallOrderFee + deliveryFee + tax - discount) * 100) / 100;
         const merchantEarnings = Math.round((subtotal - commission) * 100) / 100;
 
         return {
@@ -224,6 +229,7 @@ export class OrderService {
             smallOrderFee,
             commission,
             deliveryFee,
+            tax,
             discount,
             totalAmount,
             merchantEarnings,
@@ -276,10 +282,11 @@ export class OrderService {
             }
         }
 
-        // 4. Decrement stock (fail fast if out of stock)
+        // 4. Decrement stock (fail fast if out of stock) - per variant when set
         const stockItems = cart.items.map((item) => ({
             productId: item.productId,
             quantity: item.quantity,
+            variantId: (item as any).variantId || null,
         }));
 
         const stockResult = await this.productService.decrementStock(stockItems);
@@ -307,6 +314,9 @@ export class OrderService {
                 unitPrice: Number(item.unitPrice),
                 selectedOptions: item.selectedOptions,
                 itemTotal: Number(item.itemTotal),
+                variantId: (item as any).variantId || null,
+                variantLabel: (item as any).variantLabel || null,
+                instructions: (item as any).instructions || null,
             }));
 
             // 6. Generate order number
@@ -706,6 +716,7 @@ export class OrderService {
         const stockItems = (order.items || []).map((item) => ({
             productId: item.productId,
             quantity: item.quantity,
+            variantId: (item as any).variantId || null,
         }));
         if (stockItems.length > 0) {
             await this.productService.restoreStock(stockItems);
@@ -792,7 +803,7 @@ export class OrderService {
                 emitOrderEvent(order.id, "order:status", { orderId: order.id, status: OrderStatus.CANCELLED, updatedAt: new Date().toISOString() });
 
                 // Restore stock
-                const stockItems = (order.items || []).map((i) => ({ productId: i.productId, quantity: i.quantity }));
+                const stockItems = (order.items || []).map((i) => ({ productId: i.productId, quantity: i.quantity, variantId: (i as any).variantId || null }));
                 if (stockItems.length > 0) await this.productService.restoreStock(stockItems);
 
                 // Refund to wallet
