@@ -823,6 +823,9 @@ router.post(
     deliveryController.verifyDeliveryCode
 );
 
+// Proof-of-delivery photo (required before completing a coded delivery).
+router.post("/deliveries/:orderId/pod", driverRole, deliveryController.savePodPhoto);
+
 /**
  * @openapi
  * /driver/surge:

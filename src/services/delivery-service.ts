@@ -159,12 +159,22 @@ export class DeliveryService {
                 throw new Error("This delivery has already been assigned to another driver");
             }
 
-            // Assign driver
+            // Assign driver + mint the 4-digit pickup PIN the driver shows the merchant.
             const fromStatus = order.status;
             order.driverId = driverId;
             order.status = OrderStatus.DRIVER_ASSIGNED;
+            order.driverPickupCode = String(Math.floor(1000 + Math.random() * 9000));
 
             await this.orderRepo.save(order);
+
+            // Tell the driver their pickup PIN (also shown big + as a QR in the app).
+            await this.notificationService.notify(
+                driverId,
+                NotificationType.ORDER_PICKED_UP,
+                "Your pickup code",
+                `Show code ${order.driverPickupCode} to the merchant to collect order #${order.orderNumber}.`,
+                { orderId, driverPickupCode: order.driverPickupCode }
+            );
             await this.recordStatusChange(orderId, fromStatus, OrderStatus.DRIVER_ASSIGNED, driverId, "driver", "Driver accepted delivery");
 
             // Emit WebSocket event for real-time tracking
@@ -279,6 +289,13 @@ export class DeliveryService {
             );
         }
 
+        // Enforce the merchant handshake: the driver cannot mark the order picked up
+        // or in-transit until the merchant has verified the driver's pickup code.
+        if ((newStatus === OrderStatus.PICKED_UP || newStatus === OrderStatus.IN_TRANSIT)
+            && order.driverPickupCode && !order.driverPickupVerifiedAt) {
+            throw new Error("The merchant must verify your pickup code before you can collect this order.");
+        }
+
         const fromStatus = order.status;
         order.status = newStatus;
 
@@ -346,6 +363,18 @@ export class DeliveryService {
         return order;
     }
 
+    // ── Proof of delivery ────────────────────────────────────────────
+
+    /** Store the driver's hand-off photo before completion. */
+    async savePodPhoto(driverId: string, orderId: string, photoUrl: string): Promise<Order> {
+        const order = await this.orderRepo.findOne({ where: { id: orderId, driverId } });
+        if (!order) throw new Error("Order not found or not assigned to you");
+        order.podPhotoUrl = photoUrl;
+        await this.orderRepo.save(order);
+        log.info("Proof-of-delivery photo saved", { orderId, driverId });
+        return order;
+    }
+
     // ── Complete Delivery ────────────────────────────────────────────
 
     /**
@@ -366,6 +395,15 @@ export class DeliveryService {
             throw new Error(
                 `Cannot complete delivery - order status is "${order.status}". Must be "delivered" or "in_transit".`
             );
+        }
+
+        // Proof of delivery is mandatory for coded deliveries: the driver must have
+        // entered the customer's code and captured a hand-off photo.
+        if (order.requireDeliveryCode && !order.deliveryCodeVerifiedAt) {
+            throw new Error("Enter the customer's delivery code before completing.");
+        }
+        if (order.requireDeliveryCode && !order.podPhotoUrl) {
+            throw new Error("Take a proof-of-delivery photo before completing.");
         }
 
         // If still in_transit, transition to delivered first

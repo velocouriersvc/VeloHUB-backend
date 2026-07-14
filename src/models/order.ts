@@ -161,6 +161,19 @@ export class Order {
     @Column({ type: "timestamp", nullable: true })
     deliveryCodeVerifiedAt: Date | null;
 
+    // ── Driver-merchant handshake (delivery orders) ──
+    // 4-digit code shown on the driver's app; the merchant enters/scans it at the
+    // counter before the order can move to in-transit.
+    @Column({ type: "varchar", length: 4, nullable: true })
+    driverPickupCode: string | null;
+
+    @Column({ type: "timestamp", nullable: true })
+    driverPickupVerifiedAt: Date | null;
+
+    // Proof-of-delivery photo captured by the driver at drop-off.
+    @Column({ type: "varchar", nullable: true })
+    podPhotoUrl: string | null;
+
     // ── Status ──
     @Column({ type: "enum", enum: OrderStatus, default: OrderStatus.PENDING })
     @Index()

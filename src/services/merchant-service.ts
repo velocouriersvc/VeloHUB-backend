@@ -3,6 +3,8 @@ import { MerchantProfile, MerchantVerificationStatus } from "../models/merchant-
 import { MerchantStats } from "../models/merchant-stats";
 import { MerchantOperatingHours } from "../models/merchant-operating-hours";
 import { Order, OrderStatus, OrderPaymentStatus, OrderCancelledBy, DeliveryType } from "../models/order";
+import { User } from "../models/user";
+import { PickupCodeService } from "./pickup-code-service";
 import { OrderStatusHistory } from "../models/order-status-history";
 import { WalletService } from "./wallet-service";
 import { NotificationService } from "./notification-service";
@@ -55,6 +57,7 @@ export class MerchantService {
     private hoursRepo = AppDataSource.getRepository(MerchantOperatingHours);
     private orderRepo = AppDataSource.getRepository(Order);
     private historyRepo = AppDataSource.getRepository(OrderStatusHistory);
+    private userRepo = AppDataSource.getRepository(User);
     private walletService = new WalletService();
     private notificationService = new NotificationService();
 
@@ -526,19 +529,25 @@ export class MerchantService {
         });
 
         if (!order) throw new Error("Order not found");
-        if (order.status !== OrderStatus.READY_FOR_PICKUP && 
-            order.status !== OrderStatus.READY_FOR_DELIVERY && 
+        if (order.status !== OrderStatus.READY_FOR_PICKUP &&
+            order.status !== OrderStatus.READY_FOR_DELIVERY &&
             order.status !== OrderStatus.DRIVER_ASSIGNED) {
             throw new Error(`Cannot verify pickup code in ${order.status} status`);
         }
 
-        if (!order.pickupCode || order.pickupCode !== code) {
-            log.warn("Invalid pickup code attempt", { orderId, merchantId });
+        // Driver-merchant handshake: for a delivery order with a driver assigned, the
+        // merchant enters the driver's 4-digit code. Otherwise (store pickup) it is the
+        // customer's 6-char pickup code.
+        const usingDriverCode = !!order.driverId && !!order.driverPickupCode;
+        const expected = usingDriverCode ? order.driverPickupCode : order.pickupCode;
+        if (!expected || expected !== code) {
+            log.warn("Invalid pickup code attempt", { orderId, merchantId, usingDriverCode });
             return { verified: false, order };
         }
 
         const fromStatus = order.status;
         order.pickupCodeVerifiedAt = new Date();
+        if (usingDriverCode) order.driverPickupVerifiedAt = new Date();
         order.status = OrderStatus.PICKED_UP;
         order.pickedUpAt = new Date();
 
@@ -560,6 +569,35 @@ export class MerchantService {
             `Your order #${order.orderNumber} has been picked up and is on the way!`,
             { orderId, status: OrderStatus.PICKED_UP }
         );
+
+        // Delivery orders: issue the drop-off code the customer gives the driver on
+        // arrival, and send it by push + SMS (visible on the tracking screen too).
+        if (usingDriverCode && order.deliveryType === DeliveryType.DELIVERY) {
+            if (!order.deliveryCode) {
+                order.deliveryCode = new PickupCodeService().generate();
+            }
+            order.requireDeliveryCode = true;
+            await this.orderRepo.save(order);
+
+            await this.notificationService.notify(
+                order.customerId,
+                NotificationType.ORDER_IN_TRANSIT,
+                "Your delivery code 🔑",
+                `Give code ${order.deliveryCode} to your driver on arrival to receive order #${order.orderNumber}.`,
+                { orderId, deliveryCode: order.deliveryCode }
+            );
+            try {
+                const customer = await this.userRepo.findOne({ where: { id: order.customerId } });
+                if (customer?.phoneNumber) {
+                    await this.notificationService.notifyBySms(
+                        customer.phoneNumber,
+                        `Velo: your delivery code for order #${order.orderNumber} is ${order.deliveryCode}. Give it to your driver on arrival.`
+                    );
+                }
+            } catch (err) {
+                log.warn("Delivery code SMS failed", { orderId, error: (err as Error).message });
+            }
+        }
 
         log.info("Pickup code verified", { orderId, merchantId });
         return { verified: true, order };
