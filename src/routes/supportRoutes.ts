@@ -12,5 +12,8 @@ router.post("/contact", adminController.contactForm);
 router.post("/", requireAuth, adminController.createSupportTicket);
 // The user's own tickets (status + resolution visible in-app).
 router.get("/", requireAuth, adminController.getMySupportTickets);
+// Conversation thread on a ticket: user and support reply until it is closed.
+router.get("/:id/messages", requireAuth, adminController.getMyTicketMessages);
+router.post("/:id/messages", requireAuth, adminController.postMyTicketMessage);
 
 export default router;

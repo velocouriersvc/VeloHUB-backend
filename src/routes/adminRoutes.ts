@@ -1612,6 +1612,8 @@ router.patch("/referrals/:id", adminRole, adminController.updateReferralStatus);
 
 router.get("/support-tickets", adminRole, adminController.getSupportTickets);
 router.patch("/support-tickets/:id", adminRole, adminController.updateSupportTicket);
+router.get("/support-tickets/:id/messages", adminRole, adminController.getTicketMessagesAdmin);
+router.post("/support-tickets/:id/messages", adminRole, adminController.postTicketMessageAdmin);
 
 router.get("/export-orders", adminRole, adminController.exportOrdersCSV);
 router.get("/platform-settings", adminRole, adminController.getPlatformSettings);

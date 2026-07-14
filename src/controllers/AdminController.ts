@@ -1537,6 +1537,71 @@ export class AdminController {
         }
     }
 
+    /** GET /support/:id/messages - thread on the user's OWN ticket. */
+    getMyTicketMessages = async (req: AuthRequest, res: Response) => {
+        try {
+            const userId = req.user?.id;
+            if (!userId) return res.status(401).json({ message: "User ID required" });
+            const owned = (await this.adminService.getUserSupportTickets(userId, 200))
+                .find((t) => t.id === req.params.id);
+            if (!owned) return res.status(404).json({ message: "Ticket not found" });
+            const messages = await this.adminService.getTicketMessages(req.params.id);
+            return res.json({ ticket: owned, messages });
+        } catch (error) {
+            log.error("Error fetching ticket messages", { error: (error as Error).message });
+            return res.status(500).json({ message: "Internal server error" });
+        }
+    }
+
+    /** POST /support/:id/messages - user replies on their own ticket. */
+    postMyTicketMessage = async (req: AuthRequest, res: Response) => {
+        try {
+            const userId = req.user?.id;
+            if (!userId) return res.status(401).json({ message: "User ID required" });
+            const { message } = req.body;
+            if (!message?.trim()) return res.status(400).json({ message: "Message required" });
+            const owned = (await this.adminService.getUserSupportTickets(userId, 200))
+                .find((t) => t.id === req.params.id);
+            if (!owned) return res.status(404).json({ message: "Ticket not found" });
+            const msg = await this.adminService.addTicketMessage(req.params.id, userId, "user", message.trim());
+            return res.status(201).json({ message: msg });
+        } catch (error) {
+            const emsg = (error as Error).message;
+            if (emsg === "Ticket is closed") return res.status(409).json({ message: emsg });
+            log.error("Error posting ticket message", { error: emsg });
+            return res.status(500).json({ message: "Internal server error" });
+        }
+    }
+
+    /** GET /admin/support-tickets/:id/messages */
+    getTicketMessagesAdmin = async (req: AuthRequest, res: Response) => {
+        try {
+            const messages = await this.adminService.getTicketMessages(req.params.id);
+            return res.json({ messages });
+        } catch (error) {
+            log.error("Error fetching ticket messages", { error: (error as Error).message });
+            return res.status(500).json({ message: "Internal server error" });
+        }
+    }
+
+    /** POST /admin/support-tickets/:id/messages - support responds to the user. */
+    postTicketMessageAdmin = async (req: AuthRequest, res: Response) => {
+        try {
+            const adminId = req.user?.id;
+            if (!adminId) return res.status(401).json({ message: "User ID required" });
+            const { message } = req.body;
+            if (!message?.trim()) return res.status(400).json({ message: "Message required" });
+            const msg = await this.adminService.addTicketMessage(req.params.id, adminId, "admin", message.trim());
+            return res.status(201).json({ message: msg });
+        } catch (error) {
+            const emsg = (error as Error).message;
+            if (emsg === "Ticket is closed") return res.status(409).json({ message: emsg });
+            if (emsg === "Ticket not found") return res.status(404).json({ message: emsg });
+            log.error("Error posting admin ticket message", { error: emsg });
+            return res.status(500).json({ message: "Internal server error" });
+        }
+    }
+
     // ════════════════════════════════════════════════════════════════
     //  FINANCE & SETTINGS
     // ════════════════════════════════════════════════════════════════

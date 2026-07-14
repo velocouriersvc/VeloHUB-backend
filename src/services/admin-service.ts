@@ -22,6 +22,7 @@ import { ProductService, CreateProductInput } from "./product-service";
 import { NotificationService } from "./notification-service";
 import { supabaseAdmin } from "../utils/supabase-client";
 import { SupportTicket, SupportTicketStatus, SupportTicketPriority } from "../models/support-ticket";
+import { SupportTicketMessage } from "../models/support-ticket-message";
 import { Notification, NotificationType } from "../models/notification";
 import { PromoCode } from "../models/promo-code";
 import { Banner } from "../models/banner";
@@ -150,6 +151,7 @@ export class AdminService {
     // ════════════════════════════════════════════════════════════════
 
     private supportTicketRepo = AppDataSource.getRepository(SupportTicket);
+    private ticketMessageRepo = AppDataSource.getRepository(SupportTicketMessage);
     private promoRepo = AppDataSource.getRepository(PromoCode);
     private bannerRepo = AppDataSource.getRepository(Banner);
     private referralCodeRepo = AppDataSource.getRepository(ReferralCode);
@@ -2350,6 +2352,41 @@ export class AdminService {
         await this.supportTicketRepo.save(ticket);
         log.info("Created support ticket", { ticketId: ticket.id, userId: data.userId });
         return ticket;
+    }
+
+    /** Full conversation thread on a ticket, oldest first. */
+    async getTicketMessages(ticketId: string) {
+        return this.ticketMessageRepo.find({
+            where: { ticketId },
+            order: { createdAt: "ASC" },
+        });
+    }
+
+    /** Post a message to a ticket. Support and the user go back and forth until closed. */
+    async addTicketMessage(ticketId: string, senderId: string, senderRole: "user" | "admin", message: string) {
+        const ticket = await this.supportTicketRepo.findOne({ where: { id: ticketId } });
+        if (!ticket) throw new Error("Ticket not found");
+        if (ticket.status === SupportTicketStatus.RESOLVED || ticket.status === SupportTicketStatus.CLOSED) {
+            throw new Error("Ticket is closed");
+        }
+
+        const msg = await this.ticketMessageRepo.save(
+            this.ticketMessageRepo.create({ ticketId, senderId, senderRole, message })
+        );
+
+        if (senderRole === "admin") {
+            // First admin response moves the ticket into progress.
+            if (ticket.status === SupportTicketStatus.OPEN) {
+                ticket.status = SupportTicketStatus.IN_PROGRESS;
+                await this.supportTicketRepo.save(ticket);
+            }
+            this.notificationService
+                .notify(ticket.userId, NotificationType.SYSTEM, "Support replied 💬",
+                    `${ticket.ticket_number}: ${message}`,
+                    { ticketId: ticket.id, ticketNumber: ticket.ticket_number })
+                .catch((err) => log.warn("Support reply notification failed", { ticketId, error: (err as Error).message }));
+        }
+        return msg;
     }
 
     async updateSupportTicket(id: string, data: any, adminId: string) {

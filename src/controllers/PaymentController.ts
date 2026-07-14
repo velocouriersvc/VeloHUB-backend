@@ -122,6 +122,59 @@ export class PaymentController {
     };
 
     /**
+     * GET /payments/callback
+     * Public browser-return page after Paystack checkout. Verifies the
+     * transaction and shows a friendly result; also the URL the in-app
+     * WebView intercepts, so this must never render raw JSON.
+     */
+    handlePaymentCallback = async (req: Request, res: Response) => {
+        const reference = String(req.query.reference || req.query.trxref || "");
+        let state: "success" | "failed" | "pending" = "pending";
+        try {
+            if (reference) {
+                const payment = await this.paymentService.confirmPayment(reference)
+                    || await this.paymentService.getPaymentByReference(reference);
+                if (payment?.status === "success") state = "success";
+                else if (payment?.status === "failed") state = "failed";
+            }
+        } catch (error) {
+            log.error("Payment callback error", { reference, error: (error as Error).message });
+        }
+        const view = {
+            success: { icon: "&#10003;", color: "#10B981", title: "Payment successful", body: "You can return to the Velo app. Your ride or order is being confirmed." },
+            failed: { icon: "&#10007;", color: "#EF4444", title: "Payment failed", body: "The payment could not be completed. Return to the Velo app and try again." },
+            pending: { icon: "&#8987;", color: "#F59E0B", title: "Payment processing", body: "We are confirming your payment. Return to the Velo app; it will update automatically." },
+        }[state];
+        return res.status(200).send(`<!doctype html>
+<html><head><meta name="viewport" content="width=device-width, initial-scale=1"><title>Velo Payment</title></head>
+<body style="margin:0;font-family:-apple-system,Segoe UI,Roboto,sans-serif;background:#fafafa;display:flex;align-items:center;justify-content:center;min-height:100vh;text-align:center">
+<div style="padding:32px;max-width:340px">
+<div style="width:72px;height:72px;border-radius:50%;background:${view.color}1a;color:${view.color};font-size:34px;line-height:72px;margin:0 auto 20px">${view.icon}</div>
+<h1 style="font-size:22px;margin:0 0 8px;color:#18181b">${view.title}</h1>
+<p style="font-size:15px;color:#71717a;margin:0">${view.body}</p>
+</div></body></html>`);
+    };
+
+    /**
+     * GET /payments/status/:reference
+     * Poll payment status (in-app WebView flow).
+     */
+    getPaymentStatus = async (req: AuthRequest, res: Response) => {
+        try {
+            const userId = req.user?.id;
+            if (!userId) return res.status(401).json({ message: "User ID required" });
+            const payment = await this.paymentService.getPaymentByReference(req.params.reference);
+            if (!payment || payment.userId !== userId) {
+                return res.status(404).json({ message: "Payment not found" });
+            }
+            return res.json({ status: payment.status, providerStatus: payment.providerStatus || null });
+        } catch (error) {
+            log.error("Error fetching payment status", { error: (error as Error).message });
+            return res.status(500).json({ message: "Internal server error" });
+        }
+    };
+
+    /**
      * GET /payments/history
      * Get user's payment history
      */

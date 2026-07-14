@@ -13,6 +13,8 @@ import { formatCurrency, currencyForCountry } from "../../utils/currency";
 import { ServiceSubscription, ServiceSubscriptionStatus } from "../../models/service-subscription";
 import { BuyerProfile } from "../../models/buyer-profile";
 import { ScheduledRide, ScheduledPaymentStatus } from "../../models/scheduled-ride";
+import { Ride, RideStatus, PaymentStatus as RidePaymentStatus } from "../../models/ride";
+import { Order, OrderPaymentStatus } from "../../models/order";
 
 const log = createServiceLogger("PaymentService");
 
@@ -32,6 +34,8 @@ export interface PaymentResult {
 
 export class PaymentService {
     private paymentRepo = AppDataSource.getRepository(Payment);
+    private rideRepo = AppDataSource.getRepository(Ride);
+    private orderRepo = AppDataSource.getRepository(Order);
     private scheduledRideRepo = AppDataSource.getRepository(ScheduledRide);
     private settingsRepo = AppDataSource.getRepository(PlatformSettings);
     private walletService: WalletService;
@@ -551,6 +555,7 @@ export class PaymentService {
             email: params.email || `${params.phoneNumber}@velo.app`,
             phoneNumber: params.phoneNumber,
             reference,
+            callbackUrl: PaymentService.callbackUrl(),
             metadata: {
                 rideId: payment.rideId,
                 orderId: payment.orderId,
@@ -606,6 +611,7 @@ export class PaymentService {
             currency,
             email,
             reference,
+            callbackUrl: PaymentService.callbackUrl(),
             metadata: {
                 rideId: payment.rideId,
                 orderId: payment.orderId,
@@ -765,6 +771,62 @@ export class PaymentService {
 
     // ── Webhooks & Verification ─────────────────────────────────────
 
+    /** Public browser-return URL Paystack redirects to after checkout. */
+    static callbackUrl(): string {
+        const base = process.env.PUBLIC_BASE_URL || "https://api.velocouriersvc.com";
+        return `${base}/api/v1/payments/callback`;
+    }
+
+    /** Find a payment by the reference stored in its metadata. */
+    async getPaymentByReference(reference: string): Promise<Payment | null> {
+        return this.paymentRepo
+            .createQueryBuilder("payment")
+            .where(`payment.metadata ->> 'reference' = :ref`, { ref: reference })
+            .getOne();
+    }
+
+    /**
+     * Advance the entity a successful payment belongs to. The webhook and the
+     * browser callback can both land, so every branch re-checks state first.
+     * Uses direct repos (importing ride-service here would create a cycle).
+     */
+    private async applyPaymentSideEffects(payment: Payment): Promise<void> {
+        try {
+            if (payment.rideId) {
+                const ride = await this.rideRepo.findOne({ where: { id: payment.rideId } });
+                if (ride && ride.paymentStatus !== RidePaymentStatus.PAID) {
+                    ride.paymentStatus = RidePaymentStatus.PAID;
+                    if (ride.status === RideStatus.AWAITING_PAYMENT) ride.status = RideStatus.PAID;
+                    ride.paidAt = new Date();
+                    await this.rideRepo.save(ride);
+                    if (ride.driverId) {
+                        await this.notificationService.notifyPaymentReceived(
+                            ride.driverId, Number(ride.finalFare), ride.id
+                        );
+                    }
+                    log.info("Ride advanced to PAID from payment confirmation", { rideId: ride.id });
+                }
+            }
+            if (payment.orderId) {
+                const order = await this.orderRepo.findOne({ where: { id: payment.orderId } });
+                if (order && order.paymentStatus !== OrderPaymentStatus.PAID) {
+                    order.paymentStatus = OrderPaymentStatus.PAID;
+                    await this.orderRepo.save(order);
+                    await this.notificationService.notify(
+                        payment.userId,
+                        NotificationType.SYSTEM,
+                        "Payment Confirmed",
+                        `Your payment of ${formatCurrency(Number(payment.amount), payment.currency || "GHS")} was received.`,
+                        { orderId: order.id, paymentId: payment.id }
+                    );
+                    log.info("Order advanced to PAID from payment confirmation", { orderId: order.id });
+                }
+            }
+        } catch (err) {
+            log.error("Payment side effects failed", { paymentId: payment.id, error: (err as Error).message });
+        }
+    }
+
     /**
      * Handle webhook from payment provider (Paystack)
      */
@@ -816,6 +878,7 @@ export class PaymentService {
                         if (payment.subscriptionId) {
                             await this.activateSubscription(payment.subscriptionId, payment.userId);
                         }
+                        await this.applyPaymentSideEffects(payment);
 
                         log.info("Stripe payment confirmed via webhook", { paymentId });
                         paymentEventsTotal.inc({ method: "card", status: "success" });
@@ -856,16 +919,10 @@ export class PaymentService {
     async confirmPayment(reference: string, country?: string): Promise<Payment | null> {
         const provider = paymentProviderRegistry.getProvider(country || "GH");
 
-        // Find payment by reference in metadata
-        const payments = await this.paymentRepo.find({
-            where: { status: PaymentRecordStatus.PENDING },
-        });
-
-        const payment = payments.find(
-            (p) => p.metadata && (p.metadata as any).reference === reference
-        );
-
+        const payment = await this.getPaymentByReference(reference);
         if (!payment) return null;
+        // Already settled (webhook and callback can both fire) - nothing to redo.
+        if (payment.status !== PaymentRecordStatus.PENDING) return payment;
 
         // Verify with provider
         const verification = await provider.verifyPayment(reference);
@@ -885,6 +942,9 @@ export class PaymentService {
             if (payment.scheduledRideId) {
                 await this.markScheduledRidePaid(payment.scheduledRideId);
             }
+
+            // Side Effects: advance the ride/order this payment pays for
+            await this.applyPaymentSideEffects(payment);
 
             log.info("Payment confirmed", { paymentId: payment.id, reference });
             paymentEventsTotal.inc({ method: "momo", status: "success" });
