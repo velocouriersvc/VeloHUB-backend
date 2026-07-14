@@ -31,6 +31,10 @@ export class MerchantStats {
     @Column({ type: "int", default: 0 })
     totalProducts: number;
 
+    // Orders auto-cancelled because the merchant did not respond in time (penalty signal).
+    @Column({ type: "int", default: 0 })
+    autoCancelledOrders: number;
+
     @Column({ type: "int", default: 0 })
     viewCount: number;
 

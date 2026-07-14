@@ -8,6 +8,8 @@ import { Product } from "../models/product";
 import { User } from "../models/user";
 import { PlatformSettings } from "../models/platform-settings";
 import { MerchantProfile } from "../models/merchant-profile";
+import { MerchantStats } from "../models/merchant-stats";
+import { WalletService } from "./wallet-service";
 import { PromoCode, PromoApplicableTo } from "../models/promo-code";
 import { CartService } from "./cart-service";
 import { ProductService } from "./product-service";
@@ -23,7 +25,7 @@ import { orderEventsTotal, cartEventsTotal } from "../utils/metrics";
 import { formatCurrency } from "../utils/currency";
 import { emitOrderEvent } from "../socket-gateway";
 import { v4 as uuidv4 } from "uuid";
-import { In } from "typeorm";
+import { In, LessThan } from "typeorm";
 
 const log = createServiceLogger("OrderService");
 
@@ -88,6 +90,8 @@ export class OrderService {
     private settingsRepo = AppDataSource.getRepository(PlatformSettings);
     private merchantRepo = AppDataSource.getRepository(MerchantProfile);
     private promoRepo = AppDataSource.getRepository(PromoCode);
+    private statsRepo = AppDataSource.getRepository(MerchantStats);
+    private walletService = new WalletService();
 
     private cartService = new CartService();
     private productService = new ProductService();
@@ -758,6 +762,65 @@ export class OrderService {
         });
 
         return order;
+    }
+
+    /**
+     * Auto-cancel orders the merchant never accepted within the SLA window.
+     * Refunds paid customers to their wallet, restores stock, logs a merchant
+     * penalty, and notifies both sides. Returns the count cancelled.
+     */
+    async autoCancelStaleOrders(maxAgeMinutes = 10): Promise<number> {
+        const cutoff = new Date(Date.now() - maxAgeMinutes * 60 * 1000);
+        const stale = await this.orderRepo.find({
+            where: { status: OrderStatus.PENDING, createdAt: LessThan(cutoff) },
+            take: 50,
+        });
+
+        let cancelled = 0;
+        for (const order of stale) {
+            try {
+                const refundDue = order.paymentStatus === OrderPaymentStatus.PAID
+                    || order.paymentStatus === OrderPaymentStatus.ESCROWED;
+
+                order.status = OrderStatus.CANCELLED;
+                order.cancelledBy = OrderCancelledBy.SYSTEM;
+                order.cancellationReason = "Merchant did not respond in time";
+                order.cancelledAt = new Date();
+                if (refundDue) order.paymentStatus = OrderPaymentStatus.REFUNDED;
+                await this.orderRepo.save(order);
+                await this.recordStatusChange(order.id, OrderStatus.PENDING, OrderStatus.CANCELLED, "system", "system", "Auto-cancelled (merchant timeout)");
+                emitOrderEvent(order.id, "order:status", { orderId: order.id, status: OrderStatus.CANCELLED, updatedAt: new Date().toISOString() });
+
+                // Restore stock
+                const stockItems = (order.items || []).map((i) => ({ productId: i.productId, quantity: i.quantity }));
+                if (stockItems.length > 0) await this.productService.restoreStock(stockItems);
+
+                // Refund to wallet
+                if (refundDue) {
+                    await this.walletService.credit(
+                        order.customerId, Number(order.totalAmount),
+                        `Refund: order #${order.orderNumber} auto-cancelled`,
+                        { orderId: order.id, reason: "merchant_timeout" }
+                    ).catch((e) => log.warn("Auto-cancel refund failed", { orderId: order.id, error: e.message }));
+                }
+
+                // Merchant penalty counter
+                await this.statsRepo.increment({ merchantId: order.merchantId }, "autoCancelledOrders", 1)
+                    .catch(() => {});
+
+                await this.notificationService.notify(order.customerId, NotificationType.ORDER_CANCELLED, "Order cancelled",
+                    `Order #${order.orderNumber} was auto-cancelled because the merchant did not respond.${refundDue ? " You have been refunded to your wallet." : ""}`,
+                    { orderId: order.id });
+                await this.notificationService.notify(order.merchantId, NotificationType.ORDER_CANCELLED, "Order missed",
+                    `Order #${order.orderNumber} was auto-cancelled after no response. This affects your performance.`,
+                    { orderId: order.id });
+
+                cancelled++;
+            } catch (err) {
+                log.warn("Auto-cancel failed for an order", { orderId: order.id, error: (err as Error).message });
+            }
+        }
+        return cancelled;
     }
 
     // ── Helpers ──────────────────────────────────────────────────────

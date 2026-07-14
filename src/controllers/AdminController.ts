@@ -1055,6 +1055,43 @@ export class AdminController {
         }
     };
 
+    // ── Driver off-boarding ──
+    getFlaggedDrivers = async (_req: AuthRequest, res: Response) => {
+        try {
+            const drivers = await this.adminService.getFlaggedDrivers();
+            return res.json({ drivers });
+        } catch (error) {
+            log.error("Error getting flagged drivers", { error: (error as Error).message });
+            return res.status(500).json({ message: "Internal server error" });
+        }
+    };
+
+    flagDriver = async (req: AuthRequest, res: Response) => {
+        try {
+            const { reason } = req.body;
+            if (!reason?.trim()) return res.status(400).json({ message: "Reason is required" });
+            const profile = await this.adminService.flagDriver(req.params.id, reason.trim());
+            return res.json({ profile });
+        } catch (error) {
+            const msg = (error as Error).message;
+            if (/not found/i.test(msg)) return res.status(404).json({ message: msg });
+            log.error("Error flagging driver", { error: msg });
+            return res.status(500).json({ message: "Internal server error" });
+        }
+    };
+
+    clearDriverFlag = async (req: AuthRequest, res: Response) => {
+        try {
+            const profile = await this.adminService.clearDriverFlag(req.params.id);
+            return res.json({ profile });
+        } catch (error) {
+            const msg = (error as Error).message;
+            if (/not found/i.test(msg)) return res.status(404).json({ message: msg });
+            log.error("Error clearing driver flag", { error: msg });
+            return res.status(500).json({ message: "Internal server error" });
+        }
+    };
+
     // ── Gateway payments (Paystack / Stripe) ──
     getGatewayPayments = async (req: AuthRequest, res: Response) => {
         try {

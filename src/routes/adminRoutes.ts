@@ -1266,6 +1266,9 @@ router.get("/wallets/:id/transactions", adminRole, adminController.getWalletTran
  */
 router.get("/transactions", adminRole, adminController.getAllTransactions);
 // Gateway payments (Paystack / Stripe) from the payments table
+router.get("/drivers/flagged", adminRole, adminController.getFlaggedDrivers);
+router.post("/drivers/:id/flag", adminRole, adminController.flagDriver);
+router.post("/drivers/:id/clear-flag", adminRole, adminController.clearDriverFlag);
 router.get("/payments", adminRole, adminController.getGatewayPayments);
 router.post("/payments/:id/reverify", adminRole, adminController.reverifyGatewayPayment);
 router.post("/payments/:id/refund-to-wallet", adminRole, adminController.refundGatewayPayment);

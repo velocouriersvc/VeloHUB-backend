@@ -12,6 +12,8 @@ import path from "path";
 import { initSocketGateway } from "./socket-gateway";
 import { runSeeds } from "./scripts/run-seeds";
 import { startScheduledRideDispatcher } from "./scripts/scheduled-ride-dispatcher";
+import { startOrderAutoCancel } from "./scripts/order-auto-cancel";
+import { startDriverFlagSuspender } from "./scripts/driver-flag-suspender";
 
 
 import orderRoutes from "./routes/orderRoutes";
@@ -313,6 +315,8 @@ preSyncFixes()
       }
       try {
         startScheduledRideDispatcher();
+        startOrderAutoCancel();
+        startDriverFlagSuspender();
       } catch (err) {
         logger.warn("Scheduled ride dispatcher failed to start", { error: (err as Error).message });
       }

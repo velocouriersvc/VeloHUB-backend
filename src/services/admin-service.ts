@@ -1,5 +1,5 @@
 import { AppDataSource } from "../db/data-source";
-import { Between, In, ILike, IsNull, Not, EntityManager } from "typeorm";
+import { Between, In, ILike, IsNull, Not, LessThan, EntityManager } from "typeorm";
 import { Order, OrderStatus, OrderPaymentStatus, OrderCancelledBy, DeliveryType } from "../models/order";
 import { OrderStatusHistory } from "../models/order-status-history";
 import { Product } from "../models/product";
@@ -144,6 +144,7 @@ export class AdminService {
     private serviceBookingRepo = AppDataSource.getRepository(ServiceBooking);
     private zoneRepo = AppDataSource.getRepository(Zone);
     private vehiclePricingRepo = AppDataSource.getRepository(VehiclePricing);
+    private driverProfileRepo = AppDataSource.getRepository(DriverProfile);
 
     private walletService = new WalletService();
     private _paymentService?: PaymentService;
@@ -1704,6 +1705,71 @@ export class AdminService {
         });
 
         return { transactions, total };
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    //  DRIVER OFF-BOARDING (flag -> 6h -> auto-suspend)
+    // ════════════════════════════════════════════════════════════════
+
+    /** Flag a driver (e.g. failed-delivery dispute). Auto-suspends if not cleared in 6h. */
+    async flagDriver(driverUserId: string, reason: string) {
+        const profile = await this.driverProfileRepo.findOne({ where: { userId: driverUserId } });
+        if (!profile) throw new Error("Driver profile not found");
+        profile.flaggedAt = new Date();
+        profile.flagReason = reason;
+        await this.driverProfileRepo.save(profile);
+        this.notificationService
+            .notify(driverUserId, NotificationType.SYSTEM, "Account flagged ⚠️",
+                `Your account was flagged: ${reason}. Resolve this with support within 6 hours or it will be suspended.`,
+                { flagReason: reason })
+            .catch(() => {});
+        log.warn("Driver flagged", { driverUserId, reason });
+        return profile;
+    }
+
+    async clearDriverFlag(driverUserId: string) {
+        const profile = await this.driverProfileRepo.findOne({ where: { userId: driverUserId } });
+        if (!profile) throw new Error("Driver profile not found");
+        profile.flaggedAt = null;
+        profile.flagReason = null;
+        await this.driverProfileRepo.save(profile);
+        log.info("Driver flag cleared", { driverUserId });
+        return profile;
+    }
+
+    async getFlaggedDrivers() {
+        return this.driverProfileRepo.find({
+            where: { flaggedAt: Not(IsNull()) },
+            relations: ["user"],
+            order: { flaggedAt: "ASC" },
+        });
+    }
+
+    /** Auto-suspend drivers flagged more than 6 hours ago. Returns count suspended. */
+    async suspendExpiredFlaggedDrivers(hours = 6): Promise<number> {
+        const cutoff = new Date(Date.now() - hours * 60 * 60 * 1000);
+        const expired = await this.driverProfileRepo.find({
+            where: { flaggedAt: LessThan(cutoff) },
+            relations: ["user"],
+        });
+        let suspended = 0;
+        for (const profile of expired) {
+            try {
+                if (profile.user && profile.user.status !== UserStatus.SUSPENDED) {
+                    profile.user.status = UserStatus.SUSPENDED;
+                    await this.userRepo.save(profile.user);
+                    this.notificationService
+                        .notify(profile.userId, NotificationType.SYSTEM, "Account suspended",
+                            "Your account has been suspended after an unresolved flag. Contact support to appeal.",
+                            {})
+                        .catch(() => {});
+                    suspended++;
+                }
+            } catch (err) {
+                log.warn("Auto-suspend failed for a driver", { userId: profile.userId, error: (err as Error).message });
+            }
+        }
+        return suspended;
     }
 
     // ════════════════════════════════════════════════════════════════
