@@ -256,6 +256,12 @@ export class OrderService {
      *  8. Return order + payment info
      */
     async checkout(userId: string, input: CheckoutInput): Promise<CheckoutResult> {
+        // Product orders must be paid before dispatch: only prepaid gateway
+        // methods are accepted (no cash on delivery, no wallet).
+        if (input.paymentMethod === OrderPaymentMethod.CASH || input.paymentMethod === OrderPaymentMethod.WALLET) {
+            throw new Error("Orders must be paid online (card or mobile money) before dispatch.");
+        }
+
         // 1. Load cart
         const cart = await this.cartService.getCartForCheckout(userId);
         if (!cart || !cart.items || cart.items.length === 0) {
@@ -404,9 +410,9 @@ export class OrderService {
                 );
             }
 
-            // 12. Process payment (if not cash)
+            // 12. Process payment (orders are always prepaid via the gateway)
             let paymentResult = null;
-            if (input.paymentMethod !== OrderPaymentMethod.CASH) {
+            {
                 try {
                     const pmtResult = await this.paymentService.processOrderPayment({
                         orderId: savedOrder.id,
