@@ -2501,11 +2501,15 @@ export class AdminService {
         });
     }
 
-    /** Post a message to a ticket. Support and the user go back and forth until closed. */
+    /**
+     * Post a message to a ticket. Support and the user go back and forth until
+     * the ticket is CLOSED. A user replying to a resolved ticket reopens it so
+     * support can pick the conversation back up.
+     */
     async addTicketMessage(ticketId: string, senderId: string, senderRole: "user" | "admin", message: string) {
         const ticket = await this.supportTicketRepo.findOne({ where: { id: ticketId } });
         if (!ticket) throw new Error("Ticket not found");
-        if (ticket.status === SupportTicketStatus.RESOLVED || ticket.status === SupportTicketStatus.CLOSED) {
+        if (ticket.status === SupportTicketStatus.CLOSED) {
             throw new Error("Ticket is closed");
         }
 
@@ -2514,7 +2518,7 @@ export class AdminService {
         );
 
         if (senderRole === "admin") {
-            // First admin response moves the ticket into progress.
+            // First admin response moves an open ticket into progress.
             if (ticket.status === SupportTicketStatus.OPEN) {
                 ticket.status = SupportTicketStatus.IN_PROGRESS;
                 await this.supportTicketRepo.save(ticket);
@@ -2522,8 +2526,14 @@ export class AdminService {
             this.notificationService
                 .notify(ticket.userId, NotificationType.SYSTEM, "Support replied 💬",
                     `${ticket.ticket_number}: ${message}`,
-                    { ticketId: ticket.id, ticketNumber: ticket.ticket_number })
+                    { ticketId: ticket.id, ticketNumber: ticket.ticket_number, screen: "support" })
                 .catch((err) => log.warn("Support reply notification failed", { ticketId, error: (err as Error).message }));
+        } else {
+            // A user reply reopens a resolved ticket and pings support.
+            if (ticket.status === SupportTicketStatus.RESOLVED) {
+                ticket.status = SupportTicketStatus.IN_PROGRESS;
+                await this.supportTicketRepo.save(ticket);
+            }
         }
         return msg;
     }
@@ -2546,14 +2556,26 @@ export class AdminService {
         await this.supportTicketRepo.save(ticket);
         log.info("Admin updated support ticket", { id, status: ticket.status, adminId });
 
+        // Mirror a resolution note into the CONVERSATION thread so the customer
+        // sees it in the chat (not just as a hidden field), and can reply to it
+        // while the ticket is still resolved (not yet closed).
+        if (typeof data.resolution === "string" && data.resolution.trim()) {
+            await this.ticketMessageRepo.save(
+                this.ticketMessageRepo.create({
+                    ticketId: ticket.id, senderId: adminId, senderRole: "admin",
+                    message: data.resolution.trim(),
+                })
+            );
+        }
+
         // Tell the user support responded (push + in-app), so replies are never invisible.
         if (data.status || data.resolution) {
             const title = ticket.status === "resolved" ? "Support ticket resolved ✅" : "Support update 💬";
-            const body = ticket.resolution
-                ? `${ticket.ticket_number}: ${ticket.resolution}`
+            const body = data.resolution
+                ? `${ticket.ticket_number}: ${data.resolution}`
                 : `${ticket.ticket_number} is now ${String(ticket.status || "updated").replace("_", " ")}.`;
             this.notificationService
-                .notify(ticket.userId, NotificationType.SYSTEM, title, body, { ticketId: ticket.id, ticketNumber: ticket.ticket_number })
+                .notify(ticket.userId, NotificationType.SYSTEM, title, body, { ticketId: ticket.id, ticketNumber: ticket.ticket_number, screen: "support" })
                 .catch((err) => log.warn("Support reply notification failed", { id, error: (err as Error).message }));
         }
         return ticket;
