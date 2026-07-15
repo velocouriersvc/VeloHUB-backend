@@ -530,6 +530,7 @@ export class ServiceBookingService {
     async getMyBookings(customerId: string) {
         return this.bookingRepo.find({
             where: { customerId },
+            relations: { product: true },
             order: { createdAt: "DESC" }
         });
     }
