@@ -73,8 +73,8 @@ const SETTINGS: Partial<PlatformSettings>[] = [
         defaultCommissionRate: 15.00,
         defaultServiceFeeRate: 5.00,
         serviceFeeMaxCap: 79.84,            // ~$4.99 × 16
-        smallOrderFee: 47.84,               // ~$2.99 × 16
-        smallOrderThreshold: 240.00,        // ~$15 × 16
+        smallOrderFee: 5.00,                // flat, market-appropriate (was 47.84, a blind 16x USD conversion)
+        smallOrderThreshold: 50.00,         // fee applies only below 50 GHS
         defaultPickupFeeRate: 10.00,
         deliveryBaseFee: 55.84,             // ~$3.49 × 16
         deliveryPerKmFee: +(9.60 / MI_TO_KM).toFixed(4) as any, // ~$0.60×16/mile → per km
@@ -368,12 +368,34 @@ const SETTINGS: Partial<PlatformSettings>[] = [
  * Seed platform_settings rows.
  * UPSERTS - existing rows are UPDATED to match the latest config.
  */
+export const PLATFORM_SETTINGS_SEED_VERSION = 2;
+
+async function getAppliedVersion(): Promise<number> {
+    await AppDataSource.query(`CREATE TABLE IF NOT EXISTS seed_meta (key TEXT PRIMARY KEY, value TEXT)`);
+    const rows = await AppDataSource.query(`SELECT value FROM seed_meta WHERE key = 'platform_settings_seed_version'`);
+    return rows.length ? Number(rows[0].value) || 0 : 0;
+}
+
+async function setAppliedVersion(version: number): Promise<void> {
+    await AppDataSource.query(
+        `INSERT INTO seed_meta (key, value) VALUES ('platform_settings_seed_version', $1)
+         ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`,
+        [String(version)]
+    );
+}
+
 export async function seedPlatformSettings(alreadyInitialised = false) {
     if (!alreadyInitialised) {
         await AppDataSource.initialize();
     }
 
     const repo = AppDataSource.getRepository(PlatformSettings);
+
+    // Admin edits in the dashboard must SURVIVE restarts: rows are fully
+    // re-applied only when PLATFORM_SETTINGS_SEED_VERSION increases; otherwise
+    // only missing countries are inserted.
+    const appliedVersion = await getAppliedVersion();
+    const fullUpsert = appliedVersion < PLATFORM_SETTINGS_SEED_VERSION;
 
     // Client-requested 20% increase on delivery pricing (June 2026). Applied to the
     // static config on each upsert so it is idempotent and never compounds.
@@ -389,12 +411,15 @@ export async function seedPlatformSettings(alreadyInitialised = false) {
         };
         const existing = await repo.findOne({ where: { country: row.country! } });
         if (existing) {
-            Object.assign(existing, row);
-            await repo.save(existing);
+            if (fullUpsert) {
+                Object.assign(existing, row);
+                await repo.save(existing);
+                upserted++;
+            }
         } else {
             await repo.save(repo.create(row));
+            upserted++;
         }
-        upserted++;
     }
 
     console.log(`✅ platform_settings: upserted ${upserted} rows`);
@@ -410,6 +435,11 @@ export async function seedPlatformSettings(alreadyInitialised = false) {
             await repo.save(repo.create({ ...rest, country: "DEFAULT", currency: "USD", isActive: true }));
             console.log("✅ platform_settings: created global DEFAULT (USD) fallback row");
         }
+    }
+
+    if (fullUpsert) {
+        await setAppliedVersion(PLATFORM_SETTINGS_SEED_VERSION);
+        console.log(`✅ platform_settings: seed v${PLATFORM_SETTINGS_SEED_VERSION} applied`);
     }
 
     if (!alreadyInitialised) {

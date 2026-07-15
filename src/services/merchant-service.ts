@@ -111,6 +111,27 @@ export class MerchantService {
 
         const { hours, isOnline, ...otherFields } = input;
 
+        // Service delivery settings guardrails: travel distance is hard-capped at
+        // 20km, and a profile cannot stay live with BOTH call types switched off.
+        if (otherFields.travelDistanceKm != null) {
+            const km = Number(otherFields.travelDistanceKm);
+            if (!Number.isFinite(km) || km <= 0) throw new Error("Travel distance must be a positive number");
+            if (km > 20) throw new Error("Travel distance cannot exceed 20 km");
+        }
+        for (const feeField of ["travelFeeBase", "travelFeePerKm"]) {
+            if (otherFields[feeField] != null && (!Number.isFinite(Number(otherFields[feeField])) || Number(otherFields[feeField]) < 0)) {
+                throw new Error("Travel fees must be zero or a positive number");
+            }
+        }
+        const nextInCall = otherFields.inCallEnabled != null ? !!otherFields.inCallEnabled : profile.inCallEnabled !== false;
+        const nextOutCall = otherFields.outCallEnabled != null ? !!otherFields.outCallEnabled : profile.outCallEnabled === true;
+        if (!nextInCall && !nextOutCall) {
+            if (isOnline === true || (isOnline === undefined && profile.isOpen)) {
+                throw new Error("Enable In-Call or Out-Call before going live");
+            }
+            profile.isOpen = false;
+        }
+
         // 1. Update basic fields
         if (isOnline !== undefined) profile.isOpen = isOnline;
         Object.assign(profile, otherFields);
@@ -146,6 +167,9 @@ export class MerchantService {
         const profile = await this.profileRepo.findOne({ where: { userId: merchantId } });
         if (!profile) throw new Error("Merchant profile not found");
 
+        if (isOpen && profile.inCallEnabled === false && profile.outCallEnabled !== true) {
+            throw new Error("Enable In-Call or Out-Call before going live");
+        }
         profile.isOpen = isOpen;
         const saved = await this.profileRepo.save(profile);
         log.info("Merchant toggled open status", { merchantId, isOpen });

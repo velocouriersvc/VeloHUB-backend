@@ -421,6 +421,8 @@ export class PaymentService {
      */
     async processServiceBookingPayment(params: {
         serviceBookingId: string;
+        /** All booking ids covered by this single payment (multi-date bookings). */
+        serviceBookingIds?: string[];
         userId: string;
         amount: number;
         method: PaymentMethodType;
@@ -456,7 +458,7 @@ export class PaymentService {
             platformFee,
             driverAmount: merchantAmount, // Use driverAmount column for merchant/provider earnings
             status: PaymentRecordStatus.PENDING,
-            metadata: { reference },
+            metadata: { reference, serviceBookingIds: params.serviceBookingIds || [serviceBookingId] },
         });
         const saved = await this.paymentRepo.save(payment);
         log.info("Service booking payment record created", { paymentId: saved.id, serviceBookingId, method, amount, currency });
@@ -734,6 +736,7 @@ export class PaymentService {
         payment.providerRef = reference;
         payment.completedAt = new Date();
         await this.paymentRepo.save(payment);
+        await this.applyPaymentSideEffects(payment);
 
         log.info("Wallet payment successful", { paymentId: payment.id, amount });
         paymentEventsTotal.inc({ method: "wallet", status: "success" });
@@ -805,6 +808,21 @@ export class PaymentService {
                         );
                     }
                     log.info("Ride advanced to PAID from payment confirmation", { rideId: ride.id });
+                }
+            }
+            // Service bookings: one payment can cover several bookings (multi-date).
+            const bookingIds: string[] = Array.isArray((payment.metadata as any)?.serviceBookingIds)
+                ? (payment.metadata as any).serviceBookingIds
+                : (payment.serviceBookingId ? [payment.serviceBookingId] : []);
+            if (bookingIds.length) {
+                const { ServiceBooking, ServicePaymentStatus } = require("../../models/service-booking");
+                const bookingRepo = AppDataSource.getRepository(ServiceBooking);
+                for (const id of bookingIds) {
+                    const updated = await bookingRepo.update(
+                        { id, paymentStatus: ServicePaymentStatus.PENDING },
+                        { paymentStatus: ServicePaymentStatus.PAID }
+                    );
+                    if (updated.affected) log.info("Service booking marked paid", { bookingId: id });
                 }
             }
             if (payment.orderId) {
