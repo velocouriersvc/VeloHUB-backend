@@ -10,6 +10,17 @@ export enum ServiceBookingStatus {
     IN_PROGRESS = "in_progress",
     COMPLETED = "completed",
     CANCELLED = "cancelled",
+    // Auto-expired: provider never accepted before the 2h pre-appointment cutoff.
+    EXPIRED = "expired",
+    // Customer cancelled (full refund >3h before start; 70% penalty within 3h).
+    CUSTOMER_CANCELLED = "customer_cancelled",
+    // Provider cancelled an accepted booking: customer always gets a full refund.
+    PROVIDER_CANCELLED = "provider_cancelled",
+}
+
+export enum ServiceCallType {
+    IN_CALL = "in_call",   // customer comes to the provider
+    OUT_CALL = "out_call", // provider travels to the customer
 }
 
 export enum ServicePaymentMethod {
@@ -103,6 +114,28 @@ export class ServiceBooking {
 
     @Column({ type: "varchar", length: 10, nullable: true })
     completionCode: string | null;
+
+    // ── Call type + travel (out-call) ──
+    @Column({ type: "varchar", length: 10, nullable: true })
+    callType: "in_call" | "out_call" | null;
+
+    @Column({ type: "decimal", precision: 12, scale: 2, default: 0 })
+    travelFee: number;
+
+    @Column({ type: "decimal", precision: 6, scale: 2, nullable: true })
+    travelDistanceKm: number | null;
+
+    // Provider's IANA timezone captured at booking time (times shown to the
+    // customer are in the provider's local time).
+    @Column({ type: "varchar", length: 60, nullable: true })
+    providerTimezone: string | null;
+
+    // ── Cancellation money trail ──
+    @Column({ type: "decimal", precision: 12, scale: 2, nullable: true })
+    refundAmount: number | null;
+
+    @Column({ type: "decimal", precision: 12, scale: 2, nullable: true })
+    cancellationFee: number | null;
 
     @CreateDateColumn()
     createdAt: Date;

@@ -39,6 +39,28 @@ router.post("/", requireRole(["buyer"]), (req, res) => controller.createBooking(
 
 /**
  * @openapi
+ * /services/bookings/quote:
+ *   post:
+ *     tags: [Services]
+ *     summary: Quote a booking (call type + travel fee, locked 15 min)
+ *     description: |
+ *       Validates in-call/out-call availability and, for out-call, the provider
+ *       travel radius (max 20km). The returned travel fee is locked for 15
+ *       minutes so provider edits never change an active checkout.
+ *     responses:
+ *       200:
+ *         description: Quote with travelFee, distanceKm, provider timezone, policy
+ *       400:
+ *         description: Provider does not travel to this area / call type unavailable
+ */
+router.post("/quote", requireRole(["buyer"]), (req, res) => controller.quoteBooking(req, res));
+
+// Booking chat: customer and provider go back and forth on a booking.
+router.get("/:bookingId/messages", requireRole(["buyer", "merchant"]), (req, res) => controller.getMessages(req, res));
+router.post("/:bookingId/messages", requireRole(["buyer", "merchant"]), (req, res) => controller.sendMessage(req, res));
+
+/**
+ * @openapi
  * /services/bookings/my:
  *   get:
  *     tags: [Services]

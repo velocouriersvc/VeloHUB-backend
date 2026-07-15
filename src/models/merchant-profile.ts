@@ -88,6 +88,30 @@ export class MerchantProfile {
     @Column({ type: "boolean", default: true })
     isPublicRatings: boolean; // show customer feedback publicly
 
+    // ── Service delivery settings (professional services vertical) ──
+    // In-call: customers come to the provider. Out-call: provider travels.
+    // A service profile cannot go live with both switched off.
+    @Column({ type: "boolean", default: true })
+    inCallEnabled: boolean;
+
+    @Column({ type: "boolean", default: false })
+    outCallEnabled: boolean;
+
+    // Max distance (km) the provider travels for out-call jobs. Hard cap 20.
+    @Column({ type: "decimal", precision: 5, scale: 2, default: 20 })
+    travelDistanceKm: number;
+
+    // Out-call travel fees: flat base + per-km, in the provider's currency.
+    @Column({ type: "decimal", precision: 12, scale: 2, default: 0 })
+    travelFeeBase: number;
+
+    @Column({ type: "decimal", precision: 12, scale: 2, default: 0 })
+    travelFeePerKm: number;
+
+    // Provider's IANA timezone; booking times are shown in this timezone.
+    @Column({ type: "varchar", length: 60, default: "Africa/Accra" })
+    timezone: string;
+
     @CreateDateColumn()
     createdAt: Date;
 
