@@ -138,6 +138,10 @@ export class PaymentService {
     /**
      * Resolve provider + currency + commission from the user's country.
      */
+    // Currencies Paystack can charge (per Paystack docs). Anything else falls
+    // back to USD so a checkout never initializes with an unsupported code.
+    private static readonly PAYSTACK_CURRENCIES = new Set(["NGN", "GHS", "ZAR", "KES", "USD", "XOF", "EGP"]);
+
     private async resolveCountryContext(country: string): Promise<{
         provider: PaymentProvider;
         currency: string;
@@ -149,7 +153,11 @@ export class PaymentService {
             where: { country, isActive: true },
         });
 
-        const currency = settings?.currency || currencyForCountry(country);
+        let currency = settings?.currency || currencyForCountry(country);
+        if (provider.name === "paystack" && !PaymentService.PAYSTACK_CURRENCIES.has(currency)) {
+            log.warn("Currency not supported by Paystack, falling back to USD", { country, currency });
+            currency = "USD";
+        }
         // defaultCommissionRate is stored as a percentage (e.g. 15 = 15%)
         const commissionRate = settings
             ? Number(settings.defaultCommissionRate) / 100
@@ -836,6 +844,11 @@ export class PaymentService {
                         "Payment Confirmed",
                         `Your payment of ${formatCurrency(Number(payment.amount), payment.currency || "GHS")} was received.`,
                         { orderId: order.id, paymentId: payment.id }
+                    );
+                    // Pickup/delivery codes are only released once the money is in.
+                    const { OrderService } = require("../order-service");
+                    await new OrderService().sendOrderCodesNotification(order).catch((e: Error) =>
+                        log.warn("Order codes notification failed", { orderId: order.id, error: e.message })
                     );
                     log.info("Order advanced to PAID from payment confirmation", { orderId: order.id });
                 }

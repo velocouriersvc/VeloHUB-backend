@@ -355,7 +355,8 @@ export class NotificationService {
         return this.notify(driverId, NotificationType.NEW_RATING, "New Rating ⭐", `You received a ${rating}-star rating`, { rideId, rating });
     }
 
-    async notifyNewRideRequest(driverId: string, pickupAddress: string, rideId: string) {
-        return this.notify(driverId, NotificationType.RIDE_REQUESTED, "New Ride Request! 🔔", `Pickup: ${pickupAddress}`, { rideId, screen: "rides", deepLink: `velohub://rides?rideId=${rideId}` });
+    async notifyNewRideRequest(driverId: string, pickupAddress: string, rideId: string, isDelivery = false) {
+        const title = isDelivery ? "New Delivery Request! 📦" : "New Ride Request! 🔔";
+        return this.notify(driverId, NotificationType.RIDE_REQUESTED, title, `Pickup: ${pickupAddress}`, { rideId, screen: "rides", deepLink: `velohub://rides?rideId=${rideId}` });
     }
 }

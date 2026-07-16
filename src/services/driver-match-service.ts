@@ -148,7 +148,8 @@ export class DriverMatchService {
             await this.notificationService.notifyNewRideRequest(
                 driverUserId,
                 pickupAddress,
-                rideId
+                rideId,
+                rideData?.type === "delivery"
             );
 
             // Real-time WebSocket event to the driver's personal room
