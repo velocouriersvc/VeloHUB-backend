@@ -14,6 +14,9 @@ import { PromoCode } from "./promo-code";
 import { OrderStatusHistory } from "./order-status-history";
 
 export enum OrderStatus {
+    // Online (momo/card) orders start here and flip to PENDING only after the
+    // payment is confirmed, so merchants never see unpaid orders.
+    AWAITING_PAYMENT = "awaiting_payment",
     PENDING = "pending",
     ACCEPTED = "accepted",
     PREPARING = "preparing",

@@ -117,6 +117,12 @@ export class PlatformSettings {
     @Column({ type: "decimal", precision: 5, scale: 2, default: 0 })
     taxRate: number;
 
+    // Units of this country's currency per 1 USD. Used to convert a charge to
+    // USD when the payment gateway account does not support the local currency
+    // (e.g. NGN carts on a Ghana Paystack integration). Admin-editable.
+    @Column({ type: "decimal", precision: 12, scale: 4, default: 1 })
+    usdExchangeRate: number;
+
     @Column({ type: "boolean", default: false })
     isGlobalSurgeActive: boolean;
 

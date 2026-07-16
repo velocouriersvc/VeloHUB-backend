@@ -24,6 +24,7 @@ const SETTINGS: Partial<PlatformSettings>[] = [
     // ── United States (USD) ─────────────────────────────────────────
     {
         country: "US",
+        usdExchangeRate: 1,
         currency: "USD",
         minimumOrderValue: 0,
 
@@ -67,6 +68,7 @@ const SETTINGS: Partial<PlatformSettings>[] = [
     // ACTUAL production rates (client-specified, NOT auto-calculated)
     {
         country: "GH",
+        usdExchangeRate: 15.5,
         currency: "GHS",
         minimumOrderValue: 0,
 
@@ -104,6 +106,7 @@ const SETTINGS: Partial<PlatformSettings>[] = [
     // ── Nigeria (NGN) - client-specified custom rates ───────────────
     {
         country: "NG",
+        usdExchangeRate: 1550,
         currency: "NGN",
         minimumOrderValue: 0,
 
@@ -144,6 +147,7 @@ const SETTINGS: Partial<PlatformSettings>[] = [
     // ── Kenya (KES) - competitive Nairobi rates ⚠️ validate before launch ──
     {
         country: "KE",
+        usdExchangeRate: 129,
         currency: "KES",
         minimumOrderValue: 0,
 
@@ -181,6 +185,7 @@ const SETTINGS: Partial<PlatformSettings>[] = [
     // ── South Africa (ZAR) - competitive rates ⚠️ validate before launch ──
     {
         country: "ZA",
+        usdExchangeRate: 18,
         currency: "ZAR",
         minimumOrderValue: 0,
 
@@ -218,6 +223,7 @@ const SETTINGS: Partial<PlatformSettings>[] = [
     // ── Tanzania (TZS) - competitive Dar es Salaam rates ⚠️ validate ──
     {
         country: "TZ",
+        usdExchangeRate: 2650,
         currency: "TZS",
         minimumOrderValue: 0,
 
@@ -255,6 +261,7 @@ const SETTINGS: Partial<PlatformSettings>[] = [
     // ── Uganda (UGX) - competitive Kampala rates ⚠️ validate ──────────
     {
         country: "UG",
+        usdExchangeRate: 3700,
         currency: "UGX",
         minimumOrderValue: 0,
 
@@ -292,6 +299,7 @@ const SETTINGS: Partial<PlatformSettings>[] = [
     // ── Canada (CAD) ────────────────────────────────────────────────
     {
         country: "CA",
+        usdExchangeRate: 1.37,
         currency: "CAD",
         minimumOrderValue: 0,
 
@@ -329,6 +337,7 @@ const SETTINGS: Partial<PlatformSettings>[] = [
     // ── India (INR) ─────────────────────────────────────────────────
     {
         country: "IN",
+        usdExchangeRate: 86,
         currency: "INR",
         minimumOrderValue: 0,
 
@@ -368,7 +377,7 @@ const SETTINGS: Partial<PlatformSettings>[] = [
  * Seed platform_settings rows.
  * UPSERTS - existing rows are UPDATED to match the latest config.
  */
-export const PLATFORM_SETTINGS_SEED_VERSION = 2;
+export const PLATFORM_SETTINGS_SEED_VERSION = 3;
 
 async function getAppliedVersion(): Promise<number> {
     await AppDataSource.query(`CREATE TABLE IF NOT EXISTS seed_meta (key TEXT PRIMARY KEY, value TEXT)`);

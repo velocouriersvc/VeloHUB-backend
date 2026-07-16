@@ -138,9 +138,11 @@ export class PaymentService {
     /**
      * Resolve provider + currency + commission from the user's country.
      */
-    // Currencies Paystack can charge (per Paystack docs). Anything else falls
-    // back to USD so a checkout never initializes with an unsupported code.
-    private static readonly PAYSTACK_CURRENCIES = new Set(["NGN", "GHS", "ZAR", "KES", "USD", "XOF", "EGP"]);
+    // Currencies THIS Paystack account can charge (a Ghana integration supports
+    // GHS and USD only; "Currency not supported by merchant" otherwise).
+    // Override per deployment via PAYSTACK_SUPPORTED_CURRENCIES=GHS,USD,NGN
+    private static readonly PAYSTACK_ACCOUNT_CURRENCIES = (process.env.PAYSTACK_SUPPORTED_CURRENCIES || "GHS,USD")
+        .split(",").map((c) => c.trim().toUpperCase()).filter(Boolean);
 
     private async resolveCountryContext(country: string): Promise<{
         provider: PaymentProvider;
@@ -153,17 +155,57 @@ export class PaymentService {
             where: { country, isActive: true },
         });
 
-        let currency = settings?.currency || currencyForCountry(country);
-        if (provider.name === "paystack" && !PaymentService.PAYSTACK_CURRENCIES.has(currency)) {
-            log.warn("Currency not supported by Paystack, falling back to USD", { country, currency });
-            currency = "USD";
-        }
+        const currency = settings?.currency || currencyForCountry(country);
         // defaultCommissionRate is stored as a percentage (e.g. 15 = 15%)
         const commissionRate = settings
             ? Number(settings.defaultCommissionRate) / 100
             : DEFAULT_PLATFORM_COMMISSION;
 
         return { provider, currency, commissionRate };
+    }
+
+    /**
+     * Charge details for a Paystack gateway call: when the account cannot charge
+     * the local currency, convert the amount to USD using the admin-managed
+     * usdExchangeRate (local units per 1 USD) from platform settings.
+     */
+    private async gatewayCharge(amount: number, currency: string): Promise<{ amount: number; currency: string; converted: boolean; rate: number }> {
+        if (PaymentService.PAYSTACK_ACCOUNT_CURRENCIES.includes(currency.toUpperCase())) {
+            return { amount, currency, converted: false, rate: 1 };
+        }
+        const settings = await this.settingsRepo.findOne({ where: { currency, isActive: true } });
+        const rate = Number(settings?.usdExchangeRate) || 0;
+        if (rate <= 1) {
+            log.error("No usable USD exchange rate for unsupported currency; initialize will be rejected", { currency, rate });
+            return { amount, currency, converted: false, rate: 1 };
+        }
+        const usd = Math.max(0.5, Math.round((amount / rate) * 100) / 100);
+        log.info("Converting gateway charge to USD (account cannot charge local currency)", { currency, amount, usd, rate });
+        return { amount: usd, currency: "USD", converted: true, rate };
+    }
+
+    /**
+     * Apply the USD conversion (if needed) to the Payment row and return the
+     * amount/currency to send to the gateway. Local prices stay on the order;
+     * the original figures are kept in payment.metadata for reconciliation.
+     */
+    private async prepareGatewayCharge(
+        payment: Payment,
+        provider: PaymentProvider,
+        amount: number,
+        currency: string
+    ): Promise<{ amount: number; currency: string }> {
+        if (provider.name !== "paystack") return { amount, currency };
+        const charge = await this.gatewayCharge(amount, currency);
+        if (charge.converted) {
+            const fx = (v: number) => Math.round((Number(v || 0) / charge.rate) * 100) / 100;
+            payment.metadata = { ...payment.metadata, originalAmount: amount, originalCurrency: currency, usdRate: charge.rate };
+            payment.amount = charge.amount;
+            payment.currency = charge.currency;
+            payment.platformFee = fx(payment.platformFee);
+            payment.driverAmount = fx(payment.driverAmount);
+        }
+        return { amount: charge.amount, currency: charge.currency };
     }
 
     // ── Ride Payments ───────────────────────────────────────────────
@@ -559,9 +601,10 @@ export class PaymentService {
             throw new Error("Phone number is required for momo payment");
         }
 
+        const charge = await this.prepareGatewayCharge(payment, provider, params.amount, currency);
         const result = await provider.initiateMomoPayment({
-            amount: params.amount,
-            currency,
+            amount: charge.amount,
+            currency: charge.currency,
             email: params.email || `${params.phoneNumber}@velo.app`,
             phoneNumber: params.phoneNumber,
             reference,
@@ -594,7 +637,7 @@ export class PaymentService {
             authorizationUrl: result.authorizationUrl,
             message: result.success
                 ? "Momo payment initiated. Approve on your phone."
-                : "Payment initiation failed. Please try again.",
+                : result.message || "Payment initiation failed. Please try again.",
         };
     }
 
@@ -616,9 +659,10 @@ export class PaymentService {
         const email = params.email
             || (params.phoneNumber ? `${params.phoneNumber}@velo.app` : "customer@velo.app");
 
+        const charge = await this.prepareGatewayCharge(payment, provider, params.amount, currency);
         const result = await provider.initiateCardPayment({
-            amount: params.amount,
-            currency,
+            amount: charge.amount,
+            currency: charge.currency,
             email,
             reference,
             callbackUrl: PaymentService.callbackUrl(),
@@ -650,7 +694,7 @@ export class PaymentService {
             authorizationUrl: result.authorizationUrl,
             message: result.success
                 ? "Complete your payment in the page that opens."
-                : "Payment initiation failed. Please try again.",
+                : result.message || "Payment initiation failed. Please try again.",
         };
     }
 
@@ -845,10 +889,12 @@ export class PaymentService {
                         `Your payment of ${formatCurrency(Number(payment.amount), payment.currency || "GHS")} was received.`,
                         { orderId: order.id, paymentId: payment.id }
                     );
-                    // Pickup/delivery codes are only released once the money is in.
+                    // Online orders are AWAITING_PAYMENT until now: this flips them to
+                    // PENDING, notifies the merchant + customer, and releases the
+                    // pickup/delivery codes (only once the money is in). Idempotent.
                     const { OrderService } = require("../order-service");
-                    await new OrderService().sendOrderCodesNotification(order).catch((e: Error) =>
-                        log.warn("Order codes notification failed", { orderId: order.id, error: e.message })
+                    await new OrderService().applyOrderPaidSideEffects(order.id).catch((e: Error) =>
+                        log.warn("Order paid side effects failed", { orderId: order.id, error: e.message })
                     );
                     log.info("Order advanced to PAID from payment confirmation", { orderId: order.id });
                 }

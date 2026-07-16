@@ -282,6 +282,10 @@ export class OrderService {
             if (!input.deliveryAddress || !input.deliveryLat || !input.deliveryLng) {
                 throw new Error("Delivery address, latitude, and longitude are required for delivery orders");
             }
+            // Deliveries must be prepaid: cash is only accepted for pickup orders.
+            if (input.paymentMethod === OrderPaymentMethod.CASH) {
+                throw new Error("Cash is not accepted for delivery orders. Please pay with card or mobile money.");
+            }
         }
 
         // 4. Decrement stock (fail fast if out of stock) - per variant when set
@@ -345,7 +349,11 @@ export class OrderService {
                 deliveryCode = this.pickupCodeService.generate();
             }
 
-            // 9. Create order
+            // 9. Create order. Online (momo/card) orders start as AWAITING_PAYMENT so
+            // the merchant only sees them once the payment is confirmed; cash orders
+            // go straight to PENDING.
+            const isOnlinePayment = input.paymentMethod !== OrderPaymentMethod.CASH;
+            const initialStatus = isOnlinePayment ? OrderStatus.AWAITING_PAYMENT : OrderStatus.PENDING;
             const order = this.orderRepo.create({
                 orderNumber,
                 customerId: userId,
@@ -373,7 +381,7 @@ export class OrderService {
                 requireDeliveryCode,
                 pickupCodeVerifiedAt: null,
                 deliveryCodeVerifiedAt: null,
-                status: OrderStatus.PENDING,
+                status: initialStatus,
                 cancelledBy: null,
                 cancellationReason: null,
                 promoCodeId: quote.promoCodeId,
@@ -387,16 +395,16 @@ export class OrderService {
             await this.recordStatusChange(
                 savedOrder.id,
                 null,
-                OrderStatus.PENDING,
+                initialStatus,
                 userId,
                 "customer",
-                "Order placed"
+                isOnlinePayment ? "Order placed, awaiting payment" : "Order placed"
             );
 
             // 10b. Emit WebSocket event for real-time tracking
             emitOrderEvent(savedOrder.id, "order:status", {
                 orderId: savedOrder.id,
-                status: OrderStatus.PENDING,
+                status: initialStatus,
                 updatedAt: new Date().toISOString(),
             });
 
@@ -475,55 +483,18 @@ export class OrderService {
             await this.cartService.clearCart(userId);
             cartEventsTotal.inc({ action: "checkout" });
 
-            // 14. Notify merchant of new order (in-app). The seller decides when the
-            // order is accepted, prepared and ready; nothing auto-advances here.
-            await this.notificationService.notify(
-                cart.merchantId,
-                NotificationType.ORDER_PLACED,
-                "New Order! 🛒",
-                `Order #${orderNumber} - ${formatCurrency(quote.totalAmount, currency)} (${cart.items.length} item${cart.items.length > 1 ? "s" : ""})`,
-                {
-                    orderId: savedOrder.id,
-                    orderNumber,
-                    totalAmount: quote.totalAmount,
-                    deliveryType: input.deliveryType,
+            // 14. Notify merchant and customer that the order was placed. Online
+            // (momo/card) orders are still AWAITING_PAYMENT here, so we defer ALL of
+            // this to applyOrderPaidSideEffects (fired when the payment confirms) to
+            // keep unpaid orders off the merchant's queue. Cash orders notify now.
+            if (!isOnlinePayment) {
+                await this.notifyOrderPlaced(savedOrder, cart.merchantId, orderNumber, quote.totalAmount, currency, cart.items.length, input.deliveryType);
+                // Cash orders get their pickup/delivery codes at checkout; online
+                // orders only after payment (issuing them here let buyers collect
+                // goods without ever completing the payment).
+                if (pickupCode) {
+                    await this.sendOrderCodesNotification(savedOrder);
                 }
-            );
-
-            // 14b. Also alert the merchant by SMS so they see new orders even when the
-            // app is closed (sellers must accept and decide readiness). Best-effort.
-            try {
-                const merchantUser = await this.userRepo.findOne({ where: { id: cart.merchantId } });
-                if (merchantUser?.phoneNumber) {
-                    await this.notificationService.notifyBySms(
-                        merchantUser.phoneNumber,
-                        `New VeloHUB order #${orderNumber} (${formatCurrency(quote.totalAmount, currency)}). Open the app to accept and prepare it.`
-                    );
-                }
-            } catch (smsErr) {
-                log.warn("Merchant new-order SMS failed (non-fatal)", { error: (smsErr as Error).message });
-            }
-
-            // 15. Notify customer - order placed confirmation
-            await this.notificationService.notify(
-                userId,
-                NotificationType.ORDER_PLACED,
-                "Order Placed! 🛍️",
-                `Your order #${orderNumber} has been placed and is awaiting confirmation from the merchant.`,
-                {
-                    orderId: savedOrder.id,
-                    orderNumber,
-                    totalAmount: quote.totalAmount,
-                    deliveryType: input.deliveryType,
-                }
-            );
-
-            // 16. Notify customer with pickup or delivery codes.
-            // Online (prepaid) orders only get their codes AFTER the payment is
-            // confirmed (sent from the payment side effects); issuing them here let
-            // buyers collect goods without ever completing the payment.
-            if (pickupCode && input.paymentMethod === OrderPaymentMethod.CASH) {
-                await this.sendOrderCodesNotification(savedOrder);
             }
 
             // 16. Metrics
@@ -675,6 +646,7 @@ export class OrderService {
         // i.e. before the order is picked up / in transit / delivered. This covers
         // in-progress orders (preparing, ready, driver-assigned), not just brand-new ones.
         const cancellableStatuses = [
+            OrderStatus.AWAITING_PAYMENT,
             OrderStatus.PENDING,
             OrderStatus.ACCEPTED,
             OrderStatus.PREPARING,
@@ -843,6 +815,45 @@ export class OrderService {
     }
 
     /**
+     * Reap online orders that were never paid (still AWAITING_PAYMENT after the
+     * window). No refund (no money came in) and no merchant penalty (the merchant
+     * never saw the order); we just restore stock and cancel so inventory is not
+     * held hostage by abandoned checkouts. Returns the count reaped.
+     */
+    async reapUnpaidOrders(maxAgeMinutes = 10): Promise<number> {
+        const cutoff = new Date(Date.now() - maxAgeMinutes * 60 * 1000);
+        const stale = await this.orderRepo.find({
+            where: { status: OrderStatus.AWAITING_PAYMENT, createdAt: LessThan(cutoff) },
+            take: 50,
+        });
+
+        let reaped = 0;
+        for (const order of stale) {
+            try {
+                order.status = OrderStatus.CANCELLED;
+                order.cancelledBy = OrderCancelledBy.SYSTEM;
+                order.cancellationReason = "Payment not completed in time";
+                order.cancelledAt = new Date();
+                await this.orderRepo.save(order);
+                await this.recordStatusChange(order.id, OrderStatus.AWAITING_PAYMENT, OrderStatus.CANCELLED, "system", "system", "Auto-cancelled (payment not completed)");
+                emitOrderEvent(order.id, "order:status", { orderId: order.id, status: OrderStatus.CANCELLED, updatedAt: new Date().toISOString() });
+
+                const stockItems = (order.items || []).map((i) => ({ productId: i.productId, quantity: i.quantity, variantId: (i as any).variantId || null }));
+                if (stockItems.length > 0) await this.productService.restoreStock(stockItems);
+
+                await this.notificationService.notify(order.customerId, NotificationType.ORDER_CANCELLED, "Order cancelled",
+                    `Order #${order.orderNumber} was cancelled because the payment was not completed.`,
+                    { orderId: order.id });
+
+                reaped++;
+            } catch (err) {
+                log.warn("Unpaid-order reap failed", { orderId: order.id, error: (err as Error).message });
+            }
+        }
+        return reaped;
+    }
+
+    /**
      * Send the customer their pickup (and optional delivery) code for an order.
      * Called at checkout for CASH orders, and from the payment side effects once
      * an online payment is CONFIRMED (never before the money is collected).
@@ -865,6 +876,76 @@ export class OrderService {
                 deliveryCode: order.deliveryCode || null,
             }
         );
+    }
+
+    /**
+     * Notify the merchant (in-app + SMS) and the customer that an order was
+     * placed and is awaiting merchant confirmation. Used at checkout for cash
+     * orders and from the payment side effects once an online order is paid.
+     */
+    private async notifyOrderPlaced(
+        order: Order,
+        merchantId: string,
+        orderNumber: string,
+        totalAmount: number,
+        currency: string,
+        itemCount: number,
+        deliveryType: DeliveryType
+    ): Promise<void> {
+        // Merchant in-app: the seller decides accept/prepare/ready; nothing auto-advances.
+        await this.notificationService.notify(
+            merchantId,
+            NotificationType.ORDER_PLACED,
+            "New Order! 🛒",
+            `Order #${orderNumber} - ${formatCurrency(totalAmount, currency)} (${itemCount} item${itemCount > 1 ? "s" : ""})`,
+            { orderId: order.id, orderNumber, totalAmount, deliveryType }
+        );
+
+        // Merchant SMS so they see new orders with the app closed. Best-effort.
+        try {
+            const merchantUser = await this.userRepo.findOne({ where: { id: merchantId } });
+            if (merchantUser?.phoneNumber) {
+                await this.notificationService.notifyBySms(
+                    merchantUser.phoneNumber,
+                    `New VeloHUB order #${orderNumber} (${formatCurrency(totalAmount, currency)}). Open the app to accept and prepare it.`
+                );
+            }
+        } catch (smsErr) {
+            log.warn("Merchant new-order SMS failed (non-fatal)", { error: (smsErr as Error).message });
+        }
+
+        // Customer confirmation.
+        await this.notificationService.notify(
+            order.customerId,
+            NotificationType.ORDER_PLACED,
+            "Order Placed! 🛍️",
+            `Your order #${orderNumber} has been placed and is awaiting confirmation from the merchant.`,
+            { orderId: order.id, orderNumber, totalAmount, deliveryType }
+        );
+    }
+
+    /**
+     * Move an online order from AWAITING_PAYMENT to PENDING once its payment is
+     * confirmed, then notify both parties and issue the pickup/delivery codes.
+     * Called from the payment side effects. Idempotent: a non-awaiting order is
+     * left untouched so a webhook + callback double-fire never double-notifies.
+     */
+    async applyOrderPaidSideEffects(orderId: string): Promise<void> {
+        const order = await this.orderRepo.findOne({ where: { id: orderId } });
+        if (!order || order.status !== OrderStatus.AWAITING_PAYMENT) return;
+
+        order.status = OrderStatus.PENDING;
+        await this.orderRepo.save(order);
+
+        await this.recordStatusChange(order.id, OrderStatus.AWAITING_PAYMENT, OrderStatus.PENDING, order.customerId, "system", "Payment confirmed");
+        emitOrderEvent(order.id, "order:status", {
+            orderId: order.id,
+            status: OrderStatus.PENDING,
+            updatedAt: new Date().toISOString(),
+        });
+
+        await this.notifyOrderPlaced(order, order.merchantId, order.orderNumber, Number(order.totalAmount), order.currency, order.items?.length || 1, order.deliveryType);
+        await this.sendOrderCodesNotification(order);
     }
 
     // ── Helpers ──────────────────────────────────────────────────────

@@ -4,6 +4,7 @@ import { seedVehiclePricing } from "./seed-vehicle-pricing";
 import { seedProductCategories } from "./seed-product-categories";
 import { syncNotificationTypeEnum } from "./sync-notification-enum";
 import { syncServiceBookingStatusEnum } from "./sync-service-booking-enum";
+import { syncOrderStatusEnum } from "./sync-order-status-enum";
 import { backfillProductImages } from "./backfill-product-images";
 
 /**
@@ -28,6 +29,7 @@ export async function runSeeds(): Promise<void> {
         // missing enum values like "profile_created"/"welcome" on synchronize-only DBs).
         ["notification-enum", () => syncNotificationTypeEnum(true)],
         ["service-booking-enum", () => syncServiceBookingStatusEnum(true)],
+        ["order-status-enum", () => syncOrderStatusEnum(true)],
     ];
     // Placeholder images for blank products are OPT-IN only. Merchants list products
     // with (or without) their own images, and new listings must never be switched to

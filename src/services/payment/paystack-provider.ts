@@ -41,6 +41,7 @@ export class PaystackProvider implements PaymentProvider {
         reference: string;
         providerRef: string;
         authorizationUrl?: string;
+        message?: string;
     }> {
         try {
             const amountInSubunits = Math.round(request.amount * 100);
@@ -78,11 +79,13 @@ export class PaystackProvider implements PaymentProvider {
             };
         } catch (error) {
             const axErr = error as AxiosError<{ message?: string }>;
-            log.error("Paystack momo initialize error", { error: axErr.response?.data?.message || axErr.message });
+            const message = axErr.response?.data?.message || axErr.message;
+            log.error("Paystack momo initialize error", { error: message });
             return {
                 success: false,
                 reference: request.reference,
                 providerRef: "",
+                message,
             };
         }
     }
@@ -98,7 +101,7 @@ export class PaystackProvider implements PaymentProvider {
         reference: string;
         metadata?: Record<string, any>;
         callbackUrl?: string;
-    }): Promise<{ success: boolean; reference: string; providerRef: string; authorizationUrl?: string }> {
+    }): Promise<{ success: boolean; reference: string; providerRef: string; authorizationUrl?: string; message?: string }> {
         try {
             const amountInPesewas = Math.round(request.amount * 100);
 
@@ -125,8 +128,9 @@ export class PaystackProvider implements PaymentProvider {
             };
         } catch (error) {
             const axErr = error as AxiosError<{ message?: string }>;
-            log.error("Paystack initialize error", { error: axErr.response?.data?.message || axErr.message });
-            return { success: false, reference: request.reference, providerRef: "" };
+            const message = axErr.response?.data?.message || axErr.message;
+            log.error("Paystack initialize error", { error: message });
+            return { success: false, reference: request.reference, providerRef: "", message };
         }
     }
 

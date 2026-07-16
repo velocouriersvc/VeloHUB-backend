@@ -21,6 +21,9 @@ export function startOrderAutoCancel(): void {
         try {
             const count = await service.autoCancelStaleOrders(MAX_AGE_MIN);
             if (count > 0) logger.info("Stale orders auto-cancelled", { count });
+            // Also reap online orders whose payment was never completed.
+            const reaped = await service.reapUnpaidOrders(MAX_AGE_MIN);
+            if (reaped > 0) logger.info("Unpaid orders reaped", { reaped });
         } catch (err) {
             logger.warn("Order auto-cancel tick failed", { error: (err as Error).message });
         } finally {
