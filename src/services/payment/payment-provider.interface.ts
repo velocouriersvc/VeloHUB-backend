@@ -33,6 +33,7 @@ export interface PaymentProvider {
         reference: string;
         providerRef: string;
         authorizationUrl?: string; // for redirect-based flows
+        message?: string; // provider error detail on failure
     }>;
 
     /**
@@ -51,6 +52,7 @@ export interface PaymentProvider {
         reference: string;
         providerRef: string;
         authorizationUrl?: string;
+        message?: string; // provider error detail on failure
     }>;
 
     /**

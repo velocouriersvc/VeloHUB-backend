@@ -1647,6 +1647,7 @@ export class AdminService {
             cancellationWindowMinutes: number;
             referralRewardAmount: number;
             leaderboardLimit: number;
+            usdExchangeRate: number;
             isGlobalSurgeActive: boolean;
             globalSurgeMultiplier: number;
             ridesEnabled: boolean;

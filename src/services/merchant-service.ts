@@ -12,7 +12,7 @@ import { NotificationType } from "../models/notification";
 import { createServiceLogger } from "../utils/logger";
 import { formatCurrency } from "../utils/currency";
 import { emitOrderEvent } from "../socket-gateway";
-import { Between, In, FindOptionsWhere } from "typeorm";
+import { Between, In, Not, FindOptionsWhere } from "typeorm";
 import { SettlementResult } from "./settlement-service";
 import { WalletTransactionResponse } from "../types/merchant";
 
@@ -202,6 +202,7 @@ export class MerchantService {
         const todayOrders = await this.orderRepo.count({
             where: {
                 merchantId,
+                status: Not(OrderStatus.AWAITING_PAYMENT),
                 createdAt: Between(todayStart, todayEnd),
             },
         });
@@ -346,7 +347,9 @@ export class MerchantService {
         const limit = Math.min(params.limit || 20, 50);
         const offset = (page - 1) * limit;
 
-        const where: FindOptionsWhere<Order> = { merchantId };
+        // Unpaid online orders are AWAITING_PAYMENT: the merchant must never see
+        // them until the payment is confirmed (they flip to PENDING then).
+        const where: FindOptionsWhere<Order> = { merchantId, status: Not(OrderStatus.AWAITING_PAYMENT) };
         if (params.status) where.status = params.status;
 
         const [orders, total] = await this.orderRepo.findAndCount({
