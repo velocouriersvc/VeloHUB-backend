@@ -354,7 +354,7 @@ export class RideService {
         await this.notificationService.notify(
             request.customerId,
             NotificationType.RIDE_REQUESTED,
-            "Ride Requested! 🔍",
+            savedRide.type === RideType.DELIVERY ? "Delivery Requested! 🔍" : "Ride Requested! 🔍",
             drivers.length > 0
                 ? `Looking for a driver near you. ${drivers.length} driver${drivers.length > 1 ? "s" : ""} notified.`
                 : "Looking for available drivers in your area...",

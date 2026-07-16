@@ -2,7 +2,7 @@ import { AppDataSource } from "../db/data-source";
 import { MerchantProfile, MerchantVerificationStatus } from "../models/merchant-profile";
 import { MerchantStats } from "../models/merchant-stats";
 import { MerchantOperatingHours } from "../models/merchant-operating-hours";
-import { Order, OrderStatus, OrderPaymentStatus, OrderCancelledBy, DeliveryType } from "../models/order";
+import { Order, OrderStatus, OrderPaymentStatus, OrderPaymentMethod, OrderCancelledBy, DeliveryType } from "../models/order";
 import { User } from "../models/user";
 import { PickupCodeService } from "./pickup-code-service";
 import { OrderStatusHistory } from "../models/order-status-history";
@@ -375,6 +375,12 @@ export class MerchantService {
         if (!order) throw new Error("Order not found");
         if (order.status !== OrderStatus.PENDING) {
             throw new Error(`Cannot accept order in ${order.status} status`);
+        }
+        // Prepaid orders must never be prepared before the money is collected.
+        if (order.paymentMethod !== OrderPaymentMethod.CASH
+            && order.paymentStatus !== OrderPaymentStatus.PAID
+            && order.paymentStatus !== OrderPaymentStatus.ESCROWED) {
+            throw new Error("Awaiting customer payment. You can accept this order once the payment is confirmed.");
         }
 
         const fromStatus = order.status;

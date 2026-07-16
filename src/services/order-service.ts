@@ -22,7 +22,7 @@ import { PaymentRecordStatus } from "../models/payment";
 import { redis } from "../utils/redis";
 import { createServiceLogger } from "../utils/logger";
 import { orderEventsTotal, cartEventsTotal } from "../utils/metrics";
-import { formatCurrency } from "../utils/currency";
+import { formatCurrency, currencyForCountry } from "../utils/currency";
 import { emitOrderEvent } from "../socket-gateway";
 import { v4 as uuidv4 } from "uuid";
 import { In, LessThan } from "typeorm";
@@ -118,13 +118,15 @@ export class OrderService {
             throw new Error("Cart has no merchant");
         }
 
-        // 2. Get user & resolve country/currency
+        // 2. Resolve country/currency from the MERCHANT (products are priced in the
+        // merchant's currency; fees and tax follow the merchant's market).
         const user = await this.userRepo.findOne({ where: { id: userId } });
         if (!user) throw new Error("User not found");
+        const merchantUser = await this.userRepo.findOne({ where: { id: cart.merchantId } });
 
-        const country = user.country || "GH";
+        const country = merchantUser?.country || user.country || "GH";
         const settings = await this.getSettings(country);
-        const currency = settings?.currency || "GHS";
+        const currency = settings?.currency || currencyForCountry(country);
 
         // 3. Calculate subtotal from cart items
         const subtotal = cart.items.reduce((sum, item) => sum + Number(item.itemTotal), 0);
@@ -322,11 +324,14 @@ export class OrderService {
             // 6. Generate order number
             const orderNumber = this.generateOrderNumber();
 
-            // 7. Get currency
+            // 7. Get currency. Products are priced in the MERCHANT's currency, so the
+            // charge must use the merchant's country (an NGN cart must never be charged
+            // as GHS just because the buyer's account country is unset or different).
             const user = await this.userRepo.findOne({ where: { id: userId } });
-            const country = user?.country || "GH";
+            const merchantUser = await this.userRepo.findOne({ where: { id: cart.merchantId } });
+            const country = merchantUser?.country || user?.country || "GH";
             const settings = await this.getSettings(country);
-            const currency = settings?.currency || "GHS";
+            const currency = settings?.currency || currencyForCountry(country);
 
             // 8. Generate pickup and delivery codes. The delivery PIN is opt-in at
             // checkout (like ride pickup codes); the merchant pickup code stays as-is.
@@ -513,24 +518,12 @@ export class OrderService {
                 }
             );
 
-            // 16. Notify customer with pickup or delivery codes
-            if (pickupCode) {
-                const codeMessage = input.deliveryType === DeliveryType.DELIVERY && deliveryCode
-                    ? `Order #${orderNumber} placed! Pickup code: ${pickupCode}. Delivery code: ${deliveryCode}. Show pickup code to the merchant and give the delivery code to your driver on arrival.`
-                    : `Order #${orderNumber} placed! Your pickup code is: ${pickupCode}`;
-
-                await this.notificationService.notify(
-                    userId,
-                    NotificationType.PICKUP_CODE_GENERATED,
-                    deliveryCode ? "Your Delivery Codes 🔐" : "Your Pickup Code 📦",
-                    codeMessage,
-                    {
-                        orderId: savedOrder.id,
-                        orderNumber,
-                        pickupCode,
-                        deliveryCode: deliveryCode || null,
-                    }
-                );
+            // 16. Notify customer with pickup or delivery codes.
+            // Online (prepaid) orders only get their codes AFTER the payment is
+            // confirmed (sent from the payment side effects); issuing them here let
+            // buyers collect goods without ever completing the payment.
+            if (pickupCode && input.paymentMethod === OrderPaymentMethod.CASH) {
+                await this.sendOrderCodesNotification(savedOrder);
             }
 
             // 16. Metrics
@@ -593,6 +586,21 @@ export class OrderService {
     /**
      * Get customer's orders with pagination.
      */
+    /**
+     * Blank the pickup/delivery codes on an unpaid ONLINE order so no client can
+     * show or use them before the money is collected (cash orders keep theirs).
+     */
+    private maskUnpaidCodes<T extends Order>(order: T): T {
+        if (order
+            && order.paymentMethod !== OrderPaymentMethod.CASH
+            && order.paymentStatus !== OrderPaymentStatus.PAID
+            && order.paymentStatus !== OrderPaymentStatus.ESCROWED) {
+            (order as any).pickupCode = null;
+            (order as any).deliveryCode = null;
+        }
+        return order;
+    }
+
     async getCustomerOrders(
         customerId: string,
         params: {
@@ -615,7 +623,7 @@ export class OrderService {
             take: limit,
         });
 
-        return { orders, total, page, limit };
+        return { orders: orders.map((o) => this.maskUnpaidCodes(o)), total, page, limit };
     }
 
     /**
@@ -643,7 +651,7 @@ export class OrderService {
             throw new Error("You do not have access to this order");
         }
 
-        return order;
+        return this.maskUnpaidCodes(order);
     }
 
     // ── Customer Cancel ─────────────────────────────────────────────
@@ -832,6 +840,31 @@ export class OrderService {
             }
         }
         return cancelled;
+    }
+
+    /**
+     * Send the customer their pickup (and optional delivery) code for an order.
+     * Called at checkout for CASH orders, and from the payment side effects once
+     * an online payment is CONFIRMED (never before the money is collected).
+     */
+    async sendOrderCodesNotification(order: Order): Promise<void> {
+        if (!order.pickupCode) return;
+        const codeMessage = order.deliveryType === DeliveryType.DELIVERY && order.deliveryCode
+            ? `Order #${order.orderNumber}: pickup code ${order.pickupCode}, delivery code ${order.deliveryCode}. Show the pickup code to the merchant and give the delivery code to your driver on arrival.`
+            : `Order #${order.orderNumber}: your pickup code is ${order.pickupCode}`;
+
+        await this.notificationService.notify(
+            order.customerId,
+            NotificationType.PICKUP_CODE_GENERATED,
+            order.deliveryCode ? "Your Delivery Codes 🔐" : "Your Pickup Code 📦",
+            codeMessage,
+            {
+                orderId: order.id,
+                orderNumber: order.orderNumber,
+                pickupCode: order.pickupCode,
+                deliveryCode: order.deliveryCode || null,
+            }
+        );
     }
 
     // ── Helpers ──────────────────────────────────────────────────────
