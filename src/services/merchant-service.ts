@@ -5,6 +5,8 @@ import { MerchantOperatingHours } from "../models/merchant-operating-hours";
 import { Order, OrderStatus, OrderPaymentStatus, OrderPaymentMethod, OrderCancelledBy, DeliveryType } from "../models/order";
 import { User } from "../models/user";
 import { PickupCodeService } from "./pickup-code-service";
+import { DriverMatchService } from "./driver-match-service";
+import { VehicleType } from "../models/vehicle-pricing";
 import { OrderStatusHistory } from "../models/order-status-history";
 import { WalletService } from "./wallet-service";
 import { NotificationService } from "./notification-service";
@@ -545,8 +547,62 @@ export class MerchantService {
             );
         }
 
+        // A prepared delivery order must reach couriers: alert nearby online
+        // drivers so someone claims it (best-effort, never blocks the update).
+        if (newStatus === OrderStatus.READY_FOR_DELIVERY) {
+            await this.dispatchDeliveryDrivers(order).catch((err) =>
+                log.warn("Delivery driver dispatch failed", { orderId, error: (err as Error).message })
+            );
+        }
+
         log.info("Order status updated", { orderId, merchantId, fromStatus, newStatus });
         return order;
+    }
+
+    /**
+     * Alert nearby online drivers (any vehicle type) that a delivery order is
+     * ready for pickup at the merchant. Drivers claim it via the existing
+     * delivery flow (acceptDelivery), so no ride row or extra charge is created.
+     */
+    private async dispatchDeliveryDrivers(order: Order): Promise<void> {
+        const profile = await this.profileRepo.findOne({ where: { userId: order.merchantId } });
+        const lat = Number(profile?.latitude);
+        const lng = Number(profile?.longitude);
+        if (!profile || !lat || !lng) {
+            log.warn("Delivery dispatch skipped: merchant has no coordinates", { orderId: order.id });
+            return;
+        }
+
+        const matcher = new DriverMatchService();
+        const seen = new Set<string>();
+        const driverUserIds: string[] = [];
+        // Any vehicle can carry a merchant delivery; union all matcher tiers
+        // (CAR compatibility already includes PRIORITY).
+        for (const vt of [VehicleType.BIKE, VehicleType.CAR, VehicleType.SUV, VehicleType.TRUCK]) {
+            for (const d of await matcher.findDrivers(lat, lng, vt)) {
+                if (!seen.has(d.userId)) {
+                    seen.add(d.userId);
+                    driverUserIds.push(d.userId);
+                }
+            }
+        }
+
+        if (driverUserIds.length === 0) {
+            log.info("No drivers online for ready delivery order", { orderId: order.id });
+            return;
+        }
+
+        const pickupAddress = profile.address || profile.businessName || "Merchant pickup";
+        await matcher.broadcastRideRequest(order.id, pickupAddress, driverUserIds, {
+            type: "delivery",
+            kind: "order_delivery",
+            orderId: order.id,
+            orderNumber: order.orderNumber,
+            deliveryFee: Number(order.deliveryFee),
+            currency: order.currency,
+            dropoffAddress: order.deliveryAddress,
+        });
+        log.info("Ready delivery order broadcast to drivers", { orderId: order.id, driverCount: driverUserIds.length });
     }
 
     /**

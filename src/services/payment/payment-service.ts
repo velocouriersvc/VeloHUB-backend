@@ -138,11 +138,18 @@ export class PaymentService {
     /**
      * Resolve provider + currency + commission from the user's country.
      */
-    // Currencies THIS Paystack account can charge (a Ghana integration supports
-    // GHS and USD only; "Currency not supported by merchant" otherwise).
-    // Override per deployment via PAYSTACK_SUPPORTED_CURRENCIES=GHS,USD,NGN
-    private static readonly PAYSTACK_ACCOUNT_CURRENCIES = (process.env.PAYSTACK_SUPPORTED_CURRENCIES || "GHS,USD")
+    // Currencies THIS Paystack account can charge. The live Ghana integration
+    // has ONLY GHS enabled: on 2026-07-17 converted USD charges were rejected
+    // with "Currency not supported by merchant" just like NGN. Override per
+    // deployment via PAYSTACK_SUPPORTED_CURRENCIES=GHS,USD,NGN once Paystack
+    // enables more currencies on the account.
+    private static readonly PAYSTACK_ACCOUNT_CURRENCIES = (process.env.PAYSTACK_SUPPORTED_CURRENCIES || "GHS")
         .split(",").map((c) => c.trim().toUpperCase()).filter(Boolean);
+
+    // Currency that unsupported-currency charges are converted INTO. Must be
+    // enabled on the Paystack account. Defaults to the first supported currency.
+    private static readonly PAYSTACK_SETTLEMENT_CURRENCY = (process.env.PAYSTACK_SETTLEMENT_CURRENCY
+        || PaymentService.PAYSTACK_ACCOUNT_CURRENCIES[0] || "GHS").toUpperCase();
 
     private async resolveCountryContext(country: string): Promise<{
         provider: PaymentProvider;
@@ -164,30 +171,42 @@ export class PaymentService {
         return { provider, currency, commissionRate };
     }
 
+    /** Units of a currency per 1 USD, from the admin-managed platform settings. */
+    private async usdRateFor(currency: string): Promise<number> {
+        if (currency === "USD") return 1;
+        const settings = await this.settingsRepo.findOne({ where: { currency, isActive: true } });
+        return Number(settings?.usdExchangeRate) || 0;
+    }
+
     /**
      * Charge details for a Paystack gateway call: when the account cannot charge
-     * the local currency, convert the amount to USD using the admin-managed
-     * usdExchangeRate (local units per 1 USD) from platform settings.
+     * the local currency, convert the amount into the settlement currency (GHS)
+     * using the admin-managed usdExchangeRate cross rate. The returned `rate` is
+     * local units per 1 settlement unit, so fees convert with the same divisor.
      */
     private async gatewayCharge(amount: number, currency: string): Promise<{ amount: number; currency: string; converted: boolean; rate: number }> {
         if (PaymentService.PAYSTACK_ACCOUNT_CURRENCIES.includes(currency.toUpperCase())) {
             return { amount, currency, converted: false, rate: 1 };
         }
-        const settings = await this.settingsRepo.findOne({ where: { currency, isActive: true } });
-        const rate = Number(settings?.usdExchangeRate) || 0;
-        if (rate <= 1) {
-            log.error("No usable USD exchange rate for unsupported currency; initialize will be rejected", { currency, rate });
+        const target = PaymentService.PAYSTACK_SETTLEMENT_CURRENCY;
+        const localRate = await this.usdRateFor(currency);
+        const targetRate = await this.usdRateFor(target);
+        // localRate <= 1 means the local currency was never seeded with a real
+        // rate; converting would mischarge, so fail loud at initialize instead.
+        if (localRate <= 1 || targetRate <= 0) {
+            log.error("No usable exchange rate for unsupported currency; initialize will be rejected", { currency, target, localRate, targetRate });
             return { amount, currency, converted: false, rate: 1 };
         }
-        const usd = Math.max(0.5, Math.round((amount / rate) * 100) / 100);
-        log.info("Converting gateway charge to USD (account cannot charge local currency)", { currency, amount, usd, rate });
-        return { amount: usd, currency: "USD", converted: true, rate };
+        const rate = localRate / targetRate;
+        const converted = Math.max(0.1, Math.round((amount / rate) * 100) / 100);
+        log.info("Converting gateway charge to settlement currency", { currency, amount, target, converted, rate });
+        return { amount: converted, currency: target, converted: true, rate };
     }
 
     /**
-     * Apply the USD conversion (if needed) to the Payment row and return the
-     * amount/currency to send to the gateway. Local prices stay on the order;
-     * the original figures are kept in payment.metadata for reconciliation.
+     * Apply the settlement-currency conversion (if needed) to the Payment row
+     * and return the amount/currency to send to the gateway. Local prices stay
+     * on the order; originals are kept in payment.metadata for reconciliation.
      */
     private async prepareGatewayCharge(
         payment: Payment,
@@ -199,7 +218,7 @@ export class PaymentService {
         const charge = await this.gatewayCharge(amount, currency);
         if (charge.converted) {
             const fx = (v: number) => Math.round((Number(v || 0) / charge.rate) * 100) / 100;
-            payment.metadata = { ...payment.metadata, originalAmount: amount, originalCurrency: currency, usdRate: charge.rate };
+            payment.metadata = { ...payment.metadata, originalAmount: amount, originalCurrency: currency, fxRate: charge.rate };
             payment.amount = charge.amount;
             payment.currency = charge.currency;
             payment.platformFee = fx(payment.platformFee);

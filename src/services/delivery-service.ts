@@ -58,7 +58,7 @@ export class DeliveryService {
     // ── Available Deliveries ────────────────────────────────────────
 
     /**
-     * Get available deliveries - orders that are READY_FOR_PICKUP + delivery type.
+     * Get available deliveries - orders that are READY_FOR_DELIVERY + delivery type.
      * Optionally filters by driver's lat/lng proximity (simple distance filter).
      */
     async getAvailableDeliveries(
