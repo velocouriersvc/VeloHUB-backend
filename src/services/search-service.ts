@@ -317,14 +317,16 @@ export class SearchService {
             );
             qb = qb.setParameters({ lat: params.latitude, lng: params.longitude });
 
+            // Fail-open for merchants without coordinates: a provider who has not
+            // set a location must stay visible rather than vanish from results.
             qb = qb.andWhere(
-                `(6371 * acos(
+                `(mp.latitude IS NULL OR mp.longitude IS NULL OR (6371 * acos(
                     LEAST(1, GREATEST(-1,
                         cos(radians(:lat)) * cos(radians(mp.latitude)) *
                         cos(radians(mp.longitude) - radians(:lng)) +
                         sin(radians(:lat)) * sin(radians(mp.latitude))
                     ))
-                )) <= :radius`,
+                )) <= :radius)`,
                 { radius: radiusKm }
             );
         }
