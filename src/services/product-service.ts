@@ -486,26 +486,29 @@ export class ProductService {
         }
 
         if (params.country) {
-            qb.andWhere("merchant.country = :country", { country: params.country });
+            // Merchants who never set a country must not be invisible in every
+            // market; show them everywhere until they set one.
+            qb.andWhere("(merchant.country = :country OR merchant.country IS NULL)", { country: params.country });
         }
 
         // Local-radius filter: only products whose merchant is within radiusKm of the
         // buyer. Haversine in SQL; LEAST(1, …) guards acos() against float rounding > 1.
+        // Merchants WITHOUT coordinates are included (fail-open): hiding every listing
+        // of a provider who has not set a location made new sellers invisible.
         if (
             params.lat != null && !Number.isNaN(params.lat) &&
             params.lng != null && !Number.isNaN(params.lng) &&
             params.radiusKm != null && params.radiusKm > 0
         ) {
-            qb.andWhere('"merchantProfile"."latitude" IS NOT NULL')
-                .andWhere('"merchantProfile"."longitude" IS NOT NULL')
-                .andWhere(
-                    `(6371 * acos(LEAST(1,
+            qb.andWhere(
+                `("merchantProfile"."latitude" IS NULL OR "merchantProfile"."longitude" IS NULL OR
+                    (6371 * acos(LEAST(1,
                         cos(radians(:userLat)) * cos(radians("merchantProfile"."latitude")) *
                         cos(radians("merchantProfile"."longitude") - radians(:userLng)) +
                         sin(radians(:userLat)) * sin(radians("merchantProfile"."latitude"))
-                    ))) <= :radiusKm`,
-                    { userLat: params.lat, userLng: params.lng, radiusKm: params.radiusKm }
-                );
+                    ))) <= :radiusKm)`,
+                { userLat: params.lat, userLng: params.lng, radiusKm: params.radiusKm }
+            );
         }
 
         if (params.category) {
