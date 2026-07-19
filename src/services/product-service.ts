@@ -236,7 +236,9 @@ export class ProductService {
             }
 
             // Service listings must say where they take place, and in-call needs a
-            // findable business address (customers travel to the provider).
+            // business address customers can travel to. Only the ADDRESS is required:
+            // coordinates are needed for out-call travel math only, and requiring them
+            // here blocked every merchant whose profile predates the map picker.
             if (expectedType === "service") {
                 const inCall = input.inCall !== false;
                 const outCall = input.outCall === true;
@@ -245,7 +247,7 @@ export class ProductService {
                 }
                 if (inCall) {
                     const profile = await manager.getRepository(MerchantProfile).findOne({ where: { userId: merchantId } });
-                    if (!profile?.address || !profile.latitude || !profile.longitude) {
+                    if (!profile?.address) {
                         throw new Error("Add your business address in Company Settings before offering in-call services (customers need a location to come to).");
                     }
                 }

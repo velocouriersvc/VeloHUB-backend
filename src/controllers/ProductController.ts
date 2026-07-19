@@ -253,8 +253,9 @@ export class ProductController {
             return res.status(201).json(product);
         } catch (error) {
             const message = (error as Error).message || "Internal server error";
-            // Category-type mismatch (and similar validation errors) are client errors, not 500s.
-            if (/cannot be used for|please choose a|is required/i.test(message)) {
+            // Merchant-fixable validation problems are client errors, not 500s, so
+            // they surface as actionable messages instead of noisy error logs.
+            if (/cannot be used for|please choose a|is required|add your business address|select at least one/i.test(message)) {
                 return res.status(400).json({ message });
             }
             log.error("Error creating product", { error: message });
