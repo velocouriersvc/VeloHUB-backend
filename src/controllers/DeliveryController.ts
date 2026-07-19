@@ -231,6 +231,17 @@ export class DeliveryController {
 
             const delivery = await this.deliveryService.getActiveDelivery(driverId);
 
+            // Flatten the merchant pickup point into the fields the driver app
+            // (deliveries + navigation screens) reads: without these the
+            // navigation route to the merchant fell back to 0,0.
+            if (delivery) {
+                const profile = (delivery as any).merchant?.merchantProfile;
+                (delivery as any).merchantName = profile?.businessName || null;
+                (delivery as any).pickupAddress = profile?.address || null;
+                (delivery as any).pickupLat = profile?.latitude ?? null;
+                (delivery as any).pickupLng = profile?.longitude ?? null;
+            }
+
             return res.status(200).json({ delivery });
         } catch (error) {
             log.error("Error getting active delivery", { error: (error as Error).message });
