@@ -89,6 +89,15 @@ export class Product {
     @Column({ type: "int", nullable: true })
     serviceDurationMin: number | null;
 
+    // Where this service takes place. In-call: customer comes to the provider;
+    // out-call: provider travels to the customer (in-home). At least one must be
+    // true for service listings (enforced in ProductService).
+    @Column({ type: "boolean", default: true })
+    inCall: boolean;
+
+    @Column({ type: "boolean", default: false })
+    outCall: boolean;
+
     // ── Rentals Specific ──
     @Column({ type: "enum", enum: RentalDuration, nullable: true })
     rentalDuration: RentalDuration | null;

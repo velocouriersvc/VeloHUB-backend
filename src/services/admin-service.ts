@@ -1642,6 +1642,7 @@ export class AdminService {
             deliveryServicePortionRate: number;
             serviceCommissionRate: number;
             serviceBookingFee: number;
+            serviceBookingFeeRate: number;
             lateCancellationFee: number;
             lateCancellationFeeMax: number;
             cancellationWindowMinutes: number;

@@ -3,6 +3,8 @@ import { ServiceBooking, ServiceBookingStatus, ServicePaymentMethod, ServicePaym
 import { User } from "../models/user";
 import { PlatformSettings } from "../models/platform-settings";
 import { MerchantProfile } from "../models/merchant-profile";
+import { Product } from "../models/product";
+import { In } from "typeorm";
 import { PaymentService } from "./payment/payment-service";
 import { NotificationService } from "./notification-service";
 import { NotificationType } from "../models/notification";
@@ -71,6 +73,7 @@ export class ServiceBookingService {
     private userRepo = AppDataSource.getRepository(User);
     private settingsRepo = AppDataSource.getRepository(PlatformSettings);
     private merchantProfileRepo = AppDataSource.getRepository(MerchantProfile);
+    private productRepo = AppDataSource.getRepository(Product);
 
     private paymentService = new PaymentService();
     private notificationService = new NotificationService();
@@ -95,10 +98,13 @@ export class ServiceBookingService {
         const profile = await this.merchantProfileRepo.findOne({ where: { userId: input.merchantId } });
         if (!profile) throw new Error("Provider not found");
 
-        const inCall = profile.inCallEnabled !== false;
-        const outCall = profile.outCallEnabled === true;
-        if (input.callType === "in_call" && !inCall) throw new Error("This provider does not offer in-call services");
-        if (input.callType === "out_call" && !outCall) throw new Error("This provider does not offer out-call services");
+        // The LISTING's call types are authoritative (round-14: set per service);
+        // older listings without flags fall back to the provider profile switches.
+        const listing = await this.productRepo.findOne({ where: { id: input.productId } });
+        const inCall = listing ? listing.inCall !== false : profile.inCallEnabled !== false;
+        const outCall = listing ? listing.outCall === true : profile.outCallEnabled === true;
+        if (input.callType === "in_call" && !inCall) throw new Error("This service is not offered in-call");
+        if (input.callType === "out_call" && !outCall) throw new Error("This service is not offered as in-home / mobile");
 
         let travelFee = 0;
         let distanceKm: number | null = null;
@@ -120,9 +126,18 @@ export class ServiceBookingService {
             travelFee = Math.round((Number(profile.travelFeeBase || 0) + Number(profile.travelFeePerKm || 0) * distanceKm) * 100) / 100;
         }
 
+        // Customer-paid platform fee for facilitating the booking:
+        // fixed serviceBookingFee + serviceBookingFeeRate% of the service price
+        // (admin-editable per country). Applied per booked date.
+        const merchantUser = await this.userRepo.findOne({ where: { id: input.merchantId } });
+        const settings = await this.settingsRepo.findOne({ where: { country: merchantUser?.country || "GH", isActive: true } });
+        const price = Number(listing?.price || 0);
+        const platformFee = Math.round((Number(settings?.serviceBookingFee || 0) + price * Number(settings?.serviceBookingFeeRate || 0) / 100) * 100) / 100;
+
         const quote = {
             callType: input.callType,
             travelFee,
+            platformFee,
             distanceKm,
             inCallEnabled: inCall,
             outCallEnabled: outCall,
@@ -139,18 +154,18 @@ export class ServiceBookingService {
     }
 
     /** Fee used at creation: the locked quote when active, else computed fresh. */
-    private async resolveQuote(input: CreateBookingInput): Promise<{ travelFee: number; distanceKm: number | null; providerTimezone: string }> {
+    private async resolveQuote(input: CreateBookingInput): Promise<{ travelFee: number; platformFee: number; distanceKm: number | null; providerTimezone: string }> {
         const callType = input.callType || "in_call";
         const cached = await redis.get(this.quoteKey(input.customerId, input.productId, callType)).catch(() => null);
         if (cached) {
             const q = JSON.parse(cached);
-            return { travelFee: Number(q.travelFee) || 0, distanceKm: q.distanceKm ?? null, providerTimezone: q.providerTimezone || "Africa/Accra" };
+            return { travelFee: Number(q.travelFee) || 0, platformFee: Number(q.platformFee) || 0, distanceKm: q.distanceKm ?? null, providerTimezone: q.providerTimezone || "Africa/Accra" };
         }
         const q = await this.quoteBooking({
             customerId: input.customerId, merchantId: input.merchantId, productId: input.productId,
             callType, latitude: input.latitude, longitude: input.longitude,
         });
-        return { travelFee: q.travelFee, distanceKm: q.distanceKm, providerTimezone: q.providerTimezone };
+        return { travelFee: q.travelFee, platformFee: q.platformFee, distanceKm: q.distanceKm, providerTimezone: q.providerTimezone };
     }
 
     /** Merchant slot-conflict + same-customer duplicate guard for one date. */
@@ -243,14 +258,15 @@ export class ServiceBookingService {
                 completionCode: uuidv4().slice(0, 6).toUpperCase(),
                 callType: input.callType || ServiceCallType.IN_CALL,
                 travelFee: quote.travelFee,
+                platformFee: quote.platformFee,
                 travelDistanceKm: quote.distanceKm,
                 providerTimezone: quote.providerTimezone,
             });
             bookings.push(await this.bookingRepo.save(booking));
         }
 
-        // 6. One combined payment covering all dates (price + travel fee per date)
-        const totalAmount = Math.round((Number(input.price) + quote.travelFee) * dates.length * 100) / 100;
+        // 6. One combined payment covering all dates (price + travel fee + platform fee per date)
+        const totalAmount = Math.round((Number(input.price) + quote.travelFee + quote.platformFee) * dates.length * 100) / 100;
         const paymentResult = await this.paymentService.processServiceBookingPayment({
             serviceBookingId: bookings[0].id,
             serviceBookingIds: bookings.map((b) => b.id),
@@ -528,11 +544,22 @@ export class ServiceBookingService {
     }
 
     async getMyBookings(customerId: string) {
-        return this.bookingRepo.find({
+        const bookings = await this.bookingRepo.find({
             where: { customerId },
             relations: { product: true },
             order: { createdAt: "DESC" }
         });
+        if (bookings.length === 0) return bookings;
+
+        // For in-call bookings the customer travels to the provider, so attach
+        // the provider's business address (one profile fetch per merchant).
+        const merchantIds = [...new Set(bookings.map((b) => b.merchantId))];
+        const profiles = await this.merchantProfileRepo.find({ where: { userId: In(merchantIds) } });
+        const addressByMerchant = new Map(profiles.map((p) => [p.userId, p.address]));
+        return bookings.map((b) => ({
+            ...b,
+            providerAddress: addressByMerchant.get(b.merchantId) || null,
+        }));
     }
 
     async getMerchantBookings(merchantId: string) {

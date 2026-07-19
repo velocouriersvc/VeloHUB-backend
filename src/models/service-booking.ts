@@ -122,6 +122,11 @@ export class ServiceBooking {
     @Column({ type: "decimal", precision: 12, scale: 2, default: 0 })
     travelFee: number;
 
+    // Customer-paid platform fee per booked date (fixed + % of price, from
+    // platform settings), locked at booking time. Platform revenue.
+    @Column({ type: "decimal", precision: 12, scale: 2, default: 0 })
+    platformFee: number;
+
     @Column({ type: "decimal", precision: 6, scale: 2, nullable: true })
     travelDistanceKm: number | null;
 

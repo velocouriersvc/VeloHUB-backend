@@ -93,6 +93,10 @@ export class PlatformSettings {
     @Column({ type: "decimal", precision: 10, scale: 2, default: 0.00 })
     serviceBookingFee: number;
 
+    /** Customer booking fee as a % of the service price (combines with the fixed fee) */
+    @Column({ type: "decimal", precision: 5, scale: 2, default: 0.00 })
+    serviceBookingFeeRate: number;
+
     /** Late cancellation fee (after cancellation window) */
     @Column({ type: "decimal", precision: 10, scale: 2, default: 5.00 })
     lateCancellationFee: number;

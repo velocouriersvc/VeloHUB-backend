@@ -6,12 +6,13 @@ import { ProductCategory as ProductCategoryEntity } from "../models/product-cate
 import { ProductCustomization } from "../models/product-customization";
 import { CustomizationOption } from "../models/customization-option";
 import { MerchantStats } from "../models/merchant-stats";
+import { MerchantProfile } from "../models/merchant-profile";
 import { NotificationType } from "../models/notification";
 import { NotificationService } from "./notification-service";
 import { createServiceLogger } from "../utils/logger";
 import { rewriteToPublicAssetUrl } from "./upload-service";
 import { productViewsTotal } from "../utils/metrics";
-import { In } from "typeorm";
+import { In, Not } from "typeorm";
 import { Order, OrderStatus } from "../models/order";
 
 const log = createServiceLogger("ProductService");
@@ -48,6 +49,9 @@ export interface CreateProductInput {
     dosageInfo?: string;
     prescriptionRequired?: boolean;
     serviceDurationMin?: number;
+    /** Service call types: in-call (at provider) / out-call (in-home). */
+    inCall?: boolean;
+    outCall?: boolean;
     rentalDuration?: string;
     deposit?: number;
     customizations?: CreateCustomizationInput[];
@@ -75,6 +79,8 @@ export interface UpdateProductInput {
     dosageInfo?: string | null;
     prescriptionRequired?: boolean;
     serviceDurationMin?: number | null;
+    inCall?: boolean;
+    outCall?: boolean;
     rentalDuration?: string | null;
     deposit?: number | null;
 }
@@ -229,6 +235,22 @@ export class ProductService {
                 log.info("Auto-created new category", { category: input.category, type: categoryType });
             }
 
+            // Service listings must say where they take place, and in-call needs a
+            // findable business address (customers travel to the provider).
+            if (expectedType === "service") {
+                const inCall = input.inCall !== false;
+                const outCall = input.outCall === true;
+                if (!inCall && !outCall) {
+                    throw new Error("Select at least one service type: in-call (at your location) or out-call (in-home).");
+                }
+                if (inCall) {
+                    const profile = await manager.getRepository(MerchantProfile).findOne({ where: { userId: merchantId } });
+                    if (!profile?.address || !profile.latitude || !profile.longitude) {
+                        throw new Error("Add your business address in Company Settings before offering in-call services (customers need a location to come to).");
+                    }
+                }
+            }
+
             // Create product
             const newProduct = productRepo.create({
                 merchantId,
@@ -246,6 +268,8 @@ export class ProductService {
                 dosageInfo: input.dosageInfo || null,
                 prescriptionRequired: input.prescriptionRequired ?? false,
                 serviceDurationMin: input.serviceDurationMin || null,
+                inCall: input.inCall !== false,
+                outCall: input.outCall === true,
                 rentalDuration: input.rentalDuration as any || null,
                 deposit: input.deposit || null,
             });
@@ -428,8 +452,12 @@ export class ProductService {
         const lower = category.toLowerCase();
 
         if (CATEGORY_TYPES.includes(lower)) {
+            // "product" means every PHYSICAL listing type (everything except services);
+            // the Marketplace screen uses it so service listings never appear there.
             const rows = await this.productCategoryRepo.find({
-                where: { type: lower, isActive: true },
+                where: lower === "product"
+                    ? { type: Not("service"), isActive: true }
+                    : { type: lower, isActive: true },
                 select: ["slug"],
             });
             const slugs = rows.map((r) => r.slug);
@@ -689,6 +717,11 @@ export class ProductService {
         if (input.prescriptionRequired !== undefined)
             product.prescriptionRequired = input.prescriptionRequired;
         if (input.serviceDurationMin !== undefined) product.serviceDurationMin = input.serviceDurationMin;
+        if (input.inCall !== undefined) product.inCall = input.inCall;
+        if (input.outCall !== undefined) product.outCall = input.outCall;
+        if (product.inCall === false && product.outCall === false) {
+            throw new Error("Select at least one service type: in-call (at your location) or out-call (in-home).");
+        }
         if (input.rentalDuration !== undefined) product.rentalDuration = input.rentalDuration as any;
         if (input.deposit !== undefined) product.deposit = input.deposit;
 

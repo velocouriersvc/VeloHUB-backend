@@ -880,11 +880,15 @@ export class SettlementService {
         const settings = await this.settingsRepo.findOne({ where: { country, isActive: true } });
         const currency = booking.currency || settings?.currency || "GHS";
 
-        // Calculate amounts
+        // Calculate amounts. Commission applies to the service price only; the
+        // travel fee passes through to the provider UNCOMMISSIONED (they did the
+        // traveling), and the customer-paid booking platformFee stays with the
+        // platform (it was never part of the provider's price).
         const finalPrice = Number(booking.price);
+        const travelFee = Number(booking.travelFee || 0);
         const commissionRate = settings?.serviceCommissionRate || 15;
-        const platformFee = Math.round(finalPrice * (Number(commissionRate) / 100) * 100) / 100;
-        const merchantEarnings = finalPrice - platformFee;
+        const commission = Math.round(finalPrice * (Number(commissionRate) / 100) * 100) / 100;
+        const merchantEarnings = Math.round((finalPrice - commission + travelFee) * 100) / 100;
 
         // Build metadata
         const txMetadata = {
@@ -894,7 +898,9 @@ export class SettlementService {
             settlementType: "service_booking",
             breakdown: {
                 finalPrice,
-                platformFee,
+                travelFee,
+                commission,
+                bookingPlatformFee: Number(booking.platformFee || 0),
                 merchantEarnings,
                 commissionRate
             },
@@ -948,7 +954,7 @@ export class SettlementService {
         log.info("Service booking settled", {
             bookingId,
             merchantEarnings,
-            platformFee,
+            commission,
         });
 
         return {
@@ -957,7 +963,7 @@ export class SettlementService {
             settlementType: "service_booking",
             merchantEarnings,
             driverEarnings: 0,
-            platformFee,
+            platformFee: commission + Number(booking.platformFee || 0),
             currency,
             merchantWalletCredited: merchantCredited,
             driverWalletCredited: false,
