@@ -1,9 +1,9 @@
 import "dotenv/config";
-import axios from "axios";
 import { IsNull } from "typeorm";
 import { AppDataSource } from "../db/data-source";
 import { MerchantProfile } from "../models/merchant-profile";
 import { createServiceLogger } from "../utils/logger";
+import { geocodeAddress } from "../utils/geocode";
 
 const log = createServiceLogger("BackfillMerchantLocations");
 
@@ -23,7 +23,6 @@ const log = createServiceLogger("BackfillMerchantLocations");
  * Safe to re-run: only rows still missing coordinates are processed.
  */
 
-const GEOCODE_URL = "https://maps.googleapis.com/maps/api/geocode/json";
 const REQUEST_DELAY_MS = 120; // ~8 req/s - stays well under Google's QPS limits
 
 function arg(name: string): string | undefined {
@@ -31,33 +30,6 @@ function arg(name: string): string | undefined {
     if (!hit) return undefined;
     const [, value] = hit.split("=");
     return value ?? "true";
-}
-
-async function geocode(
-    apiKey: string,
-    query: string,
-    country?: string | null
-): Promise<{ lat: number; lng: number } | null> {
-    try {
-        const resp = await axios.get(GEOCODE_URL, {
-            params: {
-                address: query,
-                key: apiKey,
-                ...(country ? { region: country.toLowerCase() } : {}),
-            },
-            timeout: 10000,
-        });
-
-        if (resp.data?.status === "OK" && resp.data.results?.[0]?.geometry?.location) {
-            const { lat, lng } = resp.data.results[0].geometry.location;
-            return { lat, lng };
-        }
-        log.warn("Geocode returned no result", { query, status: resp.data?.status });
-        return null;
-    } catch (err) {
-        log.error("Geocode request failed", { query, error: (err as Error).message });
-        return null;
-    }
 }
 
 export async function backfillMerchantLocations(alreadyInitialised = false) {
@@ -101,7 +73,7 @@ export async function backfillMerchantLocations(alreadyInitialised = false) {
             continue;
         }
 
-        const coords = await geocode(apiKey, query, country);
+        const coords = await geocodeAddress(query, country, apiKey);
         await new Promise((r) => setTimeout(r, REQUEST_DELAY_MS));
 
         if (!coords) {

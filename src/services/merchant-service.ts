@@ -13,6 +13,7 @@ import { NotificationService } from "./notification-service";
 import { NotificationType } from "../models/notification";
 import { createServiceLogger } from "../utils/logger";
 import { formatCurrency } from "../utils/currency";
+import { geocodeAddress } from "../utils/geocode";
 import { emitOrderEvent } from "../socket-gateway";
 import { Between, In, Not, FindOptionsWhere } from "typeorm";
 import { SettlementResult } from "./settlement-service";
@@ -136,7 +137,21 @@ export class MerchantService {
 
         // 1. Update basic fields
         if (isOnline !== undefined) profile.isOpen = isOnline;
+        const addressChanged = otherFields.address != null && otherFields.address !== profile.address;
         Object.assign(profile, otherFields);
+
+        // Keep coordinates in step with the address. Clients that use the map
+        // picker send lat/lng; anything else (or a legacy row) is geocoded here so
+        // delivery dispatch, travel quotes and radius search keep working.
+        if ((addressChanged && otherFields.latitude == null) || (profile.address && (profile.latitude == null || profile.longitude == null))) {
+            const user = await this.userRepo.findOne({ where: { id: merchantId } });
+            const coords = await geocodeAddress(profile.address, user?.country);
+            if (coords) {
+                profile.latitude = coords.lat;
+                profile.longitude = coords.lng;
+                log.info("Geocoded merchant address", { merchantId, address: profile.address });
+            }
+        }
         const saved = await this.profileRepo.save(profile);
 
         // 2. Update hours if provided as dictionary { mon: { open, close, isActive } }
@@ -566,10 +581,29 @@ export class MerchantService {
      */
     private async dispatchDeliveryDrivers(order: Order): Promise<void> {
         const profile = await this.profileRepo.findOne({ where: { userId: order.merchantId } });
-        const lat = Number(profile?.latitude);
-        const lng = Number(profile?.longitude);
-        if (!profile || !lat || !lng) {
-            log.warn("Delivery dispatch skipped: merchant has no coordinates", { orderId: order.id });
+        if (!profile) {
+            log.warn("Delivery dispatch skipped: merchant profile not found", { orderId: order.id });
+            return;
+        }
+
+        // Merchants whose profile predates the map picker have an address but no
+        // coordinates. Geocode once and persist rather than silently dropping the
+        // dispatch, which would leave the order sitting at "ready" forever.
+        if (profile.latitude == null || profile.longitude == null) {
+            const user = await this.userRepo.findOne({ where: { id: order.merchantId } });
+            const coords = await geocodeAddress(profile.address, user?.country);
+            if (coords) {
+                profile.latitude = coords.lat;
+                profile.longitude = coords.lng;
+                await this.profileRepo.save(profile);
+                log.info("Geocoded merchant address during delivery dispatch", { merchantId: order.merchantId });
+            }
+        }
+
+        const lat = Number(profile.latitude);
+        const lng = Number(profile.longitude);
+        if (!lat || !lng) {
+            log.warn("Delivery dispatch skipped: merchant has no coordinates", { orderId: order.id, address: profile.address });
             return;
         }
 
