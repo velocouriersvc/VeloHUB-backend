@@ -595,7 +595,9 @@ export class MerchantService {
             if (coords) {
                 profile.latitude = coords.lat;
                 profile.longitude = coords.lng;
-                await this.profileRepo.save(profile);
+                // Update only the coordinate columns: a full save() would rewrite
+                // every column (including the userId FK) from this entity.
+                await this.profileRepo.update(profile.id, { latitude: coords.lat, longitude: coords.lng });
                 log.info("Geocoded merchant address during delivery dispatch", { merchantId: order.merchantId });
             }
         }

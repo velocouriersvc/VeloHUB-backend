@@ -87,9 +87,10 @@ export async function backfillMerchantLocations(alreadyInitialised = false) {
         });
 
         if (!dryRun) {
-            merchant.latitude = coords.lat;
-            merchant.longitude = coords.lng;
-            await repo.save(merchant);
+            // Write ONLY the coordinate columns. save() on an entity with the user
+            // relation loaded rewrites userId too, which nulls the FK (and fails the
+            // not-null constraint) for a profile whose user row no longer exists.
+            await repo.update(merchant.id, { latitude: coords.lat, longitude: coords.lng });
         }
         updated++;
     }
