@@ -11,27 +11,39 @@ const log = createServiceLogger("PaymentProviderRegistry");
  * Paystack handles GH & NG (mobile money + cards).
  * Stripe handles US, CA, GB, and EU countries (card payments).
  */
+/**
+ * ISO 3166-1 alpha-2 codes for the whole African continent. Exported because
+ * cash and mobile money are only offered in these markets.
+ */
+export const AFRICAN_COUNTRIES = [
+    "DZ", "AO", "BJ", "BW", "BF", "BI", "CM", "CV", "CF", "TD", "KM", "CG",
+    "CD", "CI", "DJ", "EG", "GQ", "ER", "SZ", "ET", "GA", "GM", "GH", "GN",
+    "GW", "KE", "LS", "LR", "LY", "MG", "MW", "ML", "MR", "MU", "MA", "MZ",
+    "NA", "NE", "NG", "RW", "ST", "SN", "SC", "SL", "SO", "ZA", "SS", "SD",
+    "TZ", "TG", "TN", "UG", "ZM", "ZW",
+];
+
+/** Cash and mobile money are only settled in the African markets Velo operates. */
+export function isAfricanCountry(country?: string | null): boolean {
+    return !!country && AFRICAN_COUNTRIES.includes(country.toUpperCase());
+}
+
 export class PaymentProviderRegistry {
     private providers: Map<string, PaymentProvider> = new Map();
     private defaultProvider: PaymentProvider;
     private stripeProvider: StripeProvider;
+    private paystackProvider: PaystackProvider;
 
     constructor() {
         const paystack = new PaystackProvider();
+        this.paystackProvider = paystack;
         this.stripeProvider = new StripeProvider();
         // Global default is Stripe (worldwide card support). Paystack stays mapped to the
         // specific African markets it supports (mobile money + cards) below.
         this.defaultProvider = this.stripeProvider;
 
         // African countries route to Paystack (mobile money + cards); everywhere else
-        // falls through to the Stripe default. ISO 3166-1 alpha-2, whole continent.
-        const AFRICAN_COUNTRIES = [
-            "DZ", "AO", "BJ", "BW", "BF", "BI", "CM", "CV", "CF", "TD", "KM", "CG",
-            "CD", "CI", "DJ", "EG", "GQ", "ER", "SZ", "ET", "GA", "GM", "GH", "GN",
-            "GW", "KE", "LS", "LR", "LY", "MG", "MW", "ML", "MR", "MU", "MA", "MZ",
-            "NA", "NE", "NG", "RW", "ST", "SN", "SC", "SL", "SO", "ZA", "SS", "SD",
-            "TZ", "TG", "TN", "UG", "ZM", "ZW",
-        ];
+        // falls through to the Stripe default.
         for (const code of AFRICAN_COUNTRIES) {
             this.providers.set(code, paystack);
         }
@@ -84,6 +96,17 @@ export class PaymentProviderRegistry {
      */
     getStripeProvider(): StripeProvider {
         return this.stripeProvider;
+    }
+
+    /**
+     * Provider used for CARD and MOBILE MONEY charges everywhere. Paystack is the
+     * only live gateway that implements both (Stripe has no initiateCardPayment,
+     * which is why non-African customers hit "Card payments are not supported by
+     * the active provider"). Charges settle via the currency conversion in
+     * PaymentService.gatewayCharge.
+     */
+    getGatewayProvider(): PaymentProvider {
+        return this.paystackProvider;
     }
 }
 

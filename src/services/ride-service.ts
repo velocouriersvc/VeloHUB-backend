@@ -1,5 +1,5 @@
 import { AppDataSource } from "../db/data-source";
-import { IsNull, MoreThan } from "typeorm";
+import { IsNull, LessThan, MoreThan } from "typeorm";
 import { Ride, RideType, RideStatus, PaymentMethod, PaymentStatus, CancelledBy } from "../models/ride";
 import { RideStop } from "../models/ride-stop";
 import { RideSharedContact } from "../models/ride-shared-contact";
@@ -9,6 +9,7 @@ import { FareService, FareBreakdown } from "./fare-service";
 import { PricingVertical } from "../config/pricing";
 import { DriverMatchService, MatchedDriver } from "./driver-match-service";
 import { PaymentService } from "./payment/payment-service";
+import { isAfricanCountry } from "./payment/payment-provider-registry";
 import { NotificationService } from "./notification-service";
 import { NotificationType } from "../models/notification";
 import { RedisLocationService } from "./redis-location-service";
@@ -52,6 +53,9 @@ export interface RideRequest {
     /** Known payment method at creation (e.g. checkout package rides) so settlement
      *  classifies cash vs online correctly even if setPayment is never called. */
     paymentMethod?: PaymentMethod;
+    /** Used to initiate the prepaid charge (card / mobile money) at request time. */
+    phoneNumber?: string;
+    email?: string;
     stops?: Array<{ address: string; lat: number; lng: number; stopOrder: number }>;
     sharedContacts?: Array<{ name: string; phone: string }>;
 }
@@ -221,6 +225,18 @@ export class RideService {
         // Resolve country
         const country = request.country || "GH";
 
+        // Cash and mobile money only settle in the African markets Velo operates.
+        if (!isAfricanCountry(country)
+            && (request.paymentMethod === PaymentMethod.CASH || request.paymentMethod === PaymentMethod.MOMO)) {
+            throw new Error("Only card payments are available in this market.");
+        }
+
+        // Card and mobile money are collected UP FRONT: drivers are only notified
+        // once the payment confirms, so nobody commits to an unpaid trip. Cash
+        // rides dispatch immediately and settle with the driver.
+        const isPrepaid = request.paymentMethod === PaymentMethod.CARD
+            || request.paymentMethod === PaymentMethod.MOMO;
+
         // Calculate fare. Package/courier deliveries use the PACKAGE vertical
         // (higher base for loading/unloading); passenger rides use RIDES.
         const vertical = request.type === RideType.DELIVERY
@@ -271,11 +287,11 @@ export class RideService {
             requireCode: !!request.requireCode,
             pickupCode: request.requireCode ? new PickupCodeService().generate() : null,
             paymentMethod: request.paymentMethod ?? null,
-            status: RideStatus.SEARCHING,
+            status: isPrepaid ? RideStatus.AWAITING_PAYMENT : RideStatus.SEARCHING,
         });
 
         const savedRide = await this.rideRepo.save(ride);
-        log.info("Ride created", { rideId: savedRide.id, vehicleType: request.vehicleType, status: RideStatus.SEARCHING });
+        log.info("Ride created", { rideId: savedRide.id, vehicleType: request.vehicleType, status: savedRide.status });
         rideEventsTotal.inc({ event: "requested" });
 
         // Save stops if any
@@ -304,85 +320,162 @@ export class RideService {
             await this.contactRepo.save(contacts);
         }
 
-        // Store ride tracking in Redis
-        await this.redisLocation.setRideTracking(savedRide.id, {
-            status: RideStatus.SEARCHING,
-            customerId: request.customerId,
-            pickupLat: request.pickupLat.toString(),
-            pickupLng: request.pickupLng.toString(),
+        // Cash rides go straight to drivers. Prepaid rides wait: dispatchRide is
+        // called from the payment side effects once the charge is confirmed.
+        if (!isPrepaid) {
+            await this.dispatchRide(savedRide.id);
+            return savedRide;
+        }
+
+        try {
+            const payment = await this.paymentService.processRidePayment({
+                rideId: savedRide.id,
+                userId: request.customerId,
+                amount: Number(savedRide.finalFare),
+                method: request.paymentMethod as unknown as PaymentMethodType,
+                country,
+                phoneNumber: request.phoneNumber,
+                email: request.email,
+            });
+            if (!payment.success) {
+                throw new Error(payment.message || "Payment initiation failed. Please try again.");
+            }
+            // Returned to the app so it can open the gateway checkout immediately.
+            (savedRide as any).authorizationUrl = payment.authorizationUrl;
+            (savedRide as any).paymentReference = payment.reference;
+        } catch (err) {
+            // No driver was ever told about this ride, so removing it is clean.
+            await this.rideRepo.delete(savedRide.id).catch(() => {});
+            throw err;
+        }
+
+        return savedRide;
+    }
+
+    /**
+     * Cancel prepaid rides whose payment was never completed. No driver was ever
+     * notified and no money was taken, so this is a plain cleanup. Returns the
+     * count cancelled.
+     */
+    async reapUnpaidRides(maxAgeMinutes = 15): Promise<number> {
+        const cutoff = new Date(Date.now() - maxAgeMinutes * 60 * 1000);
+        const stale = await this.rideRepo.find({
+            where: { status: RideStatus.AWAITING_PAYMENT, createdAt: LessThan(cutoff) },
+            take: 50,
         });
 
-        // Find and broadcast to nearby drivers
+        let cancelled = 0;
+        for (const ride of stale) {
+            try {
+                ride.status = RideStatus.CANCELLED;
+                ride.cancelledBy = CancelledBy.SYSTEM;
+                ride.cancelReason = "Payment not completed";
+                ride.cancelledAt = new Date();
+                await this.rideRepo.save(ride);
+                emitRideEvent(ride.id, "ride:status", {
+                    rideId: ride.id,
+                    status: RideStatus.CANCELLED,
+                    cancelledBy: CancelledBy.SYSTEM,
+                    reason: "Payment not completed",
+                });
+                cancelled++;
+            } catch (err) {
+                log.warn("Unpaid ride reap failed", { rideId: ride.id, error: (err as Error).message });
+            }
+        }
+        return cancelled;
+    }
+
+    /**
+     * Notify nearby drivers about a ride and start the no-driver timeout. Called
+     * immediately for cash rides, and from the payment side effects once a
+     * card/momo ride is paid for. Idempotent: a ride that already has a driver or
+     * was cancelled is skipped, so a webhook + callback double-fire is harmless.
+     */
+    async dispatchRide(rideId: string): Promise<void> {
+        const ride = await this.rideRepo.findOne({ where: { id: rideId } });
+        if (!ride) return;
+        const dispatchable: RideStatus[] = [RideStatus.SEARCHING, RideStatus.AWAITING_PAYMENT, RideStatus.PAID];
+        if (!dispatchable.includes(ride.status) || ride.driverId) return;
+
+        if (ride.status !== RideStatus.SEARCHING) {
+            ride.status = RideStatus.SEARCHING;
+            await this.rideRepo.save(ride);
+        }
+
+        const pickupLat = Number(ride.pickupLat);
+        const pickupLng = Number(ride.pickupLng);
+
+        await this.redisLocation.setRideTracking(ride.id, {
+            status: RideStatus.SEARCHING,
+            customerId: ride.customerId,
+            pickupLat: pickupLat.toString(),
+            pickupLng: pickupLng.toString(),
+        });
+
         const drivers = await this.driverMatchService.findDrivers(
-            request.pickupLat,
-            request.pickupLng,
-            request.vehicleType
+            pickupLat,
+            pickupLng,
+            ride.vehicleType as VehicleType
         );
 
         if (drivers.length > 0) {
-            const driverUserIds = drivers.map((d) => d.userId);
             await this.driverMatchService.broadcastRideRequest(
-                savedRide.id,
-                request.pickupAddress,
-                driverUserIds,
+                ride.id,
+                ride.pickupAddress,
+                drivers.map((d) => d.userId),
                 {
-                    rideId: savedRide.id,
-                    type: savedRide.type,
-                    pickupAddress: request.pickupAddress,
-                    dropoffAddress: request.dropoffAddress,
-                    pickupLat: request.pickupLat,
-                    pickupLng: request.pickupLng,
-                    dropoffLat: request.dropoffLat,
-                    dropoffLng: request.dropoffLng,
-                    fare: savedRide.finalFare,
-                    currency: savedRide.currency,
-                    distanceKm: request.distanceKm,
-                    durationMin: request.durationMin,
-                    vehicleType: request.vehicleType,
+                    rideId: ride.id,
+                    type: ride.type,
+                    pickupAddress: ride.pickupAddress,
+                    dropoffAddress: ride.dropoffAddress,
+                    pickupLat,
+                    pickupLng,
+                    dropoffLat: Number(ride.dropoffLat),
+                    dropoffLng: Number(ride.dropoffLng),
+                    fare: ride.finalFare,
+                    currency: ride.currency,
+                    distanceKm: ride.distanceKm,
+                    durationMin: ride.durationMin,
+                    vehicleType: ride.vehicleType,
                 }
             );
         }
 
-        // Real-time: emit ride:searching event
-        emitRideEvent(savedRide.id, "ride:status", {
-            rideId: savedRide.id,
+        emitRideEvent(ride.id, "ride:status", {
+            rideId: ride.id,
             status: RideStatus.SEARCHING,
             driversNotified: drivers.length,
         });
 
-        // Notify customer - ride request confirmed, searching for drivers
         await this.notificationService.notify(
-            request.customerId,
+            ride.customerId,
             NotificationType.RIDE_REQUESTED,
-            savedRide.type === RideType.DELIVERY ? "Delivery Requested! 🔍" : "Ride Requested! 🔍",
+            ride.type === RideType.DELIVERY ? "Delivery Requested! 🔍" : "Ride Requested! 🔍",
             drivers.length > 0
                 ? `Looking for a driver near you. ${drivers.length} driver${drivers.length > 1 ? "s" : ""} notified.`
                 : "Looking for available drivers in your area...",
-            { rideId: savedRide.id, screen: "rides", deepLink: `velohub://rides?rideId=${savedRide.id}` }
+            { rideId: ride.id, screen: "rides", deepLink: `velohub://rides?rideId=${ride.id}` }
         );
 
-        // Auto-cancel ride after 3 minutes if no driver accepts
+        // Auto-cancel if no driver accepts within 3 minutes.
         setTimeout(async () => {
             try {
-                const ride = await this.rideRepo.findOne({ where: { id: savedRide.id } });
-                if (ride && ride.status === RideStatus.SEARCHING) {
-                    log.info("Auto-cancelling ride due to no driver acceptance", { rideId: savedRide.id });
-                    await this.cancelRide(savedRide.id, CancelledBy.SYSTEM, "No driver available");
-                    
-                    // Emit cancellation event
-                    emitRideEvent(savedRide.id, "ride:status", {
-                        rideId: savedRide.id,
+                const current = await this.rideRepo.findOne({ where: { id: ride.id } });
+                if (current && current.status === RideStatus.SEARCHING) {
+                    log.info("Auto-cancelling ride due to no driver acceptance", { rideId: ride.id });
+                    await this.cancelRide(ride.id, CancelledBy.SYSTEM, "No driver available");
+                    emitRideEvent(ride.id, "ride:status", {
+                        rideId: ride.id,
                         status: RideStatus.CANCELLED,
                         cancelledBy: CancelledBy.SYSTEM,
                         reason: "No driver available",
                     });
                 }
             } catch (error) {
-                log.error("Error auto-cancelling ride", { rideId: savedRide.id, error: (error as Error).message });
+                log.error("Error auto-cancelling ride", { rideId: ride.id, error: (error as Error).message });
             }
-        }, 180000); // 3 minutes
-
-        return savedRide;
+        }, 180000);
     }
 
     /**

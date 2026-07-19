@@ -191,9 +191,9 @@ export class PaymentService {
         const target = PaymentService.PAYSTACK_SETTLEMENT_CURRENCY;
         const localRate = await this.usdRateFor(currency);
         const targetRate = await this.usdRateFor(target);
-        // localRate <= 1 means the local currency was never seeded with a real
-        // rate; converting would mischarge, so fail loud at initialize instead.
-        if (localRate <= 1 || targetRate <= 0) {
+        // A rate of 0 means the currency was never seeded; converting would
+        // mischarge, so fail loud at initialize instead. USD is legitimately 1.
+        if (localRate <= 0 || targetRate <= 0) {
             log.error("No usable exchange rate for unsupported currency; initialize will be rejected", { currency, target, localRate, targetRate });
             return { amount, currency, converted: false, rate: 1 };
         }
@@ -543,7 +543,8 @@ export class PaymentService {
                 return this.processWalletPayment(saved, reference, userId, amount);
 
             default:
-                throw new Error(`Unsupported payment method: ${method}`);
+                // Services are prepaid: the provider blocks time for the booking.
+                throw new Error("Service bookings must be paid by card or mobile money.");
         }
     }
 
@@ -620,6 +621,10 @@ export class PaymentService {
             throw new Error("Phone number is required for momo payment");
         }
 
+        // Mobile money is Paystack-only. The Stripe implementation returned
+        // success with NO authorization URL, silently creating unpayable records.
+        provider = paymentProviderRegistry.getGatewayProvider();
+
         const charge = await this.prepareGatewayCharge(payment, provider, params.amount, currency);
         const result = await provider.initiateMomoPayment({
             amount: charge.amount,
@@ -672,8 +677,13 @@ export class PaymentService {
         provider: PaymentProvider,
         currency: string
     ): Promise<PaymentResult> {
+        // Cards always go through the gateway provider (Paystack): the
+        // country-mapped provider may be Stripe, which has no card redirect flow,
+        // and that threw "Card payments are not supported" for every non-African
+        // customer. Currency is converted to the settlement currency below.
+        provider = paymentProviderRegistry.getGatewayProvider();
         if (!provider.initiateCardPayment) {
-            throw new Error("Card payments are not supported by the active provider");
+            throw new Error("Card payments are temporarily unavailable. Please try mobile money or cash.");
         }
         const email = params.email
             || (params.phoneNumber ? `${params.phoneNumber}@velo.app` : "customer@velo.app");
@@ -876,6 +886,12 @@ export class PaymentService {
                     if (ride.driverId) {
                         await this.notificationService.notifyPaymentReceived(
                             ride.driverId, Number(ride.finalFare), ride.id
+                        );
+                    } else {
+                        // Prepaid ride: drivers were held back until the money was in.
+                        const { RideService } = require("../ride-service");
+                        await new RideService().dispatchRide(ride.id).catch((e: Error) =>
+                            log.warn("Ride dispatch after payment failed", { rideId: ride.id, error: e.message })
                         );
                     }
                     log.info("Ride advanced to PAID from payment confirmation", { rideId: ride.id });

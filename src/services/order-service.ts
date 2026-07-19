@@ -23,6 +23,7 @@ import { redis } from "../utils/redis";
 import { createServiceLogger } from "../utils/logger";
 import { orderEventsTotal, cartEventsTotal } from "../utils/metrics";
 import { formatCurrency, currencyForCountry } from "../utils/currency";
+import { isAfricanCountry } from "./payment/payment-provider-registry";
 import { emitOrderEvent } from "../socket-gateway";
 import { v4 as uuidv4 } from "uuid";
 import { In, LessThan } from "typeorm";
@@ -68,7 +69,7 @@ export interface CheckoutInput {
     promoCode?: string;
     customerNote?: string;
     phoneNumber?: string;
-    /** Opt-in delivery PIN (off by default). */
+    /** Ignored for deliveries: the delivery PIN is always required there. */
     requireDeliveryCode?: boolean;
 }
 
@@ -334,18 +335,25 @@ export class OrderService {
             const user = await this.userRepo.findOne({ where: { id: userId } });
             const merchantUser = await this.userRepo.findOne({ where: { id: cart.merchantId } });
             const country = merchantUser?.country || user?.country || "GH";
+            // Cash and mobile money only settle in the African markets Velo operates.
+            if (!isAfricanCountry(country)
+                && (input.paymentMethod === OrderPaymentMethod.CASH || input.paymentMethod === OrderPaymentMethod.MOMO)) {
+                throw new Error("Only card payments are available in this market.");
+            }
             const settings = await this.getSettings(country);
             const currency = settings?.currency || currencyForCountry(country);
 
-            // 8. Generate pickup and delivery codes. The delivery PIN is opt-in at
-            // checkout (like ride pickup codes); the merchant pickup code stays as-is.
+            // 8. Generate pickup and delivery codes. The delivery PIN is MANDATORY
+            // for deliveries: the driver must collect it from the customer to
+            // complete the drop-off (it is no longer an opt-in at checkout).
+            const isDelivery = input.deliveryType === DeliveryType.DELIVERY;
             let pickupCode: string | null = null;
             let deliveryCode: string | null = null;
-            if (input.deliveryType === DeliveryType.PICKUP || input.deliveryType === DeliveryType.DELIVERY) {
+            if (input.deliveryType === DeliveryType.PICKUP || isDelivery) {
                 pickupCode = this.pickupCodeService.generate();
             }
-            const requireDeliveryCode = !!input.requireDeliveryCode;
-            if (input.deliveryType === DeliveryType.DELIVERY && requireDeliveryCode) {
+            const requireDeliveryCode = isDelivery ? true : !!input.requireDeliveryCode;
+            if (isDelivery) {
                 deliveryCode = this.pickupCodeService.generate();
             }
 

@@ -152,7 +152,7 @@ export class RideController {
                 dropoffAddress, dropoffLat, dropoffLng,
                 vehicleType, distanceKm, durationMin,
                 passengerCount, promoCode, stops, sharedContacts,
-                country, requireCode,
+                country, requireCode, paymentMethod, phoneNumber, email,
             } = req.body;
 
             if (!pickupAddress || !pickupLat || !dropoffAddress || !dropoffLat || !vehicleType || !distanceKm || !durationMin) {
@@ -175,14 +175,26 @@ export class RideController {
                 promoCode,
                 country,
                 requireCode: !!requireCode,
+                paymentMethod,
+                phoneNumber,
+                email,
                 stops,
                 sharedContacts,
             });
 
-            return res.status(201).json({ ride });
+            // Prepaid rides carry the gateway checkout URL: the app opens it before
+            // showing "finding a driver", because dispatch waits for payment.
+            return res.status(201).json({
+                ride,
+                authorizationUrl: (ride as any).authorizationUrl,
+                paymentReference: (ride as any).paymentReference,
+            });
         } catch (error) {
-            log.error("Error requesting ride", { error: (error as Error).message });
-            return res.status(500).json({ message: (error as Error).message || "Internal server error" });
+            const message = (error as Error).message || "Internal server error";
+            log.error("Error requesting ride", { error: message });
+            // Payment-initiation failures are client-actionable, not server faults.
+            if (/payment/i.test(message)) return res.status(402).json({ message });
+            return res.status(500).json({ message });
         }
     };
 
