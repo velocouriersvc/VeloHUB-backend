@@ -209,12 +209,16 @@ export class ServiceBookingService {
     }
 
     async createBooking(input: CreateBookingInput) {
-        // 1. Resolve currency
+        // 1. Resolve currency from the PROVIDER's market: services are priced in the
+        // provider's currency, so charging in the customer's (round-9 order lesson)
+        // both mislabels the price and routes the payment to the wrong gateway.
         const user = await this.userRepo.findOne({ where: { id: input.customerId } });
         if (!user) throw new Error("User not found");
 
+        const merchantUser = await this.userRepo.findOne({ where: { id: input.merchantId } });
+        const billingCountry = merchantUser?.country || user.country || "GH";
         const settings = await this.settingsRepo.findOne({
-            where: { country: user.country || "GH", isActive: true }
+            where: { country: billingCountry, isActive: true }
         });
         const currency = settings?.currency || "GHS";
 
@@ -273,7 +277,7 @@ export class ServiceBookingService {
             userId: input.customerId,
             amount: totalAmount,
             method: input.paymentMethod as any,
-            country: user.country,
+            country: billingCountry,
             phoneNumber: input.phoneNumber || user.phoneNumber || undefined,
             email: user.email || undefined,
         });
