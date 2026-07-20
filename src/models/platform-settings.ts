@@ -127,6 +127,15 @@ export class PlatformSettings {
     @Column({ type: "decimal", precision: 12, scale: 4, default: 1 })
     usdExchangeRate: number;
 
+    // Payment processing fee passed on to the customer as a visible line item on
+    // card/momo checkouts, so the displayed total equals the amount charged.
+    // Total fee = subtotal * rate% + fixed. Zero for cash/wallet.
+    @Column({ type: "decimal", precision: 5, scale: 2, default: 0 })
+    paymentProcessingFeeRate: number;
+
+    @Column({ type: "decimal", precision: 10, scale: 2, default: 0 })
+    paymentProcessingFeeFixed: number;
+
     @Column({ type: "boolean", default: false })
     isGlobalSurgeActive: boolean;
 

@@ -22,7 +22,7 @@ import { PaymentRecordStatus } from "../models/payment";
 import { redis } from "../utils/redis";
 import { createServiceLogger } from "../utils/logger";
 import { orderEventsTotal, cartEventsTotal } from "../utils/metrics";
-import { formatCurrency, currencyForCountry } from "../utils/currency";
+import { formatCurrency, currencyForCountry, processingFeeFor } from "../utils/currency";
 import { isAfricanCountry } from "./payment/payment-provider-registry";
 import { emitOrderEvent } from "../socket-gateway";
 import { v4 as uuidv4 } from "uuid";
@@ -52,6 +52,8 @@ export interface OrderQuoteResult {
     deliveryFee: number;
     tax: number;
     discount: number;
+    /** Gateway (card/momo) processing fee the customer pays; 0 for cash. */
+    processingFee: number;
     totalAmount: number;
     merchantEarnings: number;
     currency: string;
@@ -226,6 +228,10 @@ export class OrderService {
         const totalAmount = Math.round((subtotal + serviceFee + smallOrderFee + deliveryFee + tax - discount) * 100) / 100;
         const merchantEarnings = Math.round((subtotal - commission) * 100) / 100;
 
+        // Gateway processing fee the customer pays on card/momo (shown as a line
+        // so the displayed total equals the charge). Zero for cash.
+        const processingFee = processingFeeFor(totalAmount, settings?.paymentProcessingFeeRate, settings?.paymentProcessingFeeFixed);
+
         return {
             subtotal: Math.round(subtotal * 100) / 100,
             serviceFee,
@@ -234,6 +240,7 @@ export class OrderService {
             deliveryFee,
             tax,
             discount,
+            processingFee,
             totalAmount,
             merchantEarnings,
             currency,
@@ -362,6 +369,10 @@ export class OrderService {
             // go straight to PENDING.
             const isOnlinePayment = input.paymentMethod !== OrderPaymentMethod.CASH;
             const initialStatus = isOnlinePayment ? OrderStatus.AWAITING_PAYMENT : OrderStatus.PENDING;
+            // The processing fee is only charged on gateway payments; folding it into
+            // totalAmount keeps the receipt equal to the amount charged.
+            const processingFee = isOnlinePayment ? quote.processingFee : 0;
+            const chargedTotal = Math.round((quote.totalAmount + processingFee) * 100) / 100;
             const order = this.orderRepo.create({
                 orderNumber,
                 customerId: userId,
@@ -375,7 +386,8 @@ export class OrderService {
                 commission: quote.commission,
                 deliveryFee: quote.deliveryFee,
                 discountAmount: quote.discount,
-                totalAmount: quote.totalAmount,
+                processingFee,
+                totalAmount: chargedTotal,
                 merchantEarnings: quote.merchantEarnings,
                 paymentMethod: input.paymentMethod,
                 paymentStatus: OrderPaymentStatus.PENDING,
@@ -432,7 +444,7 @@ export class OrderService {
                     const pmtResult = await this.paymentService.processOrderPayment({
                         orderId: savedOrder.id,
                         userId,
-                        amount: quote.totalAmount,
+                        amount: chargedTotal,
                         subtotal: quote.subtotal,
                         serviceFee: quote.serviceFee,
                         smallOrderFee: quote.smallOrderFee,
@@ -730,22 +742,22 @@ export class OrderService {
             );
         }
 
-        // Refund handling. There is no automated refund integration yet, so we record
-        // the obligation, keep the captured paymentStatus for finance reconciliation,
-        // and let the customer know a refund is being processed.
+        // Refund the full amount back to the customer's original momo/card via
+        // Paystack (wallet is only the fallback when there is no gateway payment).
         if (refundDue) {
-            log.warn("Paid order cancelled - refund due, requires reconciliation", {
+            order.paymentStatus = OrderPaymentStatus.REFUNDED;
+            await this.orderRepo.save(order);
+            const result = await this.paymentService.refundToSource({
                 orderId,
-                orderNumber: order.orderNumber,
-                amount: order.totalAmount,
-                paymentMethod: order.paymentMethod,
-                paymentReference: order.paymentReference,
-            });
+                userId: customerId,
+                walletAmount: Number(order.totalAmount),
+                reason: `Refund: order #${order.orderNumber} cancelled`,
+            }).catch((e) => { log.warn("Order refund failed", { orderId, error: (e as Error).message }); return { toSource: false }; });
             await this.notificationService.notify(
                 customerId,
                 NotificationType.ORDER_CANCELLED,
                 "Refund on the way 💸",
-                `Your order #${order.orderNumber} was cancelled. Your payment will be refunded to your original payment method.`,
+                `Your order #${order.orderNumber} was cancelled. ${(result as any).toSource ? "Your payment is being refunded to your original payment method." : "Your refund has been credited to your Velo wallet."}`,
                 { orderId, status: OrderStatus.CANCELLED, refundDue: true }
             );
         }
@@ -794,13 +806,16 @@ export class OrderService {
                 const stockItems = (order.items || []).map((i) => ({ productId: i.productId, quantity: i.quantity, variantId: (i as any).variantId || null }));
                 if (stockItems.length > 0) await this.productService.restoreStock(stockItems);
 
-                // Refund to wallet
+                // Refund to the original payment method (wallet fallback).
+                let refundedToSource = false;
                 if (refundDue) {
-                    await this.walletService.credit(
-                        order.customerId, Number(order.totalAmount),
-                        `Refund: order #${order.orderNumber} auto-cancelled`,
-                        { orderId: order.id, reason: "merchant_timeout" }
-                    ).catch((e) => log.warn("Auto-cancel refund failed", { orderId: order.id, error: e.message }));
+                    const r = await this.paymentService.refundToSource({
+                        orderId: order.id,
+                        userId: order.customerId,
+                        walletAmount: Number(order.totalAmount),
+                        reason: `Refund: order #${order.orderNumber} auto-cancelled`,
+                    }).catch((e) => { log.warn("Auto-cancel refund failed", { orderId: order.id, error: e.message }); return { toSource: false }; });
+                    refundedToSource = (r as any).toSource;
                 }
 
                 // Merchant penalty counter
@@ -808,7 +823,7 @@ export class OrderService {
                     .catch(() => {});
 
                 await this.notificationService.notify(order.customerId, NotificationType.ORDER_CANCELLED, "Order cancelled",
-                    `Order #${order.orderNumber} was auto-cancelled because the merchant did not respond.${refundDue ? " You have been refunded to your wallet." : ""}`,
+                    `Order #${order.orderNumber} was auto-cancelled because the merchant did not respond.${refundDue ? (refundedToSource ? " You have been refunded to your original payment method." : " You have been refunded to your Velo wallet.") : ""}`,
                     { orderId: order.id });
                 await this.notificationService.notify(order.merchantId, NotificationType.ORDER_CANCELLED, "Order missed",
                     `Order #${order.orderNumber} was auto-cancelled after no response. This affects your performance.`,

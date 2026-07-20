@@ -56,6 +56,12 @@ export interface PaymentProvider {
     }>;
 
     /**
+     * Refund a paid transaction back to source (optional; Paystack supports it).
+     * Amount in major units for a partial refund; omit for a full refund.
+     */
+    refund?(reference: string, amount?: number): Promise<{ success: boolean; message?: string }>;
+
+    /**
      * Verify a payment by reference
      */
     verifyPayment(reference: string): Promise<PaymentVerification>;

@@ -127,6 +127,10 @@ export class ServiceBooking {
     @Column({ type: "decimal", precision: 12, scale: 2, default: 0 })
     platformFee: number;
 
+    // Gateway processing fee the customer paid per date (bookings are card/momo).
+    @Column({ type: "decimal", precision: 12, scale: 2, default: 0 })
+    processingFee: number;
+
     @Column({ type: "decimal", precision: 6, scale: 2, nullable: true })
     travelDistanceKm: number | null;
 

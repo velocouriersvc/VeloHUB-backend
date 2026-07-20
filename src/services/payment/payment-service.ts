@@ -143,7 +143,11 @@ export class PaymentService {
     // with "Currency not supported by merchant" just like NGN. Override per
     // deployment via PAYSTACK_SUPPORTED_CURRENCIES=GHS,USD,NGN once Paystack
     // enables more currencies on the account.
-    private static readonly PAYSTACK_ACCOUNT_CURRENCIES = (process.env.PAYSTACK_SUPPORTED_CURRENCIES || "GHS")
+    // Charge in the customer's OWN currency whenever the account supports it, so
+    // the amount charged equals the amount shown (no cross-border FX markup). Each
+    // currency listed here MUST be enabled on the Paystack dashboard; a currency
+    // not listed falls back to the settlement-currency conversion below.
+    private static readonly PAYSTACK_ACCOUNT_CURRENCIES = (process.env.PAYSTACK_SUPPORTED_CURRENCIES || "GHS,NGN,KES,ZAR,TZS,UGX,USD")
         .split(",").map((c) => c.trim().toUpperCase()).filter(Boolean);
 
     // Currency that unsupported-currency charges are converted INTO. Must be
@@ -412,6 +416,80 @@ export class PaymentService {
         await this.paymentRepo.save(payment);
         log.info("Ride payment refunded to wallet", { rideId, amount });
         return amount;
+    }
+
+    /** Credit a wallet, auto-creating it on the first credit. */
+    private async creditWalletSafe(userId: string, amount: number, desc: string, meta: Record<string, any>): Promise<void> {
+        try {
+            await this.walletService.credit(userId, amount, desc, meta);
+        } catch (e) {
+            if (/Wallet not found/i.test((e as Error).message)) {
+                await this.walletService.createWallet(userId);
+                await this.walletService.credit(userId, amount, desc, meta);
+            } else {
+                throw e;
+            }
+        }
+    }
+
+    /**
+     * Refund a paid gateway (card/momo) payment back to the customer's original
+     * momo/card via Paystack. `sourceAmount` is the charged-currency amount to
+     * refund (undefined = full transaction; safe for single-order payments only,
+     * so multi-date bookings always pass an explicit amount). Falls back to a
+     * wallet credit of `walletAmount` when there is no gateway payment
+     * (cash/wallet) or the provider refund fails.
+     */
+    async refundToSource(params: {
+        orderId?: string;
+        serviceBookingId?: string;
+        rideId?: string;
+        userId: string;
+        sourceAmount?: number;
+        walletAmount: number;
+        reason: string;
+    }): Promise<{ refunded: number; toSource: boolean }> {
+        const walletAmount = Math.round(Number(params.walletAmount) * 100) / 100;
+        if (walletAmount <= 0) return { refunded: 0, toSource: false };
+
+        const where: any = { status: PaymentRecordStatus.SUCCESS };
+        if (params.orderId) where.orderId = params.orderId;
+        else if (params.serviceBookingId) where.serviceBookingId = params.serviceBookingId;
+        else if (params.rideId) where.rideId = params.rideId;
+        const payment = await this.paymentRepo.findOne({ where });
+
+        const reference = (payment?.metadata as any)?.reference;
+        const meta = {
+            orderId: params.orderId, serviceBookingId: params.serviceBookingId, rideId: params.rideId,
+            paymentId: payment?.id, type: "refund",
+        };
+
+        const isGateway = payment
+            && payment.method !== PaymentMethodType.CASH
+            && payment.method !== PaymentMethodType.WALLET
+            && payment.provider === "paystack"
+            && !!reference;
+
+        if (isGateway) {
+            const provider = paymentProviderRegistry.getGatewayProvider();
+            const res = provider.refund
+                ? await provider.refund(reference, params.sourceAmount)
+                : { success: false, message: "provider has no refund" };
+            if (res.success) {
+                // A partial refund (one of several dates) leaves the payment usable
+                // for the remaining refunds; only a full refund marks it REFUNDED.
+                if (params.sourceAmount == null) {
+                    payment.status = PaymentRecordStatus.REFUNDED;
+                    await this.paymentRepo.save(payment);
+                }
+                log.info("Payment refunded to source", { reference, sourceAmount: params.sourceAmount, ...meta });
+                return { refunded: walletAmount, toSource: true };
+            }
+            log.warn("Source refund failed; crediting wallet instead", { reference, error: res.message });
+        }
+
+        await this.creditWalletSafe(params.userId, walletAmount, params.reason, meta);
+        return { refunded: walletAmount, toSource: false };
     }
 
     // ── Order Payments ──────────────────────────────────────────────

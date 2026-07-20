@@ -13,6 +13,18 @@ const CURRENCY_SYMBOLS: Record<string, string> = {
 };
 
 /**
+ * Payment processing fee the customer pays on a gateway (card/momo) charge:
+ * base * rate% + fixed, rounded to 2dp. Used to keep the displayed total equal
+ * to the amount charged. Returns 0 when no rate/fixed is configured.
+ */
+export function processingFeeFor(base: number, rate?: number | null, fixed?: number | null): number {
+    const feeRate = Number(rate) || 0;
+    const feeFixed = Number(fixed) || 0;
+    if (feeRate <= 0 && feeFixed <= 0) return 0;
+    return Math.round((Number(base) * (feeRate / 100) + feeFixed) * 100) / 100;
+}
+
+/**
  * Format an amount with the correct currency symbol.
  *
  * @example formatCurrency(45.5, "GHS")  → "GH₵ 45.50"
