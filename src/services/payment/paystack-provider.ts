@@ -135,6 +135,25 @@ export class PaystackProvider implements PaymentProvider {
     }
 
     /**
+     * Refund a transaction back to the customer's original payment method
+     * (momo / card). Amount is optional for a partial refund (major units, e.g.
+     * GHS/NGN); omit for a full refund. Paystack returns the money to source.
+     */
+    async refund(reference: string, amount?: number): Promise<{ success: boolean; message?: string }> {
+        try {
+            const body: Record<string, any> = { transaction: reference };
+            if (amount != null && amount > 0) body.amount = Math.round(amount * 100); // subunits
+            const response = await axios.post(`${PAYSTACK_BASE_URL}/refund`, body, { headers: this.headers });
+            return { success: response.data?.status === true };
+        } catch (error) {
+            const axErr = error as AxiosError<{ message?: string }>;
+            const message = axErr.response?.data?.message || axErr.message;
+            log.error("Paystack refund error", { reference, error: message });
+            return { success: false, message };
+        }
+    }
+
+    /**
      * Verify a payment transaction
      */
     async verifyPayment(reference: string): Promise<PaymentVerification> {

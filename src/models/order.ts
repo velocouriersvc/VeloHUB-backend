@@ -118,6 +118,11 @@ export class Order {
     @Column({ type: "decimal", precision: 10, scale: 2, default: 0 })
     discountAmount: number;
 
+    // Payment processing fee the customer pays on card/momo (folded into
+    // totalAmount so the receipt equals the charged amount). Zero for cash.
+    @Column({ type: "decimal", precision: 10, scale: 2, default: 0 })
+    processingFee: number;
+
     @Column({ type: "decimal", precision: 12, scale: 2 })
     totalAmount: number;
 

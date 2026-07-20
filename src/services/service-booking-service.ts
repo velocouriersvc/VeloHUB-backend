@@ -11,6 +11,7 @@ import { NotificationType } from "../models/notification";
 import { SettlementService } from "./settlement-service";
 import { WalletService } from "./wallet-service";
 import { createServiceLogger } from "../utils/logger";
+import { processingFeeFor } from "../utils/currency";
 import { redis } from "../utils/redis";
 import { v4 as uuidv4 } from "uuid";
 
@@ -133,11 +134,16 @@ export class ServiceBookingService {
         const settings = await this.settingsRepo.findOne({ where: { country: merchantUser?.country || "GH", isActive: true } });
         const price = Number(listing?.price || 0);
         const platformFee = Math.round((Number(settings?.serviceBookingFee || 0) + price * Number(settings?.serviceBookingFeeRate || 0) / 100) * 100) / 100;
+        // Gateway processing fee the customer pays per booked date (bookings are
+        // always card/momo), computed on the per-date charge so the shown total
+        // equals the amount charged.
+        const processingFee = processingFeeFor(price + travelFee + platformFee, settings?.paymentProcessingFeeRate, settings?.paymentProcessingFeeFixed);
 
         const quote = {
             callType: input.callType,
             travelFee,
             platformFee,
+            processingFee,
             distanceKm,
             inCallEnabled: inCall,
             outCallEnabled: outCall,
@@ -154,18 +160,18 @@ export class ServiceBookingService {
     }
 
     /** Fee used at creation: the locked quote when active, else computed fresh. */
-    private async resolveQuote(input: CreateBookingInput): Promise<{ travelFee: number; platformFee: number; distanceKm: number | null; providerTimezone: string }> {
+    private async resolveQuote(input: CreateBookingInput): Promise<{ travelFee: number; platformFee: number; processingFee: number; distanceKm: number | null; providerTimezone: string }> {
         const callType = input.callType || "in_call";
         const cached = await redis.get(this.quoteKey(input.customerId, input.productId, callType)).catch(() => null);
         if (cached) {
             const q = JSON.parse(cached);
-            return { travelFee: Number(q.travelFee) || 0, platformFee: Number(q.platformFee) || 0, distanceKm: q.distanceKm ?? null, providerTimezone: q.providerTimezone || "Africa/Accra" };
+            return { travelFee: Number(q.travelFee) || 0, platformFee: Number(q.platformFee) || 0, processingFee: Number(q.processingFee) || 0, distanceKm: q.distanceKm ?? null, providerTimezone: q.providerTimezone || "Africa/Accra" };
         }
         const q = await this.quoteBooking({
             customerId: input.customerId, merchantId: input.merchantId, productId: input.productId,
             callType, latitude: input.latitude, longitude: input.longitude,
         });
-        return { travelFee: q.travelFee, platformFee: q.platformFee, distanceKm: q.distanceKm, providerTimezone: q.providerTimezone };
+        return { travelFee: q.travelFee, platformFee: q.platformFee, processingFee: q.processingFee, distanceKm: q.distanceKm, providerTimezone: q.providerTimezone };
     }
 
     /** Merchant slot-conflict + same-customer duplicate guard for one date. */
@@ -209,6 +215,13 @@ export class ServiceBookingService {
     }
 
     async createBooking(input: CreateBookingInput) {
+        // A provider cannot book their own service: it is one User/wallet, so the
+        // payment and any refund would just cycle within the same account (the
+        // "refund hit my merchant wallet" report).
+        if (input.customerId === input.merchantId) {
+            throw new Error("You cannot book your own service.");
+        }
+
         // 1. Resolve currency from the PROVIDER's market: services are priced in the
         // provider's currency, so charging in the customer's (round-9 order lesson)
         // both mislabels the price and routes the payment to the wrong gateway.
@@ -263,14 +276,16 @@ export class ServiceBookingService {
                 callType: input.callType || ServiceCallType.IN_CALL,
                 travelFee: quote.travelFee,
                 platformFee: quote.platformFee,
+                processingFee: quote.processingFee,
                 travelDistanceKm: quote.distanceKm,
                 providerTimezone: quote.providerTimezone,
             });
             bookings.push(await this.bookingRepo.save(booking));
         }
 
-        // 6. One combined payment covering all dates (price + travel fee + platform fee per date)
-        const totalAmount = Math.round((Number(input.price) + quote.travelFee + quote.platformFee) * dates.length * 100) / 100;
+        // 6. One combined payment covering all dates. Per date: price + travel fee
+        // + platform fee + processing fee, so the charge equals the shown total.
+        const totalAmount = Math.round((Number(input.price) + quote.travelFee + quote.platformFee + quote.processingFee) * dates.length * 100) / 100;
         const paymentResult = await this.paymentService.processServiceBookingPayment({
             serviceBookingId: bookings[0].id,
             serviceBookingIds: bookings.map((b) => b.id),
@@ -319,15 +334,22 @@ export class ServiceBookingService {
         };
     }
 
-    /** Refund the customer's money for a booking (wallet credit) when it was paid. */
+    /**
+     * Refund the customer for a booking. Card/momo bookings are refunded to the
+     * original momo/card via Paystack; the wallet is only a fallback. `amount` is
+     * in the booking currency (equals the charged amount post round-17 since
+     * bookings charge in the local currency).
+     */
     private async refundBooking(booking: ServiceBooking, amount: number, reason: string): Promise<void> {
         booking.refundAmount = amount;
         if (booking.paymentStatus === ServicePaymentStatus.PAID && amount > 0) {
-            await this.walletService.credit(
-                booking.customerId, amount,
-                `Refund: booking #${booking.bookingNumber} (${reason})`,
-                { bookingId: booking.id, reason }
-            );
+            await this.paymentService.refundToSource({
+                serviceBookingId: booking.id,
+                userId: booking.customerId,
+                sourceAmount: amount, // always explicit: one payment can cover several dates
+                walletAmount: amount,
+                reason: `Refund: booking #${booking.bookingNumber} (${reason})`,
+            });
         }
         if (amount > 0) booking.paymentStatus = ServicePaymentStatus.REFUNDED;
     }
@@ -357,15 +379,18 @@ export class ServiceBookingService {
         }
 
         const isCustomer = userId === booking.customerId;
-        const total = Math.round((Number(booking.price) + Number(booking.travelFee || 0)) * 100) / 100;
+        // What the customer actually paid for this date (refundable in full), and
+        // the provider's service value the late-cancel penalty is based on.
+        const serviceValue = Math.round((Number(booking.price) + Number(booking.travelFee || 0)) * 100) / 100;
+        const paidTotal = Math.round((serviceValue + Number(booking.platformFee || 0) + Number(booking.processingFee || 0)) * 100) / 100;
         const startAt = bookingStartAt(booking.preferredDate, booking.preferredTimeSlot);
         const hoursUntilStart = (startAt.getTime() - Date.now()) / 3_600_000;
 
         let fee = 0;
         if (isCustomer && hoursUntilStart <= CANCEL_FREE_HOURS) {
-            fee = Math.round(total * LATE_CANCEL_FEE_RATE * 100) / 100;
+            fee = Math.round(serviceValue * LATE_CANCEL_FEE_RATE * 100) / 100;
         }
-        const refund = Math.round((total - fee) * 100) / 100;
+        const refund = Math.round((paidTotal - fee) * 100) / 100;
 
         booking.status = isCustomer ? ServiceBookingStatus.CUSTOMER_CANCELLED : ServiceBookingStatus.PROVIDER_CANCELLED;
         booking.cancellationFee = fee;
@@ -424,7 +449,7 @@ export class ServiceBookingService {
                 const startAt = bookingStartAt(booking.preferredDate, booking.preferredTimeSlot);
                 if (startAt.getTime() > cutoff) continue;
 
-                const total = Math.round((Number(booking.price) + Number(booking.travelFee || 0)) * 100) / 100;
+                const total = Math.round((Number(booking.price) + Number(booking.travelFee || 0) + Number(booking.platformFee || 0) + Number(booking.processingFee || 0)) * 100) / 100;
                 booking.status = ServiceBookingStatus.EXPIRED;
                 await this.refundBooking(booking, total, "provider did not respond in time");
                 await this.bookingRepo.save(booking);
@@ -510,7 +535,7 @@ export class ServiceBookingService {
         if (status === ServiceBookingStatus.DECLINED) {
             booking.declinedAt = new Date();
             // The customer paid upfront: declining releases the full amount.
-            const total = Math.round((Number(booking.price) + Number(booking.travelFee || 0)) * 100) / 100;
+            const total = Math.round((Number(booking.price) + Number(booking.travelFee || 0) + Number(booking.platformFee || 0) + Number(booking.processingFee || 0)) * 100) / 100;
             await this.refundBooking(booking, total, "provider declined");
         }
 

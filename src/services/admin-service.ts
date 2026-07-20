@@ -1649,6 +1649,8 @@ export class AdminService {
             referralRewardAmount: number;
             leaderboardLimit: number;
             usdExchangeRate: number;
+            paymentProcessingFeeRate: number;
+            paymentProcessingFeeFixed: number;
             isGlobalSurgeActive: boolean;
             globalSurgeMultiplier: number;
             ridesEnabled: boolean;

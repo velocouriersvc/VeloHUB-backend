@@ -2,6 +2,8 @@ import { AppDataSource } from "../db/data-source";
 import { Order, OrderStatus, DeliveryType, OrderCancelledBy } from "../models/order";
 import { OrderStatusHistory } from "../models/order-status-history";
 import { MerchantProfile } from "../models/merchant-profile";
+import { User } from "../models/user";
+import { RedisLocationService } from "./redis-location-service";
 import { SettlementService, SettlementResult } from "./settlement-service";
 import { NotificationService } from "./notification-service";
 import { NotificationType } from "../models/notification";
@@ -51,6 +53,8 @@ export class DeliveryService {
     private orderRepo = AppDataSource.getRepository(Order);
     private historyRepo = AppDataSource.getRepository(OrderStatusHistory);
     private merchantProfileRepo = AppDataSource.getRepository(MerchantProfile);
+    private userRepo = AppDataSource.getRepository(User);
+    private redisLocation = new RedisLocationService();
 
     private settlementService = new SettlementService();
     private notificationService = new NotificationService();
@@ -65,6 +69,23 @@ export class DeliveryService {
         driverId: string,
         params?: { lat?: number; lng?: number; radiusKm?: number }
     ): Promise<AvailableDelivery[]> {
+        // The driver's own country: a delivery must be in the same market (a
+        // Nigeria order must never surface to a Ghana driver, even if geo is stale).
+        const driver = await this.userRepo.findOne({ where: { id: driverId } });
+        const driverCountry = driver?.country || null;
+
+        // Resolve the driver's live location. The app may not send it, so fall back
+        // to the Redis geo the driver streams while online. Without a location we
+        // cannot enforce the radius, so nothing is returned (better than leaking
+        // every order worldwide).
+        let lat = params?.lat;
+        let lng = params?.lng;
+        if (lat == null || lng == null) {
+            const loc = await this.redisLocation.getDriverLocation(driverId).catch(() => null);
+            if (loc) { lat = loc.lat; lng = loc.lng; }
+        }
+        const radiusKm = params?.radiusKm || 20;
+
         const qb = this.orderRepo
             .createQueryBuilder("order")
             .leftJoinAndSelect("order.merchant", "merchant")
@@ -74,6 +95,9 @@ export class DeliveryService {
             .andWhere("order.status = :status", { status: OrderStatus.READY_FOR_DELIVERY })
             .andWhere("order.driverId IS NULL")
             .orderBy("order.createdAt", "ASC"); // oldest first - FIFO
+        if (driverCountry) {
+            qb.andWhere("(merchant.country = :driverCountry OR merchant.country IS NULL)", { driverCountry });
+        }
 
         const orders = await qb.getMany();
 
@@ -89,21 +113,14 @@ export class DeliveryService {
             const merchantLat = merchantProfile?.latitude || null;
             const merchantLng = merchantProfile?.longitude || null;
 
-            // Calculate distance if driver location provided
-            let estimatedDistanceKm: number | null = null;
-            if (params?.lat && params?.lng && merchantLat && merchantLng) {
-                estimatedDistanceKm = this.haversineDistance(
-                    merchantLat,
-                    merchantLng,
-                    params.lat,
-                    params.lng
-                );
-
-                // Filter by radius
-                const radiusKm = params.radiusKm || 15;
-                if (estimatedDistanceKm > radiusKm) {
-                    continue; // too far - skip
-                }
+            // Enforce the radius. If we cannot compute the distance (no driver or
+            // merchant coordinates) the order is EXCLUDED, not shown at "0 km".
+            if (lat == null || lng == null || merchantLat == null || merchantLng == null) {
+                continue;
+            }
+            const estimatedDistanceKm = this.haversineDistance(merchantLat, merchantLng, lat, lng);
+            if (estimatedDistanceKm > radiusKm) {
+                continue; // too far - skip
             }
 
             deliveries.push({
@@ -115,9 +132,7 @@ export class DeliveryService {
                 deliveryAddress: order.deliveryAddress,
                 deliveryLat: order.deliveryLat,
                 deliveryLng: order.deliveryLng,
-                estimatedDistanceKm: estimatedDistanceKm
-                    ? Math.round(estimatedDistanceKm * 10) / 10
-                    : null,
+                estimatedDistanceKm: Math.round(estimatedDistanceKm * 10) / 10,
                 deliveryFee: Number(order.deliveryFee),
                 itemCount: Array.isArray(order.items) ? order.items.length : 0,
                 currency: order.currency || "GHS",
