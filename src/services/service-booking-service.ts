@@ -17,6 +17,9 @@ import { v4 as uuidv4 } from "uuid";
 
 // Platform policy constants for the services vertical.
 export const MAX_TRAVEL_KM = 20;
+// Average city speed used to estimate travel minutes from distance for the
+// per-minute travel rate (no routing service is wired for bookings).
+export const AVG_TRAVEL_SPEED_KMH = 25;
 export const CANCEL_FREE_HOURS = 3;      // full refund when cancelling earlier than this
 export const LATE_CANCEL_FEE_RATE = 0.7; // penalty within the window; paid out to the provider
 export const EXPIRY_LEAD_HOURS = 2;      // unaccepted requests expire this close to start
@@ -107,6 +110,10 @@ export class ServiceBookingService {
         if (input.callType === "in_call" && !inCall) throw new Error("This service is not offered in-call");
         if (input.callType === "out_call" && !outCall) throw new Error("This service is not offered as in-home / mobile");
 
+        const merchantUser = await this.userRepo.findOne({ where: { id: input.merchantId } });
+        const settings = await this.settingsRepo.findOne({ where: { country: merchantUser?.country || "GH", isActive: true } });
+        const price = Number(listing?.price || 0);
+
         let travelFee = 0;
         let distanceKm: number | null = null;
         if (input.callType === "out_call") {
@@ -124,15 +131,19 @@ export class ServiceBookingService {
             if (distanceKm > limit) {
                 throw new Error("Provider does not travel to this area");
             }
-            travelFee = Math.round((Number(profile.travelFeeBase || 0) + Number(profile.travelFeePerKm || 0) * distanceKm) * 100) / 100;
+            // Platform-set travel fee (providers no longer set their own): USD per km
+            // + USD per minute, converted to the booking currency. Minutes are
+            // estimated from distance at an average city speed (no routing service
+            // is wired for bookings).
+            const estMinutes = Math.round((distanceKm / AVG_TRAVEL_SPEED_KMH) * 60);
+            const travelFeeUsd = distanceKm * Number(settings?.serviceTravelPerKmUsd || 0)
+                + estMinutes * Number(settings?.serviceTravelPerMinUsd || 0);
+            const usdRate = Number(settings?.usdExchangeRate) || 1;
+            travelFee = Math.round(travelFeeUsd * usdRate * 100) / 100;
         }
 
-        // Customer-paid platform fee for facilitating the booking:
-        // fixed serviceBookingFee + serviceBookingFeeRate% of the service price
-        // (admin-editable per country). Applied per booked date.
-        const merchantUser = await this.userRepo.findOne({ where: { id: input.merchantId } });
-        const settings = await this.settingsRepo.findOne({ where: { country: merchantUser?.country || "GH", isActive: true } });
-        const price = Number(listing?.price || 0);
+        // Customer-paid booking fee: fixed serviceBookingFee + serviceBookingFeeRate%
+        // of the service price (admin-editable per country). Applied per booked date.
         const platformFee = Math.round((Number(settings?.serviceBookingFee || 0) + price * Number(settings?.serviceBookingFeeRate || 0) / 100) * 100) / 100;
         // Gateway processing fee the customer pays per booked date (bookings are
         // always card/momo), computed on the per-date charge so the shown total
@@ -225,7 +236,7 @@ export class ServiceBookingService {
         // 1. Resolve currency from the PROVIDER's market: services are priced in the
         // provider's currency, so charging in the customer's (round-9 order lesson)
         // both mislabels the price and routes the payment to the wrong gateway.
-        const user = await this.userRepo.findOne({ where: { id: input.customerId } });
+        const user = await this.userRepo.findOne({ where: { id: input.customerId }, relations: { buyerProfile: true } });
         if (!user) throw new Error("User not found");
 
         const merchantUser = await this.userRepo.findOne({ where: { id: input.merchantId } });
@@ -307,14 +318,18 @@ export class ServiceBookingService {
             throw new Error(paymentResult.message || "Payment initiation failed. Please try again.");
         }
 
-        // 7. Notifications (one per side, covering all dates)
+        // 7. Notifications (one per side, covering all dates). Give the merchant the
+        // scope up front: customer name, service, duration, date, and address.
         const bookingNumber = bookings[0].bookingNumber;
         const dateSummary = dates.length > 1 ? `${dates.length} dates starting ${dates[0]}` : dates[0];
+        const customerName = user.buyerProfile?.fullName || "A customer";
+        const bookedProduct = await this.productRepo.findOne({ where: { id: input.productId } });
+        const durationText = bookedProduct?.serviceDurationMin ? `, ${bookedProduct.serviceDurationMin} min` : "";
         await this.notificationService.notify(
             input.merchantId,
             NotificationType.SERVICE_REQUESTED,
             "New Service Booking! 🛠️",
-            `New request for "${input.serviceTitle}" (${dateSummary})${input.serviceAddress ? ` at ${input.serviceAddress}` : ''}.`,
+            `${customerName} booked "${input.serviceTitle}"${durationText} (${dateSummary})${input.serviceAddress ? ` at ${input.serviceAddress}` : ''}.`,
             { bookingId: bookings[0].id, bookingNumber }
         );
         await this.notificationService.notify(
@@ -580,35 +595,45 @@ export class ServiceBookingService {
         });
         if (bookings.length === 0) return bookings;
 
-        // For in-call bookings the customer travels to the provider, so attach
-        // the provider's business address (one profile fetch per merchant).
+        // Attach the provider's contact + location so the customer can chat, call,
+        // and (for in-call) navigate/book a ride to them. One fetch per merchant.
         const merchantIds = [...new Set(bookings.map((b) => b.merchantId))];
         const profiles = await this.merchantProfileRepo.find({ where: { userId: In(merchantIds) } });
-        const addressByMerchant = new Map(profiles.map((p) => [p.userId, p.address]));
-        return bookings.map((b) => ({
-            ...b,
-            providerAddress: addressByMerchant.get(b.merchantId) || null,
-        }));
+        const byMerchant = new Map(profiles.map((p) => [p.userId, p]));
+        return bookings.map((b) => {
+            const p = byMerchant.get(b.merchantId);
+            return {
+                ...b,
+                providerAddress: p?.address || null,
+                providerPhone: p?.businessPhone || null,
+                providerLat: p?.latitude ?? null,
+                providerLng: p?.longitude ?? null,
+            };
+        });
     }
 
     async getMerchantBookings(merchantId: string) {
         const bookings = await this.bookingRepo.find({
             where: { merchantId },
-            relations: { 
-                customer: { 
-                    buyerProfile: true 
-                } 
+            // product carries serviceDurationMin so the provider sees the duration.
+            relations: {
+                customer: { buyerProfile: true },
+                product: true,
             },
             order: { createdAt: "DESC" }
         });
 
-        // Map to include customer profile details as requested
+        // Flatten customer + service details so the provider sees the scope of the
+        // request at a glance (name, service, duration).
         return bookings.map(b => ({
             ...b,
+            customerName: b.customer?.buyerProfile?.fullName || "Valued Customer",
+            customerPhone: b.customer?.phoneNumber || null,
+            serviceDurationMin: b.product?.serviceDurationMin ?? null,
             customerProfile: {
                 customerName: b.customer?.buyerProfile?.fullName || "Valued Customer",
                 customerPhone: b.customer?.phoneNumber || "N/A",
-                customerRating: 5.0, // Default for now
+                customerRating: 5.0,
             }
         }));
     }

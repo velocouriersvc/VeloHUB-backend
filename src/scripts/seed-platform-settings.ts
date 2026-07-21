@@ -50,8 +50,11 @@ const SETTINGS: Partial<PlatformSettings>[] = [
         deliveryServicePortionRate: 50.00,
 
         // Services / Bookings
-        serviceCommissionRate: 15.00,       // Provider keeps 85%
-        serviceBookingFee: 0.00,            // $0 - free to book
+        serviceCommissionRate: 10.00,       // Provider keeps 85%
+        serviceBookingFee: 0.00,
+        serviceBookingFeeRate: 5.00,
+        serviceTravelPerKmUsd: 0.65,
+        serviceTravelPerMinUsd: 0.20,            // $0 - free to book
         lateCancellationFee: 5.00,
         lateCancellationFeeMax: 10.00,
         cancellationWindowMinutes: 60,      // 1hr before scheduled service
@@ -90,8 +93,11 @@ const SETTINGS: Partial<PlatformSettings>[] = [
         deliveryRidePortionRate: 50.00,
         deliveryServicePortionRate: 50.00,
 
-        serviceCommissionRate: 15.00,
+        serviceCommissionRate: 10.00,
         serviceBookingFee: 0.00,
+        serviceBookingFeeRate: 5.00,
+        serviceTravelPerKmUsd: 0.65,
+        serviceTravelPerMinUsd: 0.20,
         lateCancellationFee: 80.00,
         lateCancellationFeeMax: 160.00,
         cancellationWindowMinutes: 60,
@@ -131,8 +137,11 @@ const SETTINGS: Partial<PlatformSettings>[] = [
         deliveryServicePortionRate: 50.00,
 
         // Services
-        serviceCommissionRate: 15.00,
+        serviceCommissionRate: 10.00,
         serviceBookingFee: 0.00,
+        serviceBookingFeeRate: 5.00,
+        serviceTravelPerKmUsd: 0.65,
+        serviceTravelPerMinUsd: 0.20,
         lateCancellationFee: 2000.00,
         lateCancellationFeeMax: 5000.00,
         cancellationWindowMinutes: 60,
@@ -169,8 +178,11 @@ const SETTINGS: Partial<PlatformSettings>[] = [
         deliveryRidePortionRate: 50.00,
         deliveryServicePortionRate: 50.00,
 
-        serviceCommissionRate: 15.00,
+        serviceCommissionRate: 10.00,
         serviceBookingFee: 0.00,
+        serviceBookingFeeRate: 5.00,
+        serviceTravelPerKmUsd: 0.65,
+        serviceTravelPerMinUsd: 0.20,
         lateCancellationFee: 130.00,
         lateCancellationFeeMax: 260.00,
         cancellationWindowMinutes: 60,
@@ -207,8 +219,11 @@ const SETTINGS: Partial<PlatformSettings>[] = [
         deliveryRidePortionRate: 50.00,
         deliveryServicePortionRate: 50.00,
 
-        serviceCommissionRate: 15.00,
+        serviceCommissionRate: 10.00,
         serviceBookingFee: 0.00,
+        serviceBookingFeeRate: 5.00,
+        serviceTravelPerKmUsd: 0.65,
+        serviceTravelPerMinUsd: 0.20,
         lateCancellationFee: 90.00,
         lateCancellationFeeMax: 180.00,
         cancellationWindowMinutes: 60,
@@ -245,8 +260,11 @@ const SETTINGS: Partial<PlatformSettings>[] = [
         deliveryRidePortionRate: 50.00,
         deliveryServicePortionRate: 50.00,
 
-        serviceCommissionRate: 15.00,
+        serviceCommissionRate: 10.00,
         serviceBookingFee: 0.00,
+        serviceBookingFeeRate: 5.00,
+        serviceTravelPerKmUsd: 0.65,
+        serviceTravelPerMinUsd: 0.20,
         lateCancellationFee: 13000.00,
         lateCancellationFeeMax: 26000.00,
         cancellationWindowMinutes: 60,
@@ -283,8 +301,11 @@ const SETTINGS: Partial<PlatformSettings>[] = [
         deliveryRidePortionRate: 50.00,
         deliveryServicePortionRate: 50.00,
 
-        serviceCommissionRate: 15.00,
+        serviceCommissionRate: 10.00,
         serviceBookingFee: 0.00,
+        serviceBookingFeeRate: 5.00,
+        serviceTravelPerKmUsd: 0.65,
+        serviceTravelPerMinUsd: 0.20,
         lateCancellationFee: 19000.00,
         lateCancellationFeeMax: 38000.00,
         cancellationWindowMinutes: 60,
@@ -321,8 +342,11 @@ const SETTINGS: Partial<PlatformSettings>[] = [
         deliveryRidePortionRate: 50.00,
         deliveryServicePortionRate: 50.00,
 
-        serviceCommissionRate: 15.00,
+        serviceCommissionRate: 10.00,
         serviceBookingFee: 0.00,
+        serviceBookingFeeRate: 5.00,
+        serviceTravelPerKmUsd: 0.65,
+        serviceTravelPerMinUsd: 0.20,
         lateCancellationFee: 7.00,
         lateCancellationFeeMax: 14.00,
         cancellationWindowMinutes: 60,
@@ -359,8 +383,11 @@ const SETTINGS: Partial<PlatformSettings>[] = [
         deliveryRidePortionRate: 50.00,
         deliveryServicePortionRate: 50.00,
 
-        serviceCommissionRate: 15.00,
+        serviceCommissionRate: 10.00,
         serviceBookingFee: 0.00,
+        serviceBookingFeeRate: 5.00,
+        serviceTravelPerKmUsd: 0.65,
+        serviceTravelPerMinUsd: 0.20,
         lateCancellationFee: 200.00,
         lateCancellationFeeMax: 500.00,
         cancellationWindowMinutes: 60,
@@ -377,7 +404,7 @@ const SETTINGS: Partial<PlatformSettings>[] = [
  * Seed platform_settings rows.
  * UPSERTS - existing rows are UPDATED to match the latest config.
  */
-export const PLATFORM_SETTINGS_SEED_VERSION = 3;
+export const PLATFORM_SETTINGS_SEED_VERSION = 4;
 
 async function getAppliedVersion(): Promise<number> {
     await AppDataSource.query(`CREATE TABLE IF NOT EXISTS seed_meta (key TEXT PRIMARY KEY, value TEXT)`);

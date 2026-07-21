@@ -1643,6 +1643,8 @@ export class AdminService {
             serviceCommissionRate: number;
             serviceBookingFee: number;
             serviceBookingFeeRate: number;
+            serviceTravelPerKmUsd: number;
+            serviceTravelPerMinUsd: number;
             lateCancellationFee: number;
             lateCancellationFeeMax: number;
             cancellationWindowMinutes: number;
