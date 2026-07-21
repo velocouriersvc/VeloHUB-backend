@@ -356,7 +356,11 @@ export class OrderService {
             const isDelivery = input.deliveryType === DeliveryType.DELIVERY;
             let pickupCode: string | null = null;
             let deliveryCode: string | null = null;
-            if (input.deliveryType === DeliveryType.PICKUP || isDelivery) {
+            // Store-pickup orders get a customer pickup code (shown to the merchant at
+            // the counter). Delivery orders do NOT: the merchant-side handshake uses the
+            // driver's 4-digit PIN, so a customer pickup code here is dead data that has
+            // confused testers into showing the wrong code.
+            if (input.deliveryType === DeliveryType.PICKUP) {
                 pickupCode = this.pickupCodeService.generate();
             }
             const requireDeliveryCode = isDelivery ? true : !!input.requireDeliveryCode;
@@ -882,21 +886,37 @@ export class OrderService {
      * an online payment is CONFIRMED (never before the money is collected).
      */
     async sendOrderCodesNotification(order: Order): Promise<void> {
-        if (!order.pickupCode) return;
-        const codeMessage = order.deliveryType === DeliveryType.DELIVERY && order.deliveryCode
-            ? `Order #${order.orderNumber}: pickup code ${order.pickupCode}, delivery code ${order.deliveryCode}. Show the pickup code to the merchant and give the delivery code to your driver on arrival.`
-            : `Order #${order.orderNumber}: your pickup code is ${order.pickupCode}`;
+        const isDelivery = order.deliveryType === DeliveryType.DELIVERY;
+        // Delivery: the customer only ever holds the DELIVERY code, which they hand to
+        // their driver at drop-off. They have no contact with the merchant, and the
+        // merchant-side handshake uses the driver's own PIN, so no pickup code is shown.
+        // Store pickup: the customer shows their pickup code to the merchant at the counter.
+        if (isDelivery) {
+            if (!order.deliveryCode) return;
+            await this.notificationService.notify(
+                order.customerId,
+                NotificationType.PICKUP_CODE_GENERATED,
+                "Your Delivery Code 🔐",
+                `Order #${order.orderNumber}: your delivery code is ${order.deliveryCode}. Give it to your driver when they arrive with your order.`,
+                {
+                    orderId: order.id,
+                    orderNumber: order.orderNumber,
+                    deliveryCode: order.deliveryCode,
+                }
+            );
+            return;
+        }
 
+        if (!order.pickupCode) return;
         await this.notificationService.notify(
             order.customerId,
             NotificationType.PICKUP_CODE_GENERATED,
-            order.deliveryCode ? "Your Delivery Codes 🔐" : "Your Pickup Code 📦",
-            codeMessage,
+            "Your Pickup Code 📦",
+            `Order #${order.orderNumber}: your pickup code is ${order.pickupCode}. Show it to the merchant to collect your order.`,
             {
                 orderId: order.id,
                 orderNumber: order.orderNumber,
                 pickupCode: order.pickupCode,
-                deliveryCode: order.deliveryCode || null,
             }
         );
     }

@@ -16,6 +16,11 @@ export class Wallet {
     @Column({ type: "varchar", length: 3, default: "GHS" })
     currency: string;
 
+    // Paystack transfer recipient code for payouts (created from the owner's momo/bank
+    // details on first payout and reused for every subsequent transfer).
+    @Column({ type: "varchar", nullable: true })
+    paystackRecipientCode: string | null;
+
     @CreateDateColumn()
     createdAt: Date;
 

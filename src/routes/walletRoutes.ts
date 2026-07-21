@@ -52,4 +52,25 @@ router.get("/", walletRoles, walletController.getWallet);
  */
 router.get("/transactions", walletRoles, walletController.getTransactions);
 
+/**
+ * @openapi
+ * /wallet/request-payout:
+ *   post:
+ *     tags: [Wallet]
+ *     summary: Request a wallet payout
+ *     description: Debits the wallet and creates a Paystack transfer recipient; an admin approves the disbursement. Requires **buyer** or **driver** role.
+ *     security:
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - $ref: '#/components/parameters/PhoneNumber'
+ *     responses:
+ *       200:
+ *         description: Payout request accepted
+ *       400:
+ *         description: Validation or balance error
+ *       403:
+ *         description: Invalid API key or role not approved
+ */
+router.post("/request-payout", walletRoles, walletController.requestPayout);
+
 export default router;

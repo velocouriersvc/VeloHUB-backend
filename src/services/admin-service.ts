@@ -1528,6 +1528,28 @@ export class AdminService {
             throw new Error("Payout has already been rejected");
         }
 
+        // Disburse the money via Paystack transfer to the merchant's stored recipient.
+        // The wallet was already debited at request time, so we only move the payout to
+        // "completed" when the transfer is accepted; otherwise it stays pending with the
+        // provider error recorded so an admin can retry once the cause is fixed.
+        if (tx.wallet?.userId) {
+            const transfer = await this.walletService.initiatePayoutTransfer(tx.wallet.userId, {
+                amount: Number(tx.amount),
+                reference: `payout_${tx.reference}`,
+                reason: `Velo payout ${tx.reference}`,
+            });
+            if (!transfer.success) {
+                tx.metadata = {
+                    ...tx.metadata,
+                    lastError: transfer.message || "Transfer failed",
+                    lastAttemptBy: adminId,
+                    lastAttemptAt: new Date().toISOString(),
+                };
+                await this.walletTxRepo.save(tx);
+                throw new Error(`Payout transfer failed: ${transfer.message || "unknown error"}`);
+            }
+        }
+
         // Mark as completed
         tx.metadata = {
             ...tx.metadata,

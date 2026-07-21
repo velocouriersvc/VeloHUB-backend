@@ -574,12 +574,25 @@ export class ServiceBookingService {
             default: notificationType = NotificationType.SYSTEM;
         }
 
+        // When the provider accepts, schedules, or starts the job, the customer needs
+        // the completion code: they read it out to the provider once the work is done,
+        // which is what triggers settlement. Deliver it with the status update.
+        const sendCodeToCustomer = recipientId === booking.customerId
+            && !!booking.completionCode
+            && (status === ServiceBookingStatus.ACCEPTED
+                || status === ServiceBookingStatus.SCHEDULED
+                || status === ServiceBookingStatus.IN_PROGRESS);
+
+        const message = sendCodeToCustomer
+            ? `Your booking #${booking.bookingNumber} is now ${status}. Give your provider this completion code when the job is done: ${booking.completionCode}`
+            : `Your booking #${booking.bookingNumber} is now ${status}.`;
+
         await this.notificationService.notify(
             recipientId,
             notificationType,
-            "Booking Update 🗓️",
-            `Your booking #${booking.bookingNumber} is now ${status}.`,
-            { bookingId: booking.id, status }
+            sendCodeToCustomer ? "Your Completion Code 🔐" : "Booking Update 🗓️",
+            message,
+            { bookingId: booking.id, status, completionCode: sendCodeToCustomer ? booking.completionCode : undefined }
         );
 
         log.info("Service booking status updated", { bookingId, oldStatus, newStatus: status, userId });
@@ -649,7 +662,9 @@ export class ServiceBookingService {
 
         if (!booking) throw new Error("Booking not found");
 
-        if (booking.completionCode !== completionCode) {
+        // Case-insensitive, whitespace-tolerant so a correctly-read code is never rejected.
+        const norm = (v: unknown) => String(v ?? "").toUpperCase().trim();
+        if (!booking.completionCode || norm(booking.completionCode) !== norm(completionCode)) {
             throw new Error("Invalid completion code");
         }
 

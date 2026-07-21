@@ -665,7 +665,10 @@ export class MerchantService {
         // customer's 6-char pickup code.
         const usingDriverCode = !!order.driverId && !!order.driverPickupCode;
         const expected = usingDriverCode ? order.driverPickupCode : order.pickupCode;
-        if (!expected || expected !== code) {
+        // Normalize both sides (uppercase + trim) so casing or stray spaces from a
+        // typed or scanned code never cause a false "code doesn't match".
+        const norm = (v: unknown) => String(v ?? "").toUpperCase().trim();
+        if (!expected || norm(expected) !== norm(code)) {
             log.warn("Invalid pickup code attempt", { orderId, merchantId, usingDriverCode });
             return { verified: false, order };
         }
@@ -787,7 +790,7 @@ export class MerchantService {
         const tx = await this.walletService.debit(
             merchantId,
             amount,
-            `Payout request: ${payoutMethod} → ${accountNumber}`,
+            `Payout request: ${payoutMethod} to ${accountNumber}`,
             {
                 type: "payout",
                 payoutMethod,
@@ -795,6 +798,19 @@ export class MerchantService {
                 status: "pending", // Admin must approve actual disbursement
             }
         );
+
+        // Create (or reuse) the Paystack transfer recipient now so admin approval can
+        // disburse immediately. Non-fatal: a failure just leaves the payout pending.
+        try {
+            const profile = await this.profileRepo.findOne({ where: { userId: merchantId } });
+            await this.walletService.ensurePayoutRecipient(merchantId, {
+                payoutMethod,
+                accountNumber,
+                accountName: profile?.businessName || "Velo Merchant",
+            });
+        } catch (err) {
+            log.warn("Payout recipient setup failed (payout stays pending)", { merchantId, error: (err as Error).message });
+        }
 
         // Notify merchant
         await this.notificationService.notify(
@@ -875,8 +891,11 @@ export class MerchantService {
      * Get paginated transactions list for activity screen.
      */
     async getTransactions(merchantId: string, page: number = 1, limit: number = 20) {
+        // Response shape matches the app's PaginatedTransactionsResponse contract
+        // ({ data, meta }); the activity screen paginates on meta.totalPages.
+        const empty = { data: [], meta: { total: 0, page, limit, totalPages: 0 } };
         const wallet = await this.walletService.getWallet(merchantId);
-        if (!wallet) return { transactions: [], total: 0 };
+        if (!wallet) return empty;
 
         const skip = (page - 1) * limit;
 
@@ -889,10 +908,13 @@ export class MerchantService {
             .getManyAndCount();
 
         return {
-            transactions: txs.map(tx => this.mapTransaction(tx)),
-            total,
-            page,
-            limit
+            data: txs.map(tx => this.mapTransaction(tx)),
+            meta: {
+                total,
+                page,
+                limit,
+                totalPages: Math.max(1, Math.ceil(total / limit)),
+            },
         };
     }
 
