@@ -1,10 +1,13 @@
 import { AppDataSource } from "../db/data-source";
-import { Order, OrderStatus, DeliveryType, OrderCancelledBy } from "../models/order";
+import { Order, OrderStatus, DeliveryType, OrderCancelledBy, OrderPaymentMethod } from "../models/order";
 import { OrderStatusHistory } from "../models/order-status-history";
 import { MerchantProfile } from "../models/merchant-profile";
 import { User } from "../models/user";
 import { RedisLocationService } from "./redis-location-service";
 import { SettlementService, SettlementResult } from "./settlement-service";
+import { WalletService } from "./wallet-service";
+import { DriverProfile } from "../models/driver-profile";
+import { vehicleMeetsTier } from "../utils/vehicle-tier";
 import { NotificationService } from "./notification-service";
 import { NotificationType } from "../models/notification";
 import { redis } from "../utils/redis";
@@ -37,6 +40,8 @@ export interface AvailableDelivery {
     itemCount: number;
     currency: string;
     createdAt: Date;
+    /** Minimum vehicle tier this order needs (drives the job-card badge). */
+    requiredVehicleTier: string | null;
 }
 
 // ── Service ─────────────────────────────────────────────────────────
@@ -54,9 +59,11 @@ export class DeliveryService {
     private historyRepo = AppDataSource.getRepository(OrderStatusHistory);
     private merchantProfileRepo = AppDataSource.getRepository(MerchantProfile);
     private userRepo = AppDataSource.getRepository(User);
+    private driverProfileRepo = AppDataSource.getRepository(DriverProfile);
     private redisLocation = new RedisLocationService();
 
     private settlementService = new SettlementService();
+    private walletService = new WalletService();
     private notificationService = new NotificationService();
 
     // ── Available Deliveries ────────────────────────────────────────
@@ -73,6 +80,11 @@ export class DeliveryService {
         // Nigeria order must never surface to a Ghana driver, even if geo is stale).
         const driver = await this.userRepo.findOne({ where: { id: driverId } });
         const driverCountry = driver?.country || null;
+
+        // The driver's vehicle decides which loads they can carry: an order whose goods
+        // need an SUV must never surface to a bike rider.
+        const driverProfile = await this.driverProfileRepo.findOne({ where: { userId: driverId } });
+        const driverVehicle = driverProfile?.vehicleType || null;
 
         // Resolve the driver's live location. The app may not send it, so fall back
         // to the Redis geo the driver streams while online. Without a location we
@@ -105,6 +117,9 @@ export class DeliveryService {
         const deliveries: AvailableDelivery[] = [];
 
         for (const order of orders) {
+            // Skip loads this driver's vehicle cannot carry.
+            if (!vehicleMeetsTier(driverVehicle, order.requiredVehicleTier)) continue;
+
             // Load merchant profile separately if not joined properly
             const merchantProfile = await this.merchantProfileRepo.findOne({
                 where: { userId: order.merchantId },
@@ -137,6 +152,7 @@ export class DeliveryService {
                 itemCount: Array.isArray(order.items) ? order.items.length : 0,
                 currency: order.currency || "GHS",
                 createdAt: order.createdAt,
+                requiredVehicleTier: order.requiredVehicleTier,
             });
         }
 
@@ -172,6 +188,23 @@ export class DeliveryService {
 
             if (order.driverId) {
                 throw new Error("This delivery has already been assigned to another driver");
+            }
+
+            // Vehicle must be able to carry the load (guards against a stale job list).
+            const claimingProfile = await this.driverProfileRepo.findOne({ where: { userId: driverId } });
+            if (!vehicleMeetsTier(claimingProfile?.vehicleType || null, order.requiredVehicleTier)) {
+                throw new Error(`This order requires a ${order.requiredVehicleTier} or larger vehicle.`);
+            }
+
+            // Cash orders add to the driver's outstanding debt (they collect the full
+            // amount and owe the merchant's earnings + commission + WHT). Block new cash
+            // work once that debt reaches the market cap.
+            if (order.paymentMethod === OrderPaymentMethod.CASH) {
+                const driver = await this.userRepo.findOne({ where: { id: driverId } });
+                const { allowed } = await this.walletService.canAcceptCashJob(driverId, driver?.country || "GH");
+                if (!allowed) {
+                    throw new Error("Clear your outstanding balance to accept cash jobs.");
+                }
             }
 
             // Assign driver + mint the 4-digit pickup PIN the driver shows the merchant.

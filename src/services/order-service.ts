@@ -5,6 +5,7 @@ import { OrderStatusHistory } from "../models/order-status-history";
 import { Cart } from "../models/cart";
 import { CartItem } from "../models/cart-item";
 import { Product } from "../models/product";
+import { computeRequiredVehicleTier } from "../utils/vehicle-tier";
 import { User } from "../models/user";
 import { PlatformSettings } from "../models/platform-settings";
 import { MerchantProfile } from "../models/merchant-profile";
@@ -152,7 +153,10 @@ export class OrderService {
         const merchant = await this.merchantRepo.findOne({
             where: { userId: cart.merchantId },
         });
-        const commissionRate = this.getRate(merchant?.commissionRate, settings?.serviceCommissionRate, 15) / 100;
+        // Marketplace orders use the DEFAULT commission (15%). serviceCommissionRate
+        // (10%) applies to service bookings only; reading it here silently cut order
+        // commissions to 10%.
+        const commissionRate = this.getRate(merchant?.commissionRate, settings?.defaultCommissionRate, 15) / 100;
         const serviceFeeRate = this.getRate(merchant?.serviceFeeRate, settings?.defaultServiceFeeRate, 5) / 100;
 
         // 6. Calculate fees
@@ -377,6 +381,22 @@ export class OrderService {
             // totalAmount keeps the receipt equal to the amount charged.
             const processingFee = isOnlinePayment ? quote.processingFee : 0;
             const chargedTotal = Math.round((quote.totalAmount + processingFee) * 100) / 100;
+
+            // Deliveries record the minimum vehicle tier the goods need, so dispatch only
+            // offers the job to drivers whose vehicle can actually carry it.
+            const requiredVehicleTier = isDelivery
+                ? computeRequiredVehicleTier(cart.items.map((item) => ({
+                    lengthIn: item.product?.lengthIn ?? null,
+                    widthIn: item.product?.widthIn ?? null,
+                    heightIn: item.product?.heightIn ?? null,
+                    weightLb: item.product?.weightLb ?? null,
+                    isFragile: item.product?.isFragile ?? false,
+                    isPerishable: item.product?.isPerishable ?? false,
+                    requiresOpenAir: item.product?.requiresOpenAir ?? false,
+                    quantity: item.quantity,
+                })))
+                : null;
+
             const order = this.orderRepo.create({
                 orderNumber,
                 customerId: userId,
@@ -400,6 +420,7 @@ export class OrderService {
                 deliveryAddress: input.deliveryAddress || null,
                 deliveryLat: input.deliveryLat || null,
                 deliveryLng: input.deliveryLng || null,
+                requiredVehicleTier,
                 pickupCode,
                 deliveryCode,
                 requireDeliveryCode,

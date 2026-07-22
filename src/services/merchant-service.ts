@@ -7,6 +7,7 @@ import { User } from "../models/user";
 import { PickupCodeService } from "./pickup-code-service";
 import { DriverMatchService } from "./driver-match-service";
 import { VehicleType } from "../models/vehicle-pricing";
+import { vehicleMeetsTier } from "../utils/vehicle-tier";
 import { OrderStatusHistory } from "../models/order-status-history";
 import { WalletService } from "./wallet-service";
 import { NotificationService } from "./notification-service";
@@ -612,9 +613,13 @@ export class MerchantService {
         const matcher = new DriverMatchService();
         const seen = new Set<string>();
         const driverUserIds: string[] = [];
-        // Any vehicle can carry a merchant delivery; union all matcher tiers
-        // (CAR compatibility already includes PRIORITY).
-        for (const vt of [VehicleType.BIKE, VehicleType.CAR, VehicleType.SUV, VehicleType.TRUCK]) {
+        // Only offer the job to vehicles that can actually carry it. The order records
+        // the minimum tier its goods need (computed at checkout from dimensions/weight);
+        // drivers at that tier or above are eligible. CAR compatibility includes PRIORITY.
+        const required = order.requiredVehicleTier;
+        const tiers = [VehicleType.BIKE, VehicleType.CAR, VehicleType.SUV, VehicleType.TRUCK]
+            .filter((vt) => vehicleMeetsTier(vt, required));
+        for (const vt of tiers) {
             for (const d of await matcher.findDrivers(lat, lng, vt)) {
                 if (!seen.has(d.userId)) {
                     seen.add(d.userId);
@@ -624,7 +629,7 @@ export class MerchantService {
         }
 
         if (driverUserIds.length === 0) {
-            log.info("No drivers online for ready delivery order", { orderId: order.id });
+            log.info("No eligible drivers online for ready delivery order", { orderId: order.id, requiredVehicleTier: required });
             return;
         }
 
@@ -637,6 +642,7 @@ export class MerchantService {
             deliveryFee: Number(order.deliveryFee),
             currency: order.currency,
             dropoffAddress: order.deliveryAddress,
+            requiredVehicleTier: required,
         });
         log.info("Ready delivery order broadcast to drivers", { orderId: order.id, driverCount: driverUserIds.length });
     }

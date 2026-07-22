@@ -54,6 +54,14 @@ export interface CreateProductInput {
     outCall?: boolean;
     rentalDuration?: string;
     deposit?: number;
+    /** Shipping dimensions (physical goods) - drive the delivery vehicle tier. */
+    lengthIn?: number | null;
+    widthIn?: number | null;
+    heightIn?: number | null;
+    weightLb?: number | null;
+    isFragile?: boolean;
+    isPerishable?: boolean;
+    requiresOpenAir?: boolean;
     customizations?: CreateCustomizationInput[];
     options?: CreateFoodOptionGroupInput[];
 }
@@ -83,6 +91,14 @@ export interface UpdateProductInput {
     outCall?: boolean;
     rentalDuration?: string | null;
     deposit?: number | null;
+    /** Shipping dimensions (physical goods) - drive the delivery vehicle tier. */
+    lengthIn?: number | null;
+    widthIn?: number | null;
+    heightIn?: number | null;
+    weightLb?: number | null;
+    isFragile?: boolean;
+    isPerishable?: boolean;
+    requiresOpenAir?: boolean;
 }
 
 export interface CreateCustomizationInput {
@@ -274,6 +290,13 @@ export class ProductService {
                 outCall: input.outCall === true,
                 rentalDuration: input.rentalDuration as any || null,
                 deposit: input.deposit || null,
+                lengthIn: input.lengthIn ?? null,
+                widthIn: input.widthIn ?? null,
+                heightIn: input.heightIn ?? null,
+                weightLb: input.weightLb ?? null,
+                isFragile: input.isFragile ?? false,
+                isPerishable: input.isPerishable ?? false,
+                requiresOpenAir: input.requiresOpenAir ?? false,
             });
             const savedProduct = await productRepo.save(newProduct);
 
@@ -721,6 +744,13 @@ export class ProductService {
         if (input.serviceDurationMin !== undefined) product.serviceDurationMin = input.serviceDurationMin;
         if (input.inCall !== undefined) product.inCall = input.inCall;
         if (input.outCall !== undefined) product.outCall = input.outCall;
+        if (input.lengthIn !== undefined) product.lengthIn = input.lengthIn;
+        if (input.widthIn !== undefined) product.widthIn = input.widthIn;
+        if (input.heightIn !== undefined) product.heightIn = input.heightIn;
+        if (input.weightLb !== undefined) product.weightLb = input.weightLb;
+        if (input.isFragile !== undefined) product.isFragile = input.isFragile;
+        if (input.isPerishable !== undefined) product.isPerishable = input.isPerishable;
+        if (input.requiresOpenAir !== undefined) product.requiresOpenAir = input.requiresOpenAir;
         if (product.inCall === false && product.outCall === false) {
             throw new Error("Select at least one service type: in-call (at your location) or out-call (in-home).");
         }

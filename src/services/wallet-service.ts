@@ -158,6 +158,24 @@ export class WalletService {
     }
 
     /**
+     * Cash jobs push a driver's wallet negative (they hold the customer's cash and owe
+     * commission + withholding tax). Once that debt reaches the market's cashDebtCap
+     * they must settle up before taking more cash work. Digital jobs are unaffected.
+     * A cap of 0 disables the limit.
+     */
+    async canAcceptCashJob(
+        userId: string,
+        country: string = "GH"
+    ): Promise<{ allowed: boolean; balance: number; cap: number }> {
+        const wallet = await this.getWallet(userId);
+        const balance = Number(wallet?.balance ?? 0);
+        const settings = await this.settingsRepo.findOne({ where: { country, isActive: true } });
+        const cap = Number(settings?.cashDebtCap ?? 0);
+        if (cap <= 0) return { allowed: true, balance, cap };
+        return { allowed: balance > -cap, balance, cap };
+    }
+
+    /**
      * Get wallet balance
      */
     async getBalance(userId: string): Promise<number> {

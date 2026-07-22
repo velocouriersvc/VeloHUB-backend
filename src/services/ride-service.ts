@@ -20,6 +20,8 @@ import { PlatformSettings } from "../models/platform-settings";
 import { SettlementService } from "./settlement-service";
 import { Rating } from "../models/rating";
 import { PickupCodeService } from "./pickup-code-service";
+import { WalletService } from "./wallet-service";
+import { User } from "../models/user";
 import { emitRideEvent } from "../socket-gateway";
 
 const log = createServiceLogger("RideService");
@@ -88,6 +90,7 @@ export class RideService {
     private rideRepo = AppDataSource.getRepository(Ride);
     private stopRepo = AppDataSource.getRepository(RideStop);
     private contactRepo = AppDataSource.getRepository(RideSharedContact);
+    private userRepo = AppDataSource.getRepository(User);
 
     private fareService: FareService;
     private driverMatchService: DriverMatchService;
@@ -96,6 +99,7 @@ export class RideService {
     private redisLocation: RedisLocationService;
     private preludeService: PreludeService;
     private settlementService: SettlementService;
+    private walletService: WalletService;
 
     constructor() {
         this.fareService = new FareService();
@@ -105,6 +109,7 @@ export class RideService {
         this.redisLocation = new RedisLocationService();
         this.preludeService = new PreludeService();
         this.settlementService = new SettlementService();
+        this.walletService = new WalletService();
     }
 
     // ── Fare Estimate ──
@@ -486,6 +491,16 @@ export class RideService {
 
         if (ride.status !== RideStatus.SEARCHING) {
             throw new Error("Ride is no longer available");
+        }
+
+        // Cash rides add to the driver's outstanding debt (commission + withholding tax).
+        // Block new cash work once that debt reaches the market cap.
+        if (ride.paymentMethod === PaymentMethod.CASH) {
+            const driver = await this.userRepo.findOne({ where: { id: driverUserId } });
+            const { allowed } = await this.walletService.canAcceptCashJob(driverUserId, driver?.country || "GH");
+            if (!allowed) {
+                throw new Error("Clear your outstanding balance to accept cash jobs.");
+            }
         }
 
         ride.driverId = driverUserId;

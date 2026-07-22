@@ -1659,6 +1659,9 @@ export class AdminService {
             rideCommissionRate: number;
             riderServiceFee: number;
             maxSurgeMultiplier: number;
+            whtRate: number;
+            cashDebtCap: number;
+            vatOnCommissionRate: number;
             deliveryTotalCommissionRate: number;
             deliveryRidePortionRate: number;
             deliveryServicePortionRate: number;

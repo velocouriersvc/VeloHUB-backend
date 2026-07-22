@@ -72,6 +72,26 @@ export class PlatformSettings {
     @Column({ type: "decimal", precision: 3, scale: 2, default: 2.50 })
     maxSurgeMultiplier: number;
 
+    // ── Cash settlement / tax ───────────────────────────────────────
+
+    /**
+     * Withholding tax on the driver's gross share of a CASH job (%), held in a tax
+     * escrow ledger for remittance. 0 disables withholding for the market.
+     */
+    @Column({ type: "decimal", precision: 5, scale: 2, default: 5.00 })
+    whtRate: number;
+
+    /**
+     * How far a driver's wallet may go negative from cash-job commission + WHT debt
+     * before they are blocked from accepting further cash jobs (local currency units).
+     */
+    @Column({ type: "decimal", precision: 10, scale: 2, default: 100.00 })
+    cashDebtCap: number;
+
+    /** VAT applied to the platform commission (%), recorded for remittance (Nigeria: 7.5). */
+    @Column({ type: "decimal", precision: 5, scale: 2, default: 0.00 })
+    vatOnCommissionRate: number;
+
     // ── Delivery ride (when delivery driver is booked alongside an order) ─
 
     @Column({ type: "decimal", precision: 5, scale: 2, default: 40.00 })
