@@ -53,6 +53,21 @@ export function bookingStartAt(preferredDate: Date | string, slot?: string | nul
 
 const log = createServiceLogger("ServiceBookingService");
 
+/**
+ * Chat and calling open up only once the provider has accepted the job, and close
+ * again when it reaches a terminal state. Before acceptance the two parties have no
+ * relationship yet, so contact details are withheld and messaging is refused.
+ */
+const CONTACTABLE_STATUSES: ServiceBookingStatus[] = [
+    ServiceBookingStatus.ACCEPTED,
+    ServiceBookingStatus.SCHEDULED,
+    ServiceBookingStatus.IN_PROGRESS,
+];
+
+export function canContact(status: ServiceBookingStatus): boolean {
+    return CONTACTABLE_STATUSES.includes(status);
+}
+
 export interface CreateBookingInput {
     customerId: string;
     merchantId: string;
@@ -613,12 +628,22 @@ export class ServiceBookingService {
         const merchantIds = [...new Set(bookings.map((b) => b.merchantId))];
         const profiles = await this.merchantProfileRepo.find({ where: { userId: In(merchantIds) } });
         const byMerchant = new Map(profiles.map((p) => [p.userId, p]));
+        // A provider who never filled in a business phone still has an account phone.
+        // Without this fallback the customer's call button simply vanished.
+        const merchantUsers = await this.userRepo.find({ where: { id: In(merchantIds) } });
+        const phoneByMerchant = new Map(merchantUsers.map((u) => [u.id, u.phoneNumber]));
+
         return bookings.map((b) => {
             const p = byMerchant.get(b.merchantId);
+            const providerPhone = p?.businessPhone || phoneByMerchant.get(b.merchantId) || null;
+            const contactable = canContact(b.status);
             return {
                 ...b,
                 providerAddress: p?.address || null,
-                providerPhone: p?.businessPhone || null,
+                // Contact details are released only once the provider has accepted.
+                providerPhone: contactable ? providerPhone : null,
+                canContact: contactable,
+                canCall: contactable && !!providerPhone,
                 providerLat: p?.latitude ?? null,
                 providerLng: p?.longitude ?? null,
             };
@@ -638,17 +663,23 @@ export class ServiceBookingService {
 
         // Flatten customer + service details so the provider sees the scope of the
         // request at a glance (name, service, duration).
-        return bookings.map(b => ({
-            ...b,
-            customerName: b.customer?.buyerProfile?.fullName || "Valued Customer",
-            customerPhone: b.customer?.phoneNumber || null,
-            serviceDurationMin: b.product?.serviceDurationMin ?? null,
-            customerProfile: {
+        return bookings.map(b => {
+            const contactable = canContact(b.status);
+            const customerPhone = contactable ? (b.customer?.phoneNumber || null) : null;
+            return {
+                ...b,
                 customerName: b.customer?.buyerProfile?.fullName || "Valued Customer",
-                customerPhone: b.customer?.phoneNumber || "N/A",
-                customerRating: 5.0,
-            }
-        }));
+                customerPhone,
+                canContact: contactable,
+                canCall: !!customerPhone,
+                serviceDurationMin: b.product?.serviceDurationMin ?? null,
+                customerProfile: {
+                    customerName: b.customer?.buyerProfile?.fullName || "Valued Customer",
+                    customerPhone: customerPhone || "N/A",
+                    customerRating: 5.0,
+                },
+            };
+        });
     }
 
     /**
@@ -719,6 +750,10 @@ export class ServiceBookingService {
         if (booking.customerId !== userId && booking.merchantId !== userId) {
             throw new Error("Unauthorized to view this booking");
         }
+        // Readable while the job is live, and afterwards so the history survives.
+        if (!canContact(booking.status) && booking.status !== ServiceBookingStatus.COMPLETED) {
+            throw new Error("Unauthorized: chat opens once the provider accepts this booking.");
+        }
         const messages = await this.messageRepo.find({ where: { bookingId }, order: { createdAt: "ASC" } });
         return { booking, messages };
     }
@@ -728,6 +763,9 @@ export class ServiceBookingService {
         if (!booking) throw new Error("Booking not found");
         if (booking.customerId !== userId && booking.merchantId !== userId) {
             throw new Error("Unauthorized to message on this booking");
+        }
+        if (!canContact(booking.status)) {
+            throw new Error("Unauthorized: chat opens once the provider accepts this booking.");
         }
         const senderRole = userId === booking.customerId ? "customer" : "provider";
         const message = await this.messageRepo.save(this.messageRepo.create({
