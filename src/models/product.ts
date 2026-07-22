@@ -105,6 +105,33 @@ export class Product {
     @Column({ type: "decimal", precision: 10, scale: 2, nullable: true })
     deposit: number | null;
 
+    // ── Shipping dimensions (physical goods) ──
+    // Used to compute the minimum vehicle tier a cart needs. Nullable so existing
+    // listings keep working; missing dimensions fall back to the CAR tier.
+    @Column({ type: "decimal", precision: 10, scale: 2, nullable: true })
+    lengthIn: number | null;
+
+    @Column({ type: "decimal", precision: 10, scale: 2, nullable: true })
+    widthIn: number | null;
+
+    @Column({ type: "decimal", precision: 10, scale: 2, nullable: true })
+    heightIn: number | null;
+
+    @Column({ type: "decimal", precision: 10, scale: 2, nullable: true })
+    weightLb: number | null;
+
+    /** Needs careful handling - forces at least the SUV tier. */
+    @Column({ type: "boolean", default: false })
+    isFragile: boolean;
+
+    /** Time/temperature sensitive. */
+    @Column({ type: "boolean", default: false })
+    isPerishable: boolean;
+
+    /** Cannot be enclosed (e.g. plants, long items) - forces an open-air capable tier. */
+    @Column({ type: "boolean", default: false })
+    requiresOpenAir: boolean;
+
     // ── Timestamps ──
     @CreateDateColumn()
     createdAt: Date;

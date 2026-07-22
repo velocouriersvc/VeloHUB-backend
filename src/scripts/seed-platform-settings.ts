@@ -37,12 +37,16 @@ const SETTINGS: Partial<PlatformSettings>[] = [
         defaultPickupFeeRate: 10.00,
         deliveryBaseFee: 3.49,              // $3.49 base
         deliveryPerKmFee: +(0.60 / MI_TO_KM).toFixed(4) as any, // $0.60/mile → per km
-        driverDeliveryFeeShare: 85.00,      // Driver gets 85% of delivery fee (per formula & examples)
+        driverDeliveryFeeShare: 75.00,      // Driver gets 75% of delivery fee (aligned with all other markets)
 
         // Rides
         rideCommissionRate: 15.00,          // VeloHUB takes 15%, driver keeps 85%
         riderServiceFee: 1.99,              // flat $1.99 on top of ride fare
         maxSurgeMultiplier: 1.40,            // Surge protection cap (never exceed 1.4x)
+
+        whtRate: 0.00,
+        cashDebtCap: 25.00,
+        vatOnCommissionRate: 0.00,
 
         // Delivery rides (order+driver combined)
         deliveryTotalCommissionRate: 40.00,
@@ -89,6 +93,10 @@ const SETTINGS: Partial<PlatformSettings>[] = [
         riderServiceFee: 4.00,              // ✅ ACTUAL Ghana rider service fee
         maxSurgeMultiplier: 1.40,            // Surge protection cap (never exceed 1.4x)
 
+        whtRate: 5.00,
+        cashDebtCap: 100.00,
+        vatOnCommissionRate: 0.00,
+
         deliveryTotalCommissionRate: 40.00,
         deliveryRidePortionRate: 50.00,
         deliveryServicePortionRate: 50.00,
@@ -132,6 +140,10 @@ const SETTINGS: Partial<PlatformSettings>[] = [
         riderServiceFee: 400.00,            // ₦400 flat (updated from ₦300)
         maxSurgeMultiplier: 1.40,            // Surge protection cap (never exceed 1.4x)
 
+        whtRate: 5.00,
+        cashDebtCap: 5000.00,
+        vatOnCommissionRate: 7.50,
+
         deliveryTotalCommissionRate: 40.00,
         deliveryRidePortionRate: 50.00,
         deliveryServicePortionRate: 50.00,
@@ -174,6 +186,10 @@ const SETTINGS: Partial<PlatformSettings>[] = [
         riderServiceFee: 50.00,
         maxSurgeMultiplier: 1.40,            // Surge protection cap (never exceed 1.4x)
 
+        whtRate: 0.00,
+        cashDebtCap: 800.00,
+        vatOnCommissionRate: 0.00,
+
         deliveryTotalCommissionRate: 40.00,
         deliveryRidePortionRate: 50.00,
         deliveryServicePortionRate: 50.00,
@@ -214,6 +230,10 @@ const SETTINGS: Partial<PlatformSettings>[] = [
         rideCommissionRate: 15.00,
         riderServiceFee: 8.00,
         maxSurgeMultiplier: 1.40,            // Surge protection cap (never exceed 1.4x)
+
+        whtRate: 0.00,
+        cashDebtCap: 120.00,
+        vatOnCommissionRate: 0.00,
 
         deliveryTotalCommissionRate: 40.00,
         deliveryRidePortionRate: 50.00,
@@ -256,6 +276,10 @@ const SETTINGS: Partial<PlatformSettings>[] = [
         riderServiceFee: 700.00,
         maxSurgeMultiplier: 1.40,            // Surge protection cap (never exceed 1.4x)
 
+        whtRate: 0.00,
+        cashDebtCap: 15000.00,
+        vatOnCommissionRate: 0.00,
+
         deliveryTotalCommissionRate: 40.00,
         deliveryRidePortionRate: 50.00,
         deliveryServicePortionRate: 50.00,
@@ -296,6 +320,10 @@ const SETTINGS: Partial<PlatformSettings>[] = [
         rideCommissionRate: 15.00,
         riderServiceFee: 1200.00,
         maxSurgeMultiplier: 1.40,            // Surge protection cap (never exceed 1.4x)
+
+        whtRate: 0.00,
+        cashDebtCap: 25000.00,
+        vatOnCommissionRate: 0.00,
 
         deliveryTotalCommissionRate: 40.00,
         deliveryRidePortionRate: 50.00,
@@ -338,6 +366,10 @@ const SETTINGS: Partial<PlatformSettings>[] = [
         riderServiceFee: 2.49,
         maxSurgeMultiplier: 1.40,            // Surge protection cap (never exceed 1.4x)
 
+        whtRate: 0.00,
+        cashDebtCap: 35.00,
+        vatOnCommissionRate: 0.00,
+
         deliveryTotalCommissionRate: 40.00,
         deliveryRidePortionRate: 50.00,
         deliveryServicePortionRate: 50.00,
@@ -379,6 +411,10 @@ const SETTINGS: Partial<PlatformSettings>[] = [
         riderServiceFee: 49.00,
         maxSurgeMultiplier: 1.40,            // Surge protection cap (never exceed 1.4x)
 
+        whtRate: 0.00,
+        cashDebtCap: 500.00,
+        vatOnCommissionRate: 0.00,
+
         deliveryTotalCommissionRate: 40.00,
         deliveryRidePortionRate: 50.00,
         deliveryServicePortionRate: 50.00,
@@ -404,7 +440,7 @@ const SETTINGS: Partial<PlatformSettings>[] = [
  * Seed platform_settings rows.
  * UPSERTS - existing rows are UPDATED to match the latest config.
  */
-export const PLATFORM_SETTINGS_SEED_VERSION = 4;
+export const PLATFORM_SETTINGS_SEED_VERSION = 5;
 
 async function getAppliedVersion(): Promise<number> {
     await AppDataSource.query(`CREATE TABLE IF NOT EXISTS seed_meta (key TEXT PRIMARY KEY, value TEXT)`);

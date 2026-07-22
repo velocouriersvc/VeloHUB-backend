@@ -152,6 +152,14 @@ export class Order {
     @Column({ type: "double precision", nullable: true })
     deliveryLng: number | null;
 
+    /**
+     * Minimum vehicle tier this order's goods require (bike/car/suv/truck), computed at
+     * checkout from the cart's dimensions and weight. Dispatch only offers the delivery
+     * to drivers at this tier or above. Null = no requirement (legacy orders).
+     */
+    @Column({ type: "varchar", length: 20, nullable: true })
+    requiredVehicleTier: string | null;
+
     // ── Pickup ──
     @Column({ type: "varchar", length: 6, nullable: true })
     pickupCode: string | null;

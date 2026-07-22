@@ -160,7 +160,7 @@ export class SettlementService {
 
         switch (settlementType) {
             case "cash_delivery":
-                result = await this.settleCashDelivery(order, settings, merchantEarnings, platformFee, deliveryFee, currency, txMetadata);
+                result = await this.settleCashDelivery(order, settings, merchantEarnings, platformFee, deliveryFee, currency, txMetadata, country);
                 break;
             case "cash_pickup":
                 result = await this.settleCashPickup(order, settings, currency, txMetadata);
@@ -310,7 +310,7 @@ export class SettlementService {
         let result: SettlementResult;
 
         if (isCash) {
-            result = await this.settleCashRide(ride, driverEarnings, platformFee, currency, txMetadata);
+            result = await this.settleCashRide(ride, driverEarnings, platformFee, currency, txMetadata, settings, country);
         } else {
             result = await this.settleOnlineRide(ride, driverEarnings, platformFee, currency, txMetadata);
         }
@@ -343,12 +343,76 @@ export class SettlementService {
         return result;
     }
 
+    /**
+     * Debit a driver who is holding cash. The balance is ALLOWED to go negative: they
+     * collected the money and owe the platform, and the debt is cleared at their next
+     * top-up or cash-out. Auto-creates a missing wallet and retries once so money owed
+     * is never silently lost. Returns whether the debit landed.
+     */
+    private async debitCashDebt(
+        driverId: string,
+        amount: number,
+        description: string,
+        metadata: Record<string, any>
+    ): Promise<boolean> {
+        if (!driverId || amount <= 0) return false;
+        try {
+            await this.walletService.debit(driverId, amount, description, metadata, true);
+            return true;
+        } catch (err) {
+            if (/Wallet not found/i.test((err as Error).message)) {
+                try {
+                    await this.walletService.createWallet(driverId);
+                    await this.walletService.debit(driverId, amount, description, metadata, true);
+                    return true;
+                } catch (retryErr) {
+                    log.error("Cash debit failed after wallet create", { driverId, amount, error: (retryErr as Error).message });
+                    return false;
+                }
+            }
+            log.error("Cash debit failed - amount uncollected", { driverId, amount, error: (err as Error).message });
+            return false;
+        }
+    }
+
+    /**
+     * Withhold tax (WHT) on a driver's GROSS share of a cash job and hold it in the tax
+     * escrow ledger. The escrow is simply wallet transactions tagged
+     * `type: "tax_escrow"`, so remittance reporting is a filtered query with no new
+     * table. Returns the amount withheld (0 when the market has no WHT configured).
+     */
+    private async withholdCashTax(
+        driverId: string,
+        grossShare: number,
+        settings: PlatformSettings | null,
+        country: string,
+        reference: string,
+        metadata: Record<string, any>
+    ): Promise<number> {
+        const whtRate = Number(settings?.whtRate || 0);
+        if (!driverId || whtRate <= 0 || grossShare <= 0) return 0;
+
+        const wht = Math.round(grossShare * (whtRate / 100) * 100) / 100;
+        if (wht <= 0) return 0;
+
+        const ok = await this.debitCashDebt(driverId, wht, `Withholding tax (${whtRate}%): ${reference}`, {
+            ...metadata,
+            type: "tax_escrow",
+            country,
+            whtRate,
+            grossShare,
+        });
+        return ok ? wht : 0;
+    }
+
     private async settleCashRide(
         ride: Ride,
         driverEarnings: number,
         platformFee: number,
         currency: string,
-        metadata: Record<string, any>
+        metadata: Record<string, any>,
+        settings: PlatformSettings | null,
+        country: string
     ): Promise<SettlementResult> {
         // Cash Ride: Driver collected full FinalFare.
         // They OWE the platformFee to the platform.
@@ -357,38 +421,27 @@ export class SettlementService {
         let driverDebited = false;
 
         if (ride.driverId && platformFee > 0) {
-            try {
-                // allowNegative: the driver collected the fare in cash and OWES this
-                // commission - the balance goes below zero and is reconciled at their
-                // next top-up/cash-out (standard ride-hailing behavior).
-                await this.walletService.debit(
-                    ride.driverId,
-                    platformFee,
-                    `Platform commission: Ride #${metadata.rideReference}`,
-                    metadata,
-                    true
-                );
-                driverDebited = true;
-            } catch (err) {
-                // With negative balances allowed this should only be a missing wallet -
-                // auto-create it and retry once so commission is never silently lost.
-                if (/Wallet not found/i.test((err as Error).message)) {
-                    try {
-                        await this.walletService.createWallet(ride.driverId);
-                        await this.walletService.debit(ride.driverId, platformFee, `Platform commission: Ride #${metadata.rideReference}`, metadata, true);
-                        driverDebited = true;
-                    } catch (retryErr) {
-                        log.error("Cash commission debit failed after wallet create", { driverId: ride.driverId, amount: platformFee, error: (retryErr as Error).message });
-                    }
-                } else {
-                    log.error("Cash commission debit failed - commission uncollected", {
-                        driverId: ride.driverId,
-                        amount: platformFee,
-                        error: (err as Error).message,
-                    });
-                }
-            }
+            driverDebited = await this.debitCashDebt(
+                ride.driverId,
+                platformFee,
+                `Platform commission: Ride #${metadata.rideReference}`,
+                metadata
+            );
         }
+
+        // Withhold tax on the driver's gross share and record VAT on the commission.
+        const taxWithheld = await this.withholdCashTax(
+            ride.driverId || "", driverEarnings, settings, country,
+            `Ride #${metadata.rideReference}`, metadata
+        );
+        const vatRate = Number(settings?.vatOnCommissionRate || 0);
+        metadata.tax = {
+            whtWithheld: taxWithheld,
+            whtRate: Number(settings?.whtRate || 0),
+            vatOnCommission: vatRate > 0 ? Math.round(platformFee * (vatRate / 100) * 100) / 100 : 0,
+            vatRate,
+            country,
+        };
 
         return {
             rideId: ride.id,
@@ -489,7 +542,8 @@ export class SettlementService {
         platformFee: number,
         deliveryFee: number,
         currency: string,
-        metadata: Record<string, any>
+        metadata: Record<string, any>,
+        country: string
     ): Promise<SettlementResult> {
         // Calculate internal split for audit
         const ridePortionRate = Number(settings?.deliveryRidePortionRate || 50);
@@ -518,25 +572,33 @@ export class SettlementService {
         let driverDebited = false;
         let merchantCredited = false;
 
-        // Debit driver - they owe (merchantEarnings + platformFee) from the cash collected
+        // Debit driver - they owe (merchantEarnings + platformFee) from the cash collected.
+        // This MUST allow a negative balance: the driver is holding the customer's cash
+        // and their wallet is typically near zero, so a plain debit threw "insufficient
+        // balance" and was swallowed - the platform lost the commission while the merchant
+        // was still credited below.
         if (order.driverId && driverOwes > 0) {
-            try {
-                await this.walletService.debit(
-                    order.driverId,
-                    driverOwes,
-                    `Cash settlement: Order #${order.orderNumber}`,
-                    metadata
-                );
-                driverDebited = true;
-            } catch (err) {
-                log.warn("Driver wallet debit failed (insufficient balance?)", {
-                    driverId: order.driverId,
-                    amount: driverOwes,
-                    error: (err as Error).message,
-                });
-                // Don't fail settlement - flag it for admin review
-            }
+            driverDebited = await this.debitCashDebt(
+                order.driverId,
+                driverOwes,
+                `Cash settlement: Order #${order.orderNumber}`,
+                metadata
+            );
         }
+
+        // Withhold tax on the driver's gross delivery share and record VAT on commission.
+        const taxWithheld = await this.withholdCashTax(
+            order.driverId || "", driverDeliveryEarnings, settings, country,
+            `Order #${order.orderNumber}`, metadata
+        );
+        const vatRate = Number(settings?.vatOnCommissionRate || 0);
+        metadata.tax = {
+            whtWithheld: taxWithheld,
+            whtRate: Number(settings?.whtRate || 0),
+            vatOnCommission: vatRate > 0 ? Math.round(platformFee * (vatRate / 100) * 100) / 100 : 0,
+            vatRate,
+            country,
+        };
 
         // Credit merchant
         if (merchantEarnings > 0) {
