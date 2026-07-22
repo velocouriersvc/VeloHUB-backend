@@ -69,6 +69,13 @@ export interface CreateProductInput {
 export interface CreateFoodOptionGroupInput {
     name: string;
     items: CreateOptionInput[];
+    /**
+     * How many items the buyer may pick from this group. 0 = unlimited (typical for
+     * food extras such as Egg + Goat meat + Wele), 1 = pick exactly one (service
+     * packages, sizes). Omitted defaults to 1 so older app builds keep their
+     * previous behaviour.
+     */
+    maxSelections?: number;
 }
 
 export interface UpdateProductInput {
@@ -99,6 +106,9 @@ export interface UpdateProductInput {
     isFragile?: boolean;
     isPerishable?: boolean;
     requiresOpenAir?: boolean;
+    /** Replaces the product's option groups when provided and non-empty. */
+    options?: CreateFoodOptionGroupInput[];
+    customizations?: CreateCustomizationInput[];
 }
 
 export interface CreateCustomizationInput {
@@ -302,11 +312,13 @@ export class ProductService {
 
             // Map 'options' alias to 'customizations' if provided (standard for food category)
             const customizations = input.customizations || (input.options?.length ? input.options.map(g => ({
-                title: g.name,
+                title: g.name?.trim() || "Extras",
                 options: g.items,
                 isRequired: false,
                 minSelections: 0,
-                maxSelections: 1,
+                // Was hardcoded to 1, which forced EVERY group the seller app created
+                // to be single-select: buyers could not pick Egg AND Goat meat.
+                maxSelections: g.maxSelections ?? 1,
                 sortOrder: 0
             })) : []);
 
@@ -387,6 +399,53 @@ export class ProductService {
         }
 
         return product;
+    }
+
+    /**
+     * Replace a product's option groups from an update payload.
+     *
+     * Only runs when the caller actually sends groups: an empty array is ignored so a
+     * screen that posts `options: []` for a non-food listing can never wipe a food
+     * product's groups. To remove every group, use the dedicated delete endpoint.
+     */
+    private async replaceCustomizations(productId: string, input: UpdateProductInput): Promise<void> {
+        const groups: CreateCustomizationInput[] | null = input.customizations?.length
+            ? input.customizations
+            : (input.options?.length
+                ? input.options.map((g) => ({
+                    title: g.name?.trim() || "Extras",
+                    options: g.items,
+                    isRequired: false,
+                    minSelections: 0,
+                    maxSelections: g.maxSelections ?? 1,
+                    sortOrder: 0,
+                }))
+                : null);
+        if (!groups) return;
+
+        // Options cascade with their customization, so removing the groups is enough.
+        await this.customizationRepo.delete({ productId });
+
+        for (const g of groups) {
+            const saved = await this.customizationRepo.save(this.customizationRepo.create({
+                productId,
+                title: g.title,
+                isRequired: g.isRequired ?? false,
+                minSelections: g.minSelections ?? 0,
+                maxSelections: g.maxSelections ?? 1,
+                sortOrder: g.sortOrder ?? 0,
+            }));
+            if (g.options?.length) {
+                await this.optionRepo.save(g.options.map((o) => this.optionRepo.create({
+                    customizationId: saved.id,
+                    name: o.name,
+                    price: o.price ?? 0,
+                    isDefault: o.isDefault ?? false,
+                    sortOrder: o.sortOrder ?? 0,
+                })));
+            }
+        }
+        log.info("Product option groups replaced", { productId, groupCount: groups.length });
     }
 
     // ── Variants (color/size SKUs) ──────────────────────────────────
@@ -759,6 +818,8 @@ export class ProductService {
 
         await this.productRepo.save(product);
         log.info("Product updated", { productId, merchantId });
+
+        await this.replaceCustomizations(productId, input);
 
         return this.getProductById(productId) as Promise<Product>;
     }
