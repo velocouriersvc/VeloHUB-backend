@@ -5,9 +5,18 @@ import { PlatformSettings } from "../models/platform-settings";
 import { v4 as uuidv4 } from "uuid";
 import { createServiceLogger } from "../utils/logger";
 import { currencyForCountry } from "../utils/currency";
-import { paymentProviderRegistry } from "./payment/payment-provider-registry";
 
 const log = createServiceLogger("WalletService");
+
+/**
+ * Load the gateway provider lazily. The registry constructs Stripe/Paystack clients on
+ * first import, which throws when their keys are unset, so importing it at module level
+ * would break every consumer of WalletService (and the test suite) in key-less envs.
+ */
+async function getGatewayProvider() {
+    const { paymentProviderRegistry } = await import("./payment/payment-provider-registry");
+    return paymentProviderRegistry.getGatewayProvider();
+}
 
 // Ghana mobile-money providers map to Paystack "mobile_money" bank codes; anything
 // else is treated as a bank account (nuban), with payoutMethod carrying the bank code.
@@ -62,7 +71,7 @@ export class WalletService {
         if (!wallet) return null;
         if (wallet.paystackRecipientCode) return wallet.paystackRecipientCode;
 
-        const provider = paymentProviderRegistry.getGatewayProvider();
+        const provider = await getGatewayProvider();
         if (!provider.createTransferRecipient) return null;
 
         const key = String(input.payoutMethod || "").toLowerCase().trim();
@@ -96,7 +105,7 @@ export class WalletService {
         if (!wallet?.paystackRecipientCode) {
             return { success: false, message: "No payout recipient on file" };
         }
-        const provider = paymentProviderRegistry.getGatewayProvider();
+        const provider = await getGatewayProvider();
         if (!provider.initiateTransfer) {
             return { success: false, message: "Transfers not supported by provider" };
         }
