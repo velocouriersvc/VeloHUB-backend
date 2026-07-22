@@ -989,6 +989,13 @@ export class PaymentService {
                     );
                     if (updated.affected) log.info("Service booking marked paid", { bookingId: id });
                 }
+                // Bookings sit in AWAITING_PAYMENT and are hidden from the provider
+                // until the money is actually collected: this releases them and sends
+                // the merchant their first notification. Idempotent on replay.
+                const { ServiceBookingService } = require("../service-booking-service");
+                await new ServiceBookingService().applyBookingPaidSideEffects(bookingIds).catch((e: Error) =>
+                    log.warn("Booking paid side effects failed", { bookingIds, error: e.message })
+                );
             }
             if (payment.orderId) {
                 const order = await this.orderRepo.findOne({ where: { id: payment.orderId } });

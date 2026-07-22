@@ -4,7 +4,7 @@ import { User } from "../models/user";
 import { PlatformSettings } from "../models/platform-settings";
 import { MerchantProfile } from "../models/merchant-profile";
 import { Product } from "../models/product";
-import { In } from "typeorm";
+import { In, Not, LessThan } from "typeorm";
 import { PaymentService } from "./payment/payment-service";
 import { NotificationService } from "./notification-service";
 import { NotificationType } from "../models/notification";
@@ -52,6 +52,21 @@ export function bookingStartAt(preferredDate: Date | string, slot?: string | nul
 }
 
 const log = createServiceLogger("ServiceBookingService");
+
+/**
+ * Chat and calling open up only once the provider has accepted the job, and close
+ * again when it reaches a terminal state. Before acceptance the two parties have no
+ * relationship yet, so contact details are withheld and messaging is refused.
+ */
+const CONTACTABLE_STATUSES: ServiceBookingStatus[] = [
+    ServiceBookingStatus.ACCEPTED,
+    ServiceBookingStatus.SCHEDULED,
+    ServiceBookingStatus.IN_PROGRESS,
+];
+
+export function canContact(status: ServiceBookingStatus): boolean {
+    return CONTACTABLE_STATUSES.includes(status);
+}
 
 export interface CreateBookingInput {
     customerId: string;
@@ -280,7 +295,9 @@ export class ServiceBookingService {
                 latitude: input.latitude || null,
                 longitude: input.longitude || null,
                 customerNotes: input.customerNotes || null,
-                status: ServiceBookingStatus.REQUESTED,
+                // Held out of the provider's view until the payment is confirmed;
+                // applyBookingPaidSideEffects promotes it to REQUESTED.
+                status: ServiceBookingStatus.AWAITING_PAYMENT,
                 paymentMethod: input.paymentMethod,
                 paymentStatus: ServicePaymentStatus.PENDING,
                 completionCode: uuidv4().slice(0, 6).toUpperCase(),
@@ -318,35 +335,70 @@ export class ServiceBookingService {
             throw new Error(paymentResult.message || "Payment initiation failed. Please try again.");
         }
 
-        // 7. Notifications (one per side, covering all dates). Give the merchant the
-        // scope up front: customer name, service, duration, date, and address.
+        // 7. The MERCHANT is deliberately not notified here. Payment has only been
+        // INITIATED at this point (for card/momo the customer still has to complete
+        // Paystack checkout), and a request must not reach a provider until the money
+        // is actually collected. applyBookingPaidSideEffects does that on confirmation.
+        // A wallet payment settles synchronously, so it has already run by now.
         const bookingNumber = bookings[0].bookingNumber;
-        const dateSummary = dates.length > 1 ? `${dates.length} dates starting ${dates[0]}` : dates[0];
-        const customerName = user.buyerProfile?.fullName || "A customer";
-        const bookedProduct = await this.productRepo.findOne({ where: { id: input.productId } });
-        const durationText = bookedProduct?.serviceDurationMin ? `, ${bookedProduct.serviceDurationMin} min` : "";
-        await this.notificationService.notify(
-            input.merchantId,
-            NotificationType.SERVICE_REQUESTED,
-            "New Service Booking! 🛠️",
-            `${customerName} booked "${input.serviceTitle}"${durationText} (${dateSummary})${input.serviceAddress ? ` at ${input.serviceAddress}` : ''}.`,
-            { bookingId: bookings[0].id, bookingNumber }
-        );
-        await this.notificationService.notify(
-            input.customerId,
-            NotificationType.SERVICE_REQUESTED,
-            "Booking Submitted! 📋",
-            `Your booking #${bookingNumber} for "${input.serviceTitle}" (${dateSummary}) has been submitted. The provider will respond shortly.`,
-            { bookingId: bookings[0].id, bookingNumber, jobId: bookings[0].id }
-        );
-
-        log.info("Service booking(s) created", { count: bookings.length, bookingNumber, callType: input.callType || "in_call" });
+        log.info("Service booking(s) created, awaiting payment", {
+            count: bookings.length, bookingNumber, callType: input.callType || "in_call",
+        });
 
         return {
             booking: bookings[0],
             bookings,
             payment: paymentResult
         };
+    }
+
+    /**
+     * Called once a booking's payment is CONFIRMED. Releases the request to the
+     * provider and confirms to the customer. Idempotent: only bookings still sitting
+     * in AWAITING_PAYMENT are promoted, so a webhook replay is harmless.
+     */
+    async applyBookingPaidSideEffects(bookingIds: string[]): Promise<void> {
+        if (!bookingIds?.length) return;
+
+        const bookings = await this.bookingRepo.find({ where: { id: In(bookingIds) } });
+        const pending = bookings.filter((b) => b.status === ServiceBookingStatus.AWAITING_PAYMENT);
+        if (pending.length === 0) return;
+
+        for (const b of pending) {
+            b.status = ServiceBookingStatus.REQUESTED;
+        }
+        await this.bookingRepo.save(pending);
+
+        const first = pending[0];
+        const dates = pending
+            .map((b) => new Date(b.preferredDate).toISOString().slice(0, 10))
+            .sort();
+        const dateSummary = dates.length > 1 ? `${dates.length} dates starting ${dates[0]}` : dates[0];
+
+        const customer = await this.userRepo.findOne({
+            where: { id: first.customerId },
+            relations: { buyerProfile: true },
+        });
+        const customerName = customer?.buyerProfile?.fullName || "A customer";
+        const bookedProduct = await this.productRepo.findOne({ where: { id: first.productId } });
+        const durationText = bookedProduct?.serviceDurationMin ? `, ${bookedProduct.serviceDurationMin} min` : "";
+
+        await this.notificationService.notify(
+            first.merchantId,
+            NotificationType.SERVICE_REQUESTED,
+            "New Service Booking! 🛠️",
+            `${customerName} booked "${first.serviceTitle}"${durationText} (${dateSummary})${first.serviceAddress ? ` at ${first.serviceAddress}` : ''}.`,
+            { bookingId: first.id, bookingNumber: first.bookingNumber }
+        );
+        await this.notificationService.notify(
+            first.customerId,
+            NotificationType.SERVICE_REQUESTED,
+            "Booking Confirmed! 📋",
+            `Your booking #${first.bookingNumber} for "${first.serviceTitle}" (${dateSummary}) is paid and sent to the provider. They will respond shortly.`,
+            { bookingId: first.id, bookingNumber: first.bookingNumber, jobId: first.id }
+        );
+
+        log.info("Booking paid side effects applied", { bookingIds: pending.map((b) => b.id) });
     }
 
     /**
@@ -452,6 +504,28 @@ export class ServiceBookingService {
      * appointment time: release the money hold (full refund) and notify both
      * sides. Run from the scheduled sweep. Returns the number expired.
      */
+    /**
+     * Cancel bookings whose customer never finished paying, so an abandoned checkout
+     * does not hold the provider's slot forever. No refund is issued: nothing was ever
+     * captured. The provider never saw these, so only the row is cleaned up.
+     * Mirrors OrderService.reapUnpaidOrders.
+     */
+    async reapUnpaidBookings(maxAgeMinutes = 15): Promise<number> {
+        const cutoff = new Date(Date.now() - maxAgeMinutes * 60_000);
+        const stale = await this.bookingRepo.find({
+            where: { status: ServiceBookingStatus.AWAITING_PAYMENT, createdAt: LessThan(cutoff) },
+            take: 200,
+        });
+        if (stale.length === 0) return 0;
+
+        for (const b of stale) {
+            b.status = ServiceBookingStatus.CANCELLED;
+        }
+        await this.bookingRepo.save(stale);
+        log.info("Unpaid bookings reaped", { count: stale.length, maxAgeMinutes });
+        return stale.length;
+    }
+
     async expireStaleBookings(leadHours = EXPIRY_LEAD_HOURS): Promise<number> {
         const candidates = await this.bookingRepo.find({
             where: { status: ServiceBookingStatus.REQUESTED },
@@ -509,6 +583,12 @@ export class ServiceBookingService {
         // Authorization check
         if (booking.customerId !== userId && booking.merchantId !== userId) {
             throw new Error("Unauthorized to update this booking");
+        }
+
+        // An unpaid booking is not a real request yet: nobody can accept, decline or
+        // otherwise act on it until the payment confirms and it becomes REQUESTED.
+        if (booking.status === ServiceBookingStatus.AWAITING_PAYMENT) {
+            throw new Error("This booking is not confirmed yet: payment is still pending.");
         }
 
         // When merchant accepts, re-check for conflicts (race condition guard)
@@ -613,12 +693,22 @@ export class ServiceBookingService {
         const merchantIds = [...new Set(bookings.map((b) => b.merchantId))];
         const profiles = await this.merchantProfileRepo.find({ where: { userId: In(merchantIds) } });
         const byMerchant = new Map(profiles.map((p) => [p.userId, p]));
+        // A provider who never filled in a business phone still has an account phone.
+        // Without this fallback the customer's call button simply vanished.
+        const merchantUsers = await this.userRepo.find({ where: { id: In(merchantIds) } });
+        const phoneByMerchant = new Map(merchantUsers.map((u) => [u.id, u.phoneNumber]));
+
         return bookings.map((b) => {
             const p = byMerchant.get(b.merchantId);
+            const providerPhone = p?.businessPhone || phoneByMerchant.get(b.merchantId) || null;
+            const contactable = canContact(b.status);
             return {
                 ...b,
                 providerAddress: p?.address || null,
-                providerPhone: p?.businessPhone || null,
+                // Contact details are released only once the provider has accepted.
+                providerPhone: contactable ? providerPhone : null,
+                canContact: contactable,
+                canCall: contactable && !!providerPhone,
                 providerLat: p?.latitude ?? null,
                 providerLng: p?.longitude ?? null,
             };
@@ -627,7 +717,10 @@ export class ServiceBookingService {
 
     async getMerchantBookings(merchantId: string) {
         const bookings = await this.bookingRepo.find({
-            where: { merchantId },
+            // Unpaid bookings are AWAITING_PAYMENT and must never reach the provider:
+            // the customer may still abandon Paystack checkout. Mirrors the order list
+            // filter in merchant-service.getOrders.
+            where: { merchantId, status: Not(ServiceBookingStatus.AWAITING_PAYMENT) },
             // product carries serviceDurationMin so the provider sees the duration.
             relations: {
                 customer: { buyerProfile: true },
@@ -638,17 +731,23 @@ export class ServiceBookingService {
 
         // Flatten customer + service details so the provider sees the scope of the
         // request at a glance (name, service, duration).
-        return bookings.map(b => ({
-            ...b,
-            customerName: b.customer?.buyerProfile?.fullName || "Valued Customer",
-            customerPhone: b.customer?.phoneNumber || null,
-            serviceDurationMin: b.product?.serviceDurationMin ?? null,
-            customerProfile: {
+        return bookings.map(b => {
+            const contactable = canContact(b.status);
+            const customerPhone = contactable ? (b.customer?.phoneNumber || null) : null;
+            return {
+                ...b,
                 customerName: b.customer?.buyerProfile?.fullName || "Valued Customer",
-                customerPhone: b.customer?.phoneNumber || "N/A",
-                customerRating: 5.0,
-            }
-        }));
+                customerPhone,
+                canContact: contactable,
+                canCall: !!customerPhone,
+                serviceDurationMin: b.product?.serviceDurationMin ?? null,
+                customerProfile: {
+                    customerName: b.customer?.buyerProfile?.fullName || "Valued Customer",
+                    customerPhone: customerPhone || "N/A",
+                    customerRating: 5.0,
+                },
+            };
+        });
     }
 
     /**
@@ -719,6 +818,10 @@ export class ServiceBookingService {
         if (booking.customerId !== userId && booking.merchantId !== userId) {
             throw new Error("Unauthorized to view this booking");
         }
+        // Readable while the job is live, and afterwards so the history survives.
+        if (!canContact(booking.status) && booking.status !== ServiceBookingStatus.COMPLETED) {
+            throw new Error("Unauthorized: chat opens once the provider accepts this booking.");
+        }
         const messages = await this.messageRepo.find({ where: { bookingId }, order: { createdAt: "ASC" } });
         return { booking, messages };
     }
@@ -728,6 +831,9 @@ export class ServiceBookingService {
         if (!booking) throw new Error("Booking not found");
         if (booking.customerId !== userId && booking.merchantId !== userId) {
             throw new Error("Unauthorized to message on this booking");
+        }
+        if (!canContact(booking.status)) {
+            throw new Error("Unauthorized: chat opens once the provider accepts this booking.");
         }
         const senderRole = userId === booking.customerId ? "customer" : "provider";
         const message = await this.messageRepo.save(this.messageRepo.create({

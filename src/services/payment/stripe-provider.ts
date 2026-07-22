@@ -12,20 +12,33 @@ const log = createServiceLogger("StripeProvider");
 
 export class StripeProvider implements PaymentProvider {
     name = "stripe";
-    private stripe: Stripe;
+    private _stripe: Stripe | null = null;
+    private secretKey: string;
     private webhookSecret: string;
 
     constructor() {
-        const secretKey = process.env.STRIPE_SECRET_KEY || "";
+        this.secretKey = process.env.STRIPE_SECRET_KEY || "";
         this.webhookSecret = process.env.STRIPE_WEBHOOK_SECRET || "";
 
-        if (!secretKey) {
+        if (!this.secretKey) {
             log.warn("STRIPE_SECRET_KEY not set");
         }
+    }
 
-        this.stripe = new Stripe(secretKey, {
-            apiVersion: "2025-04-30.basil" as any,
-        });
+    /**
+     * Built on first use, not in the constructor. The Stripe SDK throws on an empty
+     * key, and the provider registry instantiates every provider at import time, so
+     * constructing it eagerly made merely IMPORTING anything that reaches
+     * payment-service fail wherever Stripe is unconfigured. Paystack already behaves
+     * this way (warn, carry on).
+     */
+    private get stripe(): Stripe {
+        if (!this._stripe) {
+            this._stripe = new Stripe(this.secretKey, {
+                apiVersion: "2025-04-30.basil" as any,
+            });
+        }
+        return this._stripe;
     }
 
     // ── Payment Intent (Stripe's primary card flow) ──────────────────

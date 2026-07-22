@@ -216,7 +216,10 @@ export const validate = (builders: RuleBuilder[]) => {
         }
 
         if (errors.length > 0) {
-            return res.status(400).json({ success: false, errors });
+            // Include a top-level `message` as well as the field list: clients read
+            // `message` for the alert they show, and without it a validation failure
+            // surfaces to the user as a bare "request failed with status 400".
+            return res.status(400).json({ success: false, message: errors[0].message, errors });
         }
 
         next();
