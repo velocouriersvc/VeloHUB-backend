@@ -685,42 +685,48 @@ export class MerchantService {
         order.status = OrderStatus.PICKED_UP;
         order.pickedUpAt = new Date();
 
-        await this.orderRepo.save(order);
-        await this.recordStatusChange(orderId, fromStatus, OrderStatus.PICKED_UP, merchantId, "merchant", "Pickup code verified");
-
-        // Emit WebSocket event for real-time tracking
-        emitOrderEvent(orderId, "order:status", {
-            orderId,
-            status: OrderStatus.PICKED_UP,
-            updatedAt: new Date().toISOString(),
-        });
-
-        // Notify customer
-        await this.notificationService.notify(
-            order.customerId,
-            NotificationType.ORDER_PICKED_UP,
-            "Order Picked Up! 🚚",
-            `Your order #${order.orderNumber} has been picked up and is on the way!`,
-            { orderId, status: OrderStatus.PICKED_UP }
-        );
-
-        // Delivery orders: issue the drop-off code the customer gives the driver on
-        // arrival, and send it by push + SMS (visible on the tracking screen too).
-        if (usingDriverCode && order.deliveryType === DeliveryType.DELIVERY) {
+        // Delivery handover: the customer needs a drop-off code to give the driver on
+        // arrival. Mint it before saving so the whole handover commits in one write.
+        const isDeliveryHandover = usingDriverCode && order.deliveryType === DeliveryType.DELIVERY;
+        if (isDeliveryHandover) {
             if (!order.deliveryCode) {
                 order.deliveryCode = new PickupCodeService().generate();
             }
             order.requireDeliveryCode = true;
-            await this.orderRepo.save(order);
+        }
+
+        await this.orderRepo.save(order);
+
+        // Everything below is best effort. The handover is already committed, so an
+        // audit, socket or notification failure must never be reported to the merchant
+        // as a failed verification: that used to leave the order picked up while the
+        // app showed "Action Failed", and the merchant could not retry (the status
+        // guard above rejects an order that is already PICKED_UP).
+        try {
+            await this.recordStatusChange(orderId, fromStatus, OrderStatus.PICKED_UP, merchantId, "merchant", "Pickup code verified");
+
+            emitOrderEvent(orderId, "order:status", {
+                orderId,
+                status: OrderStatus.PICKED_UP,
+                updatedAt: new Date().toISOString(),
+            });
 
             await this.notificationService.notify(
                 order.customerId,
-                NotificationType.ORDER_IN_TRANSIT,
-                "Your delivery code 🔑",
-                `Give code ${order.deliveryCode} to your driver on arrival to receive order #${order.orderNumber}.`,
-                { orderId, deliveryCode: order.deliveryCode }
+                NotificationType.ORDER_PICKED_UP,
+                "Order Picked Up! 🚚",
+                `Your order #${order.orderNumber} has been picked up and is on the way!`,
+                { orderId, status: OrderStatus.PICKED_UP }
             );
-            try {
+
+            if (isDeliveryHandover) {
+                await this.notificationService.notify(
+                    order.customerId,
+                    NotificationType.ORDER_IN_TRANSIT,
+                    "Your delivery code 🔑",
+                    `Give code ${order.deliveryCode} to your driver on arrival to receive order #${order.orderNumber}.`,
+                    { orderId, deliveryCode: order.deliveryCode }
+                );
                 const customer = await this.userRepo.findOne({ where: { id: order.customerId } });
                 if (customer?.phoneNumber) {
                     await this.notificationService.notifyBySms(
@@ -728,9 +734,9 @@ export class MerchantService {
                         `Velo: your delivery code for order #${order.orderNumber} is ${order.deliveryCode}. Give it to your driver on arrival.`
                     );
                 }
-            } catch (err) {
-                log.warn("Delivery code SMS failed", { orderId, error: (err as Error).message });
             }
+        } catch (err) {
+            log.warn("Post-verification side effects failed (handover already committed)", { orderId, error: (err as Error).message });
         }
 
         log.info("Pickup code verified", { orderId, merchantId });

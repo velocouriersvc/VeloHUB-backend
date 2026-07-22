@@ -549,8 +549,11 @@ router.patch("/orders/:orderId/status", merchantRole, validate([
  *       403:
  *         description: Invalid API key or merchant role not approved
  */
+// The body field is `code` (what the app sends and the controller reads). It carries
+// EITHER the driver's 4-digit handover PIN (delivery orders) or the customer's 6-char
+// store pickup code, so the minimum length is 4.
 router.post("/orders/:orderId/verify-pickup", merchantRole, validate([
-    body("pickupCode").required().isString().minLength(6),
+    body("code").required().isString().minLength(4),
 ]), merchantController.verifyPickupCode);
 
 /**
