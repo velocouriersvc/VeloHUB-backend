@@ -440,7 +440,7 @@ const SETTINGS: Partial<PlatformSettings>[] = [
  * Seed platform_settings rows.
  * UPSERTS - existing rows are UPDATED to match the latest config.
  */
-export const PLATFORM_SETTINGS_SEED_VERSION = 5;
+export const PLATFORM_SETTINGS_SEED_VERSION = 6;
 
 async function getAppliedVersion(): Promise<number> {
     await AppDataSource.query(`CREATE TABLE IF NOT EXISTS seed_meta (key TEXT PRIMARY KEY, value TEXT)`);
@@ -499,13 +499,21 @@ export async function seedPlatformSettings(alreadyInitialised = false) {
     // Velo operates globally now. Re-activate every seeded market and ensure a global
     // "DEFAULT" (USD) row exists as the fallback for any country without a specific row.
     await repo.createQueryBuilder().update().set({ isActive: true }).where("isActive = false").execute();
-    const hasDefault = await repo.findOne({ where: { country: "DEFAULT" } });
-    if (!hasDefault) {
-        const us = await repo.findOne({ where: { country: "US" } });
-        if (us) {
-            const { id, ...rest } = us as any;
-            await repo.save(repo.create({ ...rest, country: "DEFAULT", currency: "USD", isActive: true }));
+
+    // The DEFAULT row mirrors the US baseline. It used to be created once and never
+    // touched again, so it drifted: fixes to the seeded markets never reached fallback
+    // markets, and NEW columns silently took their entity defaults (e.g. it picked up
+    // Ghana's 5% WHT). Re-sync it on every full upsert so it always tracks US.
+    const us = await repo.findOne({ where: { country: "US" } });
+    if (us) {
+        const { id, country, currency, ...baseline } = us as any;
+        const existingDefault = await repo.findOne({ where: { country: "DEFAULT" } });
+        if (!existingDefault) {
+            await repo.save(repo.create({ ...baseline, country: "DEFAULT", currency: "USD", isActive: true }));
             console.log("✅ platform_settings: created global DEFAULT (USD) fallback row");
+        } else if (fullUpsert) {
+            await repo.save(repo.merge(existingDefault, { ...baseline, currency: "USD", isActive: true }));
+            console.log("✅ platform_settings: re-synced global DEFAULT (USD) fallback row from US");
         }
     }
 
