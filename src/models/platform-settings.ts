@@ -97,6 +97,14 @@ export class PlatformSettings {
     @Column({ type: "decimal", precision: 5, scale: 2, default: 0.00 })
     serviceBookingFeeRate: number;
 
+    /** Platform-set out-call travel rates (USD), converted to the local currency
+     *  at booking time. Providers no longer set their own travel fees. */
+    @Column({ type: "decimal", precision: 6, scale: 2, default: 0.65 })
+    serviceTravelPerKmUsd: number;
+
+    @Column({ type: "decimal", precision: 6, scale: 2, default: 0.20 })
+    serviceTravelPerMinUsd: number;
+
     /** Late cancellation fee (after cancellation window) */
     @Column({ type: "decimal", precision: 10, scale: 2, default: 5.00 })
     lateCancellationFee: number;

@@ -803,15 +803,30 @@ export class RideService {
             await this.notificationService.notifyRideCancelled(ride.customerId, cancelMessage, rideId);
         }
 
-        // Full refund (e.g. driver's vehicle/plate did not match). Refunds any
-        // successful prepayment to the customer's wallet; cash rides refund nothing.
-        if (fullRefund && cancelledBy === CancelledBy.CUSTOMER) {
+        // Any cancellation of a PREPAID (card/momo) ride refunds the fare to the
+        // customer's original payment method via Paystack, falling back to their wallet
+        // if the gateway refund is not possible. Cash rides collected nothing, so there
+        // is nothing to refund. (The `fullRefund` flag is retained for callers but a
+        // paid, un-started ride is always fully refunded.)
+        void fullRefund;
+        if (ride.paymentStatus === PaymentStatus.PAID) {
             try {
-                const refunded = await this.paymentService.refundRidePayment(rideId);
+                const fare = Math.round(Number(ride.finalFare || 0) * 100) / 100;
+                const { refunded, toSource } = await this.paymentService.refundToSource({
+                    rideId,
+                    userId: ride.customerId,
+                    sourceAmount: fare,
+                    walletAmount: fare,
+                    reason: `Refund for cancelled ride ${rideId}`,
+                });
                 if (refunded > 0) {
+                    ride.paymentStatus = PaymentStatus.REFUNDED;
+                    await this.rideRepo.save(ride);
                     await this.notificationService.notifyRideCancelled(
                         ride.customerId,
-                        `You were fully refunded ${refunded} to your wallet for the cancelled ride.`,
+                        toSource
+                            ? `Your ride was cancelled. A refund of ${refunded} to your payment method is being processed.`
+                            : `Your ride was cancelled. ${refunded} has been refunded to your Velo wallet.`,
                         rideId
                     );
                 }

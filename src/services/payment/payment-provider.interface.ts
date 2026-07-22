@@ -62,6 +62,30 @@ export interface PaymentProvider {
     refund?(reference: string, amount?: number): Promise<{ success: boolean; message?: string }>;
 
     /**
+     * Create/fetch a transfer recipient for payouts (optional; Paystack supports it).
+     * Returns a recipient code to store and reuse for future transfers.
+     */
+    createTransferRecipient?(input: {
+        type: "mobile_money" | "nuban";
+        name: string;
+        account_number: string;
+        bank_code: string;
+        currency: string;
+    }): Promise<{ success: boolean; recipientCode?: string; message?: string }>;
+
+    /**
+     * Initiate a payout transfer to a stored recipient (optional; Paystack supports it).
+     * Amount in major units.
+     */
+    initiateTransfer?(input: {
+        amount: number;
+        recipient: string;
+        currency: string;
+        reason: string;
+        reference: string;
+    }): Promise<{ success: boolean; transferCode?: string; status?: string; message?: string }>;
+
+    /**
      * Verify a payment by reference
      */
     verifyPayment(reference: string): Promise<PaymentVerification>;

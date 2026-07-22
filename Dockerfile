@@ -20,6 +20,11 @@ FROM node:20-alpine
 
 WORKDIR /app
 
+# The npm bundled with node:20-alpine (10.x) ships tar 6.2.1, which is flagged by
+# CVE-2026-59873 (gzip-bomb DoS). npm 11.18.0 bundles the patched tar 7.5.19 and still
+# supports Node ^20.17.0, so upgrade the CLI before installing.
+RUN npm install -g npm@11.18.0 && npm cache clean --force
+
 # Copy package files
 COPY package*.json ./
 

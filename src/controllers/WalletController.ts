@@ -50,4 +50,28 @@ export class WalletController {
             return res.status(500).json({ message: "Internal server error" });
         }
     };
+
+    /**
+     * POST /wallet/request-payout
+     * Request a payout from the wallet (driver or buyer). Debits the wallet and sets
+     * up the Paystack recipient; an admin approves the actual disbursement.
+     */
+    requestPayout = async (req: AuthRequest, res: Response) => {
+        try {
+            const userId = req.user?.id;
+            if (!userId) return res.status(401).json({ message: "User ID required" });
+
+            const { amount, payoutMethod, accountNumber, accountName } = req.body || {};
+            const result = await this.walletService.requestPayout(userId, {
+                amount: Number(amount),
+                payoutMethod,
+                accountNumber,
+                accountName,
+            });
+            return res.status(200).json(result);
+        } catch (error) {
+            log.error("Error requesting payout", { error: (error as Error).message });
+            return res.status(400).json({ message: (error as Error).message });
+        }
+    };
 }

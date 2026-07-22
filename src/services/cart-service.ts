@@ -513,27 +513,37 @@ export class CartService {
     }
 
     /**
-     * Validate that all required customizations have at least one option selected.
+     * Validate customizations: every required group has at least one option, and no
+     * group exceeds its maxSelections cap (maxSelections <= 0 means unlimited).
      */
     private async validateRequiredCustomizations(
         productId: string,
         selectedOptions: Array<{ customizationId: string; optionId: string }>
     ): Promise<void> {
         const customizations = await this.customizationRepo.find({
-            where: { productId, isRequired: true },
+            where: { productId },
         });
 
-        const selectedCustomizationIds = new Set(
-            selectedOptions.map((o) => o.customizationId)
-        );
+        // Count how many options were picked for each customization group.
+        const countByCustomization = new Map<string, number>();
+        for (const o of selectedOptions) {
+            countByCustomization.set(o.customizationId, (countByCustomization.get(o.customizationId) || 0) + 1);
+        }
 
         const missing = customizations.filter(
-            (c) => !selectedCustomizationIds.has(c.id)
+            (c) => c.isRequired && !countByCustomization.has(c.id)
         );
-
         if (missing.length > 0) {
             const names = missing.map((c) => `"${c.title}"`).join(", ");
             throw new Error(`Required customization(s) not selected: ${names}`);
+        }
+
+        const overLimit = customizations.filter(
+            (c) => c.maxSelections > 0 && (countByCustomization.get(c.id) || 0) > c.maxSelections
+        );
+        if (overLimit.length > 0) {
+            const c = overLimit[0];
+            throw new Error(`You can select at most ${c.maxSelections} option(s) for "${c.title}".`);
         }
     }
 

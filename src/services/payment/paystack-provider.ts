@@ -189,6 +189,82 @@ export class PaystackProvider implements PaymentProvider {
     }
 
     /**
+     * Create (or fetch) a Paystack transfer recipient for a payout destination.
+     * `type` is "mobile_money" (Ghana momo) or "nuban" (Nigeria bank). Returns the
+     * recipient_code, which is stored and reused for all future transfers to that
+     * account. Paystack is idempotent on identical account details.
+     */
+    async createTransferRecipient(input: {
+        type: "mobile_money" | "nuban";
+        name: string;
+        account_number: string;
+        bank_code: string;
+        currency: string;
+    }): Promise<{ success: boolean; recipientCode?: string; message?: string }> {
+        try {
+            const response = await axios.post(
+                `${PAYSTACK_BASE_URL}/transferrecipient`,
+                {
+                    type: input.type,
+                    name: input.name,
+                    account_number: input.account_number,
+                    bank_code: input.bank_code,
+                    currency: input.currency,
+                },
+                { headers: this.headers }
+            );
+            const recipientCode = response.data?.data?.recipient_code;
+            return { success: response.data?.status === true && !!recipientCode, recipientCode };
+        } catch (error) {
+            const axErr = error as AxiosError<{ message?: string }>;
+            const message = axErr.response?.data?.message || axErr.message;
+            log.error("Paystack create recipient error", { error: message });
+            return { success: false, message };
+        }
+    }
+
+    /**
+     * Initiate a transfer (payout) from the Paystack balance to a stored recipient.
+     * `amount` is in major units (GHS/NGN); converted to subunits here. Returns the
+     * transfer_code and status (transfers may complete asynchronously via webhook).
+     */
+    async initiateTransfer(input: {
+        amount: number;
+        recipient: string;
+        currency: string;
+        reason: string;
+        reference: string;
+    }): Promise<{ success: boolean; transferCode?: string; status?: string; message?: string }> {
+        try {
+            const response = await axios.post(
+                `${PAYSTACK_BASE_URL}/transfer`,
+                {
+                    source: "balance",
+                    amount: Math.round(input.amount * 100),
+                    recipient: input.recipient,
+                    currency: input.currency,
+                    reason: input.reason,
+                    reference: input.reference,
+                },
+                { headers: this.headers }
+            );
+            const data = response.data?.data;
+            // "success", "pending", and "otp" all mean the transfer was accepted;
+            // only an exception (caught below) is a hard failure.
+            return {
+                success: response.data?.status === true,
+                transferCode: data?.transfer_code,
+                status: data?.status,
+            };
+        } catch (error) {
+            const axErr = error as AxiosError<{ message?: string }>;
+            const message = axErr.response?.data?.message || axErr.message;
+            log.error("Paystack transfer error", { reference: input.reference, error: message });
+            return { success: false, message };
+        }
+    }
+
+    /**
      * Verify Paystack webhook signature
      */
     verifyWebhookSignature(payload: string, signature: string): boolean {
