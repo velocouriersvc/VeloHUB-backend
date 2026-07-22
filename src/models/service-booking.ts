@@ -3,6 +3,10 @@ import { User } from "./user";
 import { Product } from "./product";
 
 export enum ServiceBookingStatus {
+    // Created but not paid yet. The provider must never see these: a booking only
+    // reaches them once the customer's payment is actually confirmed. Mirrors
+    // OrderStatus.AWAITING_PAYMENT.
+    AWAITING_PAYMENT = "awaiting_payment",
     REQUESTED = "requested",
     ACCEPTED = "accepted",
     DECLINED = "declined",

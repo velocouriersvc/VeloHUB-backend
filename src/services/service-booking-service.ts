@@ -4,7 +4,7 @@ import { User } from "../models/user";
 import { PlatformSettings } from "../models/platform-settings";
 import { MerchantProfile } from "../models/merchant-profile";
 import { Product } from "../models/product";
-import { In } from "typeorm";
+import { In, Not, LessThan } from "typeorm";
 import { PaymentService } from "./payment/payment-service";
 import { NotificationService } from "./notification-service";
 import { NotificationType } from "../models/notification";
@@ -295,7 +295,9 @@ export class ServiceBookingService {
                 latitude: input.latitude || null,
                 longitude: input.longitude || null,
                 customerNotes: input.customerNotes || null,
-                status: ServiceBookingStatus.REQUESTED,
+                // Held out of the provider's view until the payment is confirmed;
+                // applyBookingPaidSideEffects promotes it to REQUESTED.
+                status: ServiceBookingStatus.AWAITING_PAYMENT,
                 paymentMethod: input.paymentMethod,
                 paymentStatus: ServicePaymentStatus.PENDING,
                 completionCode: uuidv4().slice(0, 6).toUpperCase(),
@@ -333,35 +335,70 @@ export class ServiceBookingService {
             throw new Error(paymentResult.message || "Payment initiation failed. Please try again.");
         }
 
-        // 7. Notifications (one per side, covering all dates). Give the merchant the
-        // scope up front: customer name, service, duration, date, and address.
+        // 7. The MERCHANT is deliberately not notified here. Payment has only been
+        // INITIATED at this point (for card/momo the customer still has to complete
+        // Paystack checkout), and a request must not reach a provider until the money
+        // is actually collected. applyBookingPaidSideEffects does that on confirmation.
+        // A wallet payment settles synchronously, so it has already run by now.
         const bookingNumber = bookings[0].bookingNumber;
-        const dateSummary = dates.length > 1 ? `${dates.length} dates starting ${dates[0]}` : dates[0];
-        const customerName = user.buyerProfile?.fullName || "A customer";
-        const bookedProduct = await this.productRepo.findOne({ where: { id: input.productId } });
-        const durationText = bookedProduct?.serviceDurationMin ? `, ${bookedProduct.serviceDurationMin} min` : "";
-        await this.notificationService.notify(
-            input.merchantId,
-            NotificationType.SERVICE_REQUESTED,
-            "New Service Booking! 🛠️",
-            `${customerName} booked "${input.serviceTitle}"${durationText} (${dateSummary})${input.serviceAddress ? ` at ${input.serviceAddress}` : ''}.`,
-            { bookingId: bookings[0].id, bookingNumber }
-        );
-        await this.notificationService.notify(
-            input.customerId,
-            NotificationType.SERVICE_REQUESTED,
-            "Booking Submitted! 📋",
-            `Your booking #${bookingNumber} for "${input.serviceTitle}" (${dateSummary}) has been submitted. The provider will respond shortly.`,
-            { bookingId: bookings[0].id, bookingNumber, jobId: bookings[0].id }
-        );
-
-        log.info("Service booking(s) created", { count: bookings.length, bookingNumber, callType: input.callType || "in_call" });
+        log.info("Service booking(s) created, awaiting payment", {
+            count: bookings.length, bookingNumber, callType: input.callType || "in_call",
+        });
 
         return {
             booking: bookings[0],
             bookings,
             payment: paymentResult
         };
+    }
+
+    /**
+     * Called once a booking's payment is CONFIRMED. Releases the request to the
+     * provider and confirms to the customer. Idempotent: only bookings still sitting
+     * in AWAITING_PAYMENT are promoted, so a webhook replay is harmless.
+     */
+    async applyBookingPaidSideEffects(bookingIds: string[]): Promise<void> {
+        if (!bookingIds?.length) return;
+
+        const bookings = await this.bookingRepo.find({ where: { id: In(bookingIds) } });
+        const pending = bookings.filter((b) => b.status === ServiceBookingStatus.AWAITING_PAYMENT);
+        if (pending.length === 0) return;
+
+        for (const b of pending) {
+            b.status = ServiceBookingStatus.REQUESTED;
+        }
+        await this.bookingRepo.save(pending);
+
+        const first = pending[0];
+        const dates = pending
+            .map((b) => new Date(b.preferredDate).toISOString().slice(0, 10))
+            .sort();
+        const dateSummary = dates.length > 1 ? `${dates.length} dates starting ${dates[0]}` : dates[0];
+
+        const customer = await this.userRepo.findOne({
+            where: { id: first.customerId },
+            relations: { buyerProfile: true },
+        });
+        const customerName = customer?.buyerProfile?.fullName || "A customer";
+        const bookedProduct = await this.productRepo.findOne({ where: { id: first.productId } });
+        const durationText = bookedProduct?.serviceDurationMin ? `, ${bookedProduct.serviceDurationMin} min` : "";
+
+        await this.notificationService.notify(
+            first.merchantId,
+            NotificationType.SERVICE_REQUESTED,
+            "New Service Booking! 🛠️",
+            `${customerName} booked "${first.serviceTitle}"${durationText} (${dateSummary})${first.serviceAddress ? ` at ${first.serviceAddress}` : ''}.`,
+            { bookingId: first.id, bookingNumber: first.bookingNumber }
+        );
+        await this.notificationService.notify(
+            first.customerId,
+            NotificationType.SERVICE_REQUESTED,
+            "Booking Confirmed! 📋",
+            `Your booking #${first.bookingNumber} for "${first.serviceTitle}" (${dateSummary}) is paid and sent to the provider. They will respond shortly.`,
+            { bookingId: first.id, bookingNumber: first.bookingNumber, jobId: first.id }
+        );
+
+        log.info("Booking paid side effects applied", { bookingIds: pending.map((b) => b.id) });
     }
 
     /**
@@ -467,6 +504,28 @@ export class ServiceBookingService {
      * appointment time: release the money hold (full refund) and notify both
      * sides. Run from the scheduled sweep. Returns the number expired.
      */
+    /**
+     * Cancel bookings whose customer never finished paying, so an abandoned checkout
+     * does not hold the provider's slot forever. No refund is issued: nothing was ever
+     * captured. The provider never saw these, so only the row is cleaned up.
+     * Mirrors OrderService.reapUnpaidOrders.
+     */
+    async reapUnpaidBookings(maxAgeMinutes = 15): Promise<number> {
+        const cutoff = new Date(Date.now() - maxAgeMinutes * 60_000);
+        const stale = await this.bookingRepo.find({
+            where: { status: ServiceBookingStatus.AWAITING_PAYMENT, createdAt: LessThan(cutoff) },
+            take: 200,
+        });
+        if (stale.length === 0) return 0;
+
+        for (const b of stale) {
+            b.status = ServiceBookingStatus.CANCELLED;
+        }
+        await this.bookingRepo.save(stale);
+        log.info("Unpaid bookings reaped", { count: stale.length, maxAgeMinutes });
+        return stale.length;
+    }
+
     async expireStaleBookings(leadHours = EXPIRY_LEAD_HOURS): Promise<number> {
         const candidates = await this.bookingRepo.find({
             where: { status: ServiceBookingStatus.REQUESTED },
@@ -524,6 +583,12 @@ export class ServiceBookingService {
         // Authorization check
         if (booking.customerId !== userId && booking.merchantId !== userId) {
             throw new Error("Unauthorized to update this booking");
+        }
+
+        // An unpaid booking is not a real request yet: nobody can accept, decline or
+        // otherwise act on it until the payment confirms and it becomes REQUESTED.
+        if (booking.status === ServiceBookingStatus.AWAITING_PAYMENT) {
+            throw new Error("This booking is not confirmed yet: payment is still pending.");
         }
 
         // When merchant accepts, re-check for conflicts (race condition guard)
@@ -652,7 +717,10 @@ export class ServiceBookingService {
 
     async getMerchantBookings(merchantId: string) {
         const bookings = await this.bookingRepo.find({
-            where: { merchantId },
+            // Unpaid bookings are AWAITING_PAYMENT and must never reach the provider:
+            // the customer may still abandon Paystack checkout. Mirrors the order list
+            // filter in merchant-service.getOrders.
+            where: { merchantId, status: Not(ServiceBookingStatus.AWAITING_PAYMENT) },
             // product carries serviceDurationMin so the provider sees the duration.
             relations: {
                 customer: { buyerProfile: true },

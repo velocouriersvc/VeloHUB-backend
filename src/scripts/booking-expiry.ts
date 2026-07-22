@@ -20,6 +20,11 @@ export function startBookingExpiry(): void {
         try {
             const count = await service.expireStaleBookings(EXPIRY_LEAD_HOURS);
             if (count > 0) logger.info("Stale service bookings expired", { count });
+
+            // Abandoned checkouts: cancel unpaid bookings so they stop holding the
+            // provider's slot. No refund - nothing was ever captured.
+            const reaped = await service.reapUnpaidBookings();
+            if (reaped > 0) logger.info("Unpaid service bookings reaped", { count: reaped });
         } catch (err) {
             logger.warn("Booking expiry tick failed", { error: (err as Error).message });
         } finally {
