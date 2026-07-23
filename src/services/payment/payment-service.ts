@@ -969,7 +969,8 @@ export class PaymentService {
         });
         const reference = (payment?.metadata as any)?.reference;
         if (!payment || !reference) return false;
-        const confirmed = await this.confirmPayment(reference).catch(() => null);
+        // Poll mode: only promotes on success, never marks the payment failed.
+        const confirmed = await this.confirmPayment(reference, undefined, false).catch(() => null);
         return confirmed?.status === PaymentRecordStatus.SUCCESS;
     }
 
@@ -1137,9 +1138,16 @@ export class PaymentService {
     }
 
     /**
-     * Confirm a pending payment (called by webhook or manual verification)
+     * Confirm a pending payment (called by webhook or manual verification).
+     *
+     * `failOnNonSuccess` (default true) marks the payment FAILED when the gateway does
+     * not report success. That is right for one-shot callers (webhook, browser callback)
+     * but MUST be false for the repeated status poll and the reaper: a transaction the
+     * customer is still completing verifies as pending/ongoing (not success), and marking
+     * it FAILED on the first poll would kill a payment mid-flow. In poll mode a non-success
+     * result simply leaves the payment PENDING so a later poll (or the webhook) can confirm.
      */
-    async confirmPayment(reference: string, country?: string): Promise<Payment | null> {
+    async confirmPayment(reference: string, country?: string, failOnNonSuccess = true): Promise<Payment | null> {
         const provider = paymentProviderRegistry.getProvider(country || "GH");
 
         const payment = await this.getPaymentByReference(reference);
@@ -1171,7 +1179,7 @@ export class PaymentService {
 
             log.info("Payment confirmed", { paymentId: payment.id, reference });
             paymentEventsTotal.inc({ method: "momo", status: "success" });
-        } else {
+        } else if (failOnNonSuccess) {
             payment.status = PaymentRecordStatus.FAILED;
             payment.providerStatus = verification.providerStatus;
 
@@ -1185,6 +1193,12 @@ export class PaymentService {
             );
 
             log.warn("Payment verification failed", { paymentId: payment.id, reference });
+        } else {
+            // Poll mode: the transaction has not succeeded yet (still pending/ongoing, or
+            // abandoned). Leave it PENDING so the customer can finish, and record the
+            // latest gateway status for visibility. Never a false failure.
+            payment.providerStatus = verification.providerStatus;
+            log.info("Poll: payment not yet successful", { paymentId: payment.id, reference, providerStatus: verification.providerStatus });
         }
 
         return this.paymentRepo.save(payment);

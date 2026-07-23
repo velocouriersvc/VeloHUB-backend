@@ -176,7 +176,9 @@ export class PaymentController {
             // dispatches within seconds of the customer paying - not only if a webhook
             // happens to arrive. confirmPayment is idempotent.
             if (payment.status === PaymentRecordStatus.PENDING) {
-                const confirmed = await this.paymentService.confirmPayment(reference).catch((e) => {
+                // Poll mode (failOnNonSuccess=false): only promote to SUCCESS, never mark
+                // an in-progress payment failed.
+                const confirmed = await this.paymentService.confirmPayment(reference, undefined, false).catch((e) => {
                     log.warn("Poll confirm failed", { reference, error: (e as Error).message });
                     return null;
                 });
