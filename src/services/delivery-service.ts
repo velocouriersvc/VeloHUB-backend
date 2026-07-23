@@ -1,3 +1,4 @@
+import { Not, In } from "typeorm";
 import { AppDataSource } from "../db/data-source";
 import { Order, OrderStatus, DeliveryType, OrderCancelledBy, OrderPaymentMethod } from "../models/order";
 import { OrderStatusHistory } from "../models/order-status-history";
@@ -120,10 +121,9 @@ export class DeliveryService {
             // Skip loads this driver's vehicle cannot carry.
             if (!vehicleMeetsTier(driverVehicle, order.requiredVehicleTier)) continue;
 
-            // Load merchant profile separately if not joined properly
-            const merchantProfile = await this.merchantProfileRepo.findOne({
-                where: { userId: order.merchantId },
-            });
+            // Merchant profile is already left-joined above (businessName + coords),
+            // so read it from the loaded relation instead of a per-row query (N+1).
+            const merchantProfile = order.merchant?.merchantProfile;
 
             const merchantLat = merchantProfile?.latitude || null;
             const merchantLng = merchantProfile?.longitude || null;
@@ -241,13 +241,15 @@ export class DeliveryService {
                 { orderId, orderNumber: order.orderNumber, status: OrderStatus.DRIVER_ASSIGNED }
             );
 
-            // Notify merchant
+            // Notify merchant, naming the driver so a merchant request that involves a
+            // driver always carries the Order ID + the driver's name.
+            const driverName = claimingProfile?.fullName || "A driver";
             await this.notificationService.notify(
                 order.merchantId,
                 NotificationType.ORDER_PICKED_UP,
                 "Driver Assigned",
-                `A driver has been assigned to pick up order #${order.orderNumber}.`,
-                { orderId, orderNumber: order.orderNumber, status: OrderStatus.DRIVER_ASSIGNED }
+                `${driverName} has been assigned to pick up order #${order.orderNumber}.`,
+                { orderId, orderNumber: order.orderNumber, driverName, status: OrderStatus.DRIVER_ASSIGNED }
             );
 
             orderEventsTotal.inc({ status: "driver_assigned", type: "delivery" });
@@ -471,6 +473,13 @@ export class DeliveryService {
         // Trigger settlement
         const settlement = await this.settlementService.settleOrder(orderId, driverId, "driver");
 
+        // Release the driver back to available (best-effort: the payout is already
+        // durable, so a Redis hiccup must never bubble a 400 after the money moved).
+        // Mirrors ride-service.completeRide so the driver can take the next request.
+        await this.redisLocation.setDriverStatus(driverId, "online").catch((err) =>
+            log.warn("Driver status reset failed after delivery completion", { orderId, driverId, error: (err as Error).message })
+        );
+
         // Re-fetch the settled order
         const settledOrder = await this.orderRepo.findOne({ where: { id: orderId } });
 
@@ -560,6 +569,10 @@ export class DeliveryService {
             where: {
                 driverId,
                 deliveryType: DeliveryType.DELIVERY,
+                // Only a live delivery is "active": excluding the terminal statuses
+                // stops a finished job from re-hydrating the navigation screen and
+                // keeping the driver pinned off the dashboard (mirrors getDriverActiveRide).
+                status: Not(In([OrderStatus.DELIVERED, OrderStatus.COMPLETED, OrderStatus.CANCELLED])),
             },
             relations: {
                 customer: { buyerProfile: true },

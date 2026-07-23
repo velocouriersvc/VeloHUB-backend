@@ -989,7 +989,9 @@ export class SettlementService {
         booking.completedAt = new Date();
         await this.serviceBookingRepo.save(booking);
 
-        // 2. Notifications
+        // 2. Notifications (best-effort: the wallet is already credited and the
+        // booking saved COMPLETED + PAID above, so a notification failure must never
+        // throw back to the caller and surface as a completion error to the merchant).
         // Notify customer
         await this.notificationService.notify(
             booking.customerId,
@@ -997,7 +999,7 @@ export class SettlementService {
             "Service Completed! ✅",
             `Your service "${booking.serviceTitle}" has been completed.`,
             { bookingId: booking.id, bookingNumber: booking.bookingNumber }
-        );
+        ).catch((e) => log.warn("Service settlement customer notify failed", { bookingId, error: (e as Error).message }));
 
         // Notify merchant
         if (merchantCredited) {
@@ -1007,7 +1009,7 @@ export class SettlementService {
                 "Service Earnings 💰",
                 `${formatCurrency(merchantEarnings, currency)} credited for service #${booking.bookingNumber}.`,
                 { bookingId: booking.id, amount: merchantEarnings }
-            );
+            ).catch((e) => log.warn("Service settlement merchant notify failed", { bookingId, error: (e as Error).message }));
         }
 
         // 3. Metrics

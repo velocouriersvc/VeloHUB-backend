@@ -23,7 +23,10 @@ export class PaymentController {
                 return res.status(400).json({ message: "Missing signature" });
             }
 
-            const payload = JSON.stringify(req.body);
+            // The webhook route is mounted with express.raw, so req.body is a Buffer.
+            // The Paystack signature is an HMAC over the exact raw bytes, so we must hash
+            // the raw string, not JSON.stringify(Buffer) (which yields {"type":"Buffer",...}).
+            const payload = Buffer.isBuffer(req.body) ? req.body.toString("utf8") : JSON.stringify(req.body);
             await this.paymentService.handleWebhook(payload, signature);
 
             // Always respond 200 to Paystack

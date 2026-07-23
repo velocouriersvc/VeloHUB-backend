@@ -143,11 +143,12 @@ export class PaymentService {
     // with "Currency not supported by merchant" just like NGN. Override per
     // deployment via PAYSTACK_SUPPORTED_CURRENCIES=GHS,USD,NGN once Paystack
     // enables more currencies on the account.
-    // Charge in the customer's OWN currency whenever the account supports it, so
-    // the amount charged equals the amount shown (no cross-border FX markup). Each
-    // currency listed here MUST be enabled on the Paystack dashboard; a currency
-    // not listed falls back to the settlement-currency conversion below.
-    private static readonly PAYSTACK_ACCOUNT_CURRENCIES = (process.env.PAYSTACK_SUPPORTED_CURRENCIES || "GHS,NGN,KES,ZAR,TZS,UGX,USD")
+    // Currencies the live Paystack account can actually charge. The production
+    // account is GHS-only, so the default is GHS: any other currency (NGN, etc.)
+    // falls back to the settlement-currency conversion below and is charged in GHS.
+    // Each currency listed here MUST be enabled on the Paystack dashboard; set
+    // PAYSTACK_SUPPORTED_CURRENCIES to widen the list once more are enabled there.
+    private static readonly PAYSTACK_ACCOUNT_CURRENCIES = (process.env.PAYSTACK_SUPPORTED_CURRENCIES || "GHS")
         .split(",").map((c) => c.trim().toUpperCase()).filter(Boolean);
 
     // Currency that unsupported-currency charges are converted INTO. Must be

@@ -2239,6 +2239,18 @@ export class AdminService {
             { orderId, orderNumber: order.orderNumber }
         );
 
+        // Notify merchant with the Order ID + driver's name (any merchant request that
+        // involves a driver must carry both).
+        const driverProfile = await this.driverProfileRepo.findOne({ where: { userId: driverId } });
+        const driverName = driverProfile?.fullName || "A driver";
+        await this.notificationService.notify(
+            order.merchantId,
+            NotificationType.ORDER_PICKED_UP,
+            "Driver Assigned",
+            `${driverName} has been assigned to pick up order #${order.orderNumber}.`,
+            { orderId, orderNumber: order.orderNumber, driverName, status: OrderStatus.DRIVER_ASSIGNED }
+        );
+
         log.info("Admin assigned driver to order", { orderId, driverId, adminId });
         return order;
     }

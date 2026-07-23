@@ -634,6 +634,10 @@ export class OrderService {
 
         const [orders, total] = await this.orderRepo.findAndCount({
             where,
+            // Load the merchant profile so order history can show the store's business
+            // name (the merchant relation is a bare User; the name is on merchantProfile).
+            // Item names are already embedded in the items JSONB snapshot.
+            relations: { merchant: { merchantProfile: true } },
             order: { createdAt: "DESC" },
             skip: offset,
             take: limit,
