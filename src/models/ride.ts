@@ -156,6 +156,16 @@ export class Ride {
     @Column({ type: "varchar", length: 6, nullable: true })
     pickupCode: string | null;
 
+    // Package (type=DELIVERY) drop-off code: the recipient reads it out and the driver
+    // enters it to complete the delivery. The package PICKUP code reuses `pickupCode`
+    // + `requireCode` above (the sender gives it to the driver to start), so the whole
+    // coded-ride entry flow is reused for free.
+    @Column({ type: "varchar", length: 6, nullable: true })
+    packageDeliveryCode: string | null;
+
+    @Column({ type: "timestamp", nullable: true })
+    packageDeliveryVerifiedAt: Date | null;
+
     // Timestamps
     @CreateDateColumn()
     createdAt: Date;

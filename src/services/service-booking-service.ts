@@ -54,11 +54,13 @@ export function bookingStartAt(preferredDate: Date | string, slot?: string | nul
 const log = createServiceLogger("ServiceBookingService");
 
 /**
- * Chat and calling open up only once the provider has accepted the job, and close
- * again when it reaches a terminal state. Before acceptance the two parties have no
- * relationship yet, so contact details are withheld and messaging is refused.
+ * Chat and calling open up once the booking is PAID (status REQUESTED) so the customer
+ * and provider can discuss details before acceptance, and stay open through the active
+ * lifecycle. They are closed only before payment (AWAITING_PAYMENT) and on terminal
+ * states. Contact details ride the same gate.
  */
 const CONTACTABLE_STATUSES: ServiceBookingStatus[] = [
+    ServiceBookingStatus.REQUESTED,
     ServiceBookingStatus.ACCEPTED,
     ServiceBookingStatus.SCHEDULED,
     ServiceBookingStatus.IN_PROGRESS,
@@ -820,7 +822,7 @@ export class ServiceBookingService {
         }
         // Readable while the job is live, and afterwards so the history survives.
         if (!canContact(booking.status) && booking.status !== ServiceBookingStatus.COMPLETED) {
-            throw new Error("Unauthorized: chat opens once the provider accepts this booking.");
+            throw new Error("Unauthorized: chat opens once this booking is paid.");
         }
         const messages = await this.messageRepo.find({ where: { bookingId }, order: { createdAt: "ASC" } });
         return { booking, messages };
@@ -833,7 +835,7 @@ export class ServiceBookingService {
             throw new Error("Unauthorized to message on this booking");
         }
         if (!canContact(booking.status)) {
-            throw new Error("Unauthorized: chat opens once the provider accepts this booking.");
+            throw new Error("Unauthorized: chat opens once this booking is paid.");
         }
         const senderRole = userId === booking.customerId ? "customer" : "provider";
         const message = await this.messageRepo.save(this.messageRepo.create({

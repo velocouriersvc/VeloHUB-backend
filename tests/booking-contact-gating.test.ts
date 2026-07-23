@@ -8,14 +8,15 @@ import { ServiceBookingStatus } from "../src/models/service-booking";
  */
 describe("booking contact gating", () => {
     describe("canContact", () => {
-        it("allows contact once the provider has accepted", () => {
+        it("allows contact once the booking is paid (requested) and through the active lifecycle", () => {
+            expect(canContact(ServiceBookingStatus.REQUESTED)).toBe(true);
             expect(canContact(ServiceBookingStatus.ACCEPTED)).toBe(true);
             expect(canContact(ServiceBookingStatus.SCHEDULED)).toBe(true);
             expect(canContact(ServiceBookingStatus.IN_PROGRESS)).toBe(true);
         });
 
-        it("refuses contact before acceptance", () => {
-            expect(canContact(ServiceBookingStatus.REQUESTED)).toBe(false);
+        it("refuses contact before payment (awaiting_payment)", () => {
+            expect(canContact(ServiceBookingStatus.AWAITING_PAYMENT)).toBe(false);
         });
 
         it("refuses contact on terminal states", () => {
@@ -55,18 +56,18 @@ describe("booking contact gating", () => {
             return svc;
         }
 
-        it("rejects sending on a booking the provider has not accepted", async () => {
-            const svc = makeService(ServiceBookingStatus.REQUESTED);
+        it("rejects sending on an unpaid booking (awaiting_payment)", async () => {
+            const svc = makeService(ServiceBookingStatus.AWAITING_PAYMENT);
             await expect(svc.sendMessage("b1", customerId, "hi")).rejects.toThrow(/Unauthorized/i);
         });
 
-        it("rejects reading on a booking the provider has not accepted", async () => {
-            const svc = makeService(ServiceBookingStatus.REQUESTED);
+        it("rejects reading on an unpaid booking (awaiting_payment)", async () => {
+            const svc = makeService(ServiceBookingStatus.AWAITING_PAYMENT);
             await expect(svc.getMessages("b1", customerId)).rejects.toThrow(/Unauthorized/i);
         });
 
-        it("allows sending once accepted", async () => {
-            const svc = makeService(ServiceBookingStatus.ACCEPTED);
+        it("allows sending once paid (requested)", async () => {
+            const svc = makeService(ServiceBookingStatus.REQUESTED);
             const msg = await svc.sendMessage("b1", customerId, "on my way");
             expect(msg.senderRole).toBe("customer");
         });

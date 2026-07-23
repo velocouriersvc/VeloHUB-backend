@@ -240,6 +240,9 @@ export class DeliveryController {
                 (delivery as any).pickupAddress = profile?.address || null;
                 (delivery as any).pickupLat = profile?.latitude ?? null;
                 (delivery as any).pickupLng = profile?.longitude ?? null;
+                // The driver screen shows the customer's name/phone at drop-off.
+                (delivery as any).buyerName = (delivery as any).customer?.buyerProfile?.fullName || null;
+                (delivery as any).buyerPhone = (delivery as any).customer?.phoneNumber || null;
             }
 
             return res.status(200).json({ delivery });
