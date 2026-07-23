@@ -242,6 +242,14 @@ export class RideService {
         const isPrepaid = request.paymentMethod === PaymentMethod.CARD
             || request.paymentMethod === PaymentMethod.MOMO;
 
+        // Packages (courier deliveries) must be prepaid: a package is only broadcast to
+        // drivers after the charge confirms, so cash (which cannot be collected before
+        // dispatch) is not accepted here.
+        const isPackage = request.type === RideType.DELIVERY;
+        if (isPackage && !isPrepaid) {
+            throw new Error("Packages must be paid by card or mobile money.");
+        }
+
         // Calculate fare. Package/courier deliveries use the PACKAGE vertical
         // (higher base for loading/unloading); passenger rides use RIDES.
         const vertical = request.type === RideType.DELIVERY
@@ -289,8 +297,12 @@ export class RideService {
             commission: fareBreakdown.rideCommission,
             driverPayout: fareBreakdown.driverPayout,
             passengerCount: request.passengerCount || 1,
-            requireCode: !!request.requireCode,
-            pickupCode: request.requireCode ? new PickupCodeService().generate() : null,
+            // Packages always carry a handshake: the sender's pickup code (reuses the
+            // coded-ride flow) and the recipient's drop-off code. Passenger rides keep
+            // the opt-in safety code.
+            requireCode: isPackage ? true : !!request.requireCode,
+            pickupCode: (isPackage || request.requireCode) ? new PickupCodeService().generate() : null,
+            packageDeliveryCode: isPackage ? new PickupCodeService().generate() : null,
             paymentMethod: request.paymentMethod ?? null,
             status: isPrepaid ? RideStatus.AWAITING_PAYMENT : RideStatus.SEARCHING,
         });
@@ -313,8 +325,9 @@ export class RideService {
             await this.stopRepo.save(stops);
         }
 
-        // Save shared contacts and notify them
-        if (request.sharedContacts && request.sharedContacts.length > 0) {
+        // Save shared contacts and notify them. Ride-sharing (share-my-trip with a
+        // safety contact) is a passenger-ride feature only; a package never has one.
+        if (!isPackage && request.sharedContacts && request.sharedContacts.length > 0) {
             const contacts = request.sharedContacts.map((c) =>
                 this.contactRepo.create({
                     rideId: savedRide.id,
@@ -406,6 +419,19 @@ export class RideService {
         if (ride.status !== RideStatus.SEARCHING) {
             ride.status = RideStatus.SEARCHING;
             await this.rideRepo.save(ride);
+        }
+
+        // Packages: now that the request is paid and going to drivers, give the sender
+        // both handshake codes. They show the pickup code to the driver at collection and
+        // pass the drop-off code to the recipient. Best effort - never blocks dispatch.
+        if (ride.type === RideType.DELIVERY && ride.pickupCode && ride.packageDeliveryCode) {
+            this.notificationService.notify(
+                ride.customerId,
+                NotificationType.RIDE_REQUESTED,
+                "Your package codes 🔐",
+                `Pickup code ${ride.pickupCode} (give to the driver at collection). Delivery code ${ride.packageDeliveryCode} (the recipient gives this to the driver at drop-off).`,
+                { rideId: ride.id, pickupCode: ride.pickupCode, packageDeliveryCode: ride.packageDeliveryCode }
+            ).catch((e) => log.warn("Package code notification failed", { rideId: ride.id, error: (e as Error).message }));
         }
 
         const pickupLat = Number(ride.pickupLat);
@@ -746,13 +772,24 @@ export class RideService {
     /**
      * Step 7: Complete the ride
      */
-    async completeRide(rideId: string, completedBy: string = "system", role: "driver" | "system" | "admin" = "system"): Promise<Ride> {
+    async completeRide(rideId: string, completedBy: string = "system", role: "driver" | "system" | "admin" = "system", code?: string): Promise<Ride> {
         const ride = await this.getRideOrFail(rideId);
 
         // Idempotent: a ride already completed is returned as-is (never settle twice).
         if (ride.status === RideStatus.COMPLETED) return ride;
         if (ride.status !== RideStatus.ONGOING) {
             throw new Error("Ride must be ongoing to complete");
+        }
+
+        // Packages: the recipient's drop-off code is the proof of delivery. The driver
+        // must enter it (obtained verbally from the recipient) before the package is
+        // marked delivered and the payout released.
+        if (ride.type === RideType.DELIVERY && ride.packageDeliveryCode && !ride.packageDeliveryVerifiedAt) {
+            if (!code || code.trim().toUpperCase() !== ride.packageDeliveryCode.toUpperCase()) {
+                throw new Error("Incorrect delivery code");
+            }
+            ride.packageDeliveryVerifiedAt = new Date();
+            await this.rideRepo.save(ride);
         }
 
         // Use SettlementService to handle everything:

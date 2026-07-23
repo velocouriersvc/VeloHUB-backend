@@ -167,7 +167,9 @@ export class DriverController {
      */
     completeRide = async (req: AuthRequest, res: Response) => {
         try {
-            const ride = await this.rideService.completeRide(req.params.id);
+            // `code` is the recipient's drop-off code for a package delivery (ignored for
+            // passenger rides).
+            const ride = await this.rideService.completeRide(req.params.id, req.user?.id || "system", "driver", req.body?.code);
             return res.json({ ride });
         } catch (error) {
             log.error("Error completing ride", { error: (error as Error).message });
@@ -190,7 +192,9 @@ export class DriverController {
             // show the real name and call them; strip the raw customer entity. Never leak
             // the pickupCode to the driver - they must get it from the rider - but do tell
             // them whether a code is required.
-            const { customer, pickupCode, ...rest } = ride as any;
+            // Never leak the codes to the driver - they obtain them from the sender
+            // (pickup) and recipient (drop-off) - but do tell them which are required.
+            const { customer, pickupCode, packageDeliveryCode, ...rest } = ride as any;
             return res.json({
                 ride: {
                     ...rest,
@@ -199,6 +203,8 @@ export class DriverController {
                         ?? customer?.userProfile?.fullName
                         ?? null,
                     customerPhone: customer?.phoneNumber ?? null,
+                    // A package delivery requires the recipient's drop-off code at completion.
+                    requirePackageDelivery: rest.type === "delivery" && !!packageDeliveryCode && !rest.packageDeliveryVerifiedAt,
                 },
             });
         } catch (error) {
