@@ -385,6 +385,17 @@ export class RideService {
         let cancelled = 0;
         for (const ride of stale) {
             try {
+                // Last-chance verification: the customer may have paid but the webhook /
+                // callback never arrived (common for mobile money). Confirm against the
+                // gateway before cancelling so we never take someone's money and then
+                // cancel their ride. If it confirms, the payment side effects flip the
+                // ride to PAID and dispatch it, so skip the cancellation.
+                const paid = await this.paymentService.confirmRideIfPaid(ride.id).catch(() => false);
+                if (paid) {
+                    log.info("Unpaid-ride reap skipped: payment confirmed on verify", { rideId: ride.id });
+                    continue;
+                }
+
                 ride.status = RideStatus.CANCELLED;
                 ride.cancelledBy = CancelledBy.SYSTEM;
                 ride.cancelReason = "Payment not completed";

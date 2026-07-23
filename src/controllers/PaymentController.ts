@@ -1,6 +1,7 @@
 import { Request, Response } from "express";
 import { AuthRequest } from "../middleware/role-middleware";
 import { PaymentService } from "../services/payment/payment-service";
+import { PaymentRecordStatus } from "../models/payment";
 import { WalletService } from "../services/wallet-service";
 import { createServiceLogger } from "../utils/logger";
 
@@ -163,9 +164,23 @@ export class PaymentController {
         try {
             const userId = req.user?.id;
             if (!userId) return res.status(401).json({ message: "User ID required" });
-            const payment = await this.paymentService.getPaymentByReference(req.params.reference);
+            const reference = req.params.reference;
+            let payment = await this.paymentService.getPaymentByReference(reference);
             if (!payment || payment.userId !== userId) {
                 return res.status(404).json({ message: "Payment not found" });
+            }
+            // Self-confirming poll: while the payment is still pending, re-verify it with
+            // the gateway on every poll. This is the reliable path (the webhook/browser
+            // callback can be delayed or missed, especially for mobile money where the
+            // charge completes out-of-band on the phone), so the ride/order confirms and
+            // dispatches within seconds of the customer paying - not only if a webhook
+            // happens to arrive. confirmPayment is idempotent.
+            if (payment.status === PaymentRecordStatus.PENDING) {
+                const confirmed = await this.paymentService.confirmPayment(reference).catch((e) => {
+                    log.warn("Poll confirm failed", { reference, error: (e as Error).message });
+                    return null;
+                });
+                if (confirmed) payment = confirmed;
             }
             return res.json({ status: payment.status, providerStatus: payment.providerStatus || null });
         } catch (error) {

@@ -958,6 +958,22 @@ export class PaymentService {
     }
 
     /**
+     * Verify a ride's pending gateway payment against the provider and confirm it if the
+     * customer actually paid. Used by the unpaid-ride reaper so a paid-but-unconfirmed
+     * ride (webhook/callback never arrived) is not cancelled. Returns true when it is now
+     * paid.
+     */
+    async confirmRideIfPaid(rideId: string): Promise<boolean> {
+        const payment = await this.paymentRepo.findOne({
+            where: { rideId, status: PaymentRecordStatus.PENDING },
+        });
+        const reference = (payment?.metadata as any)?.reference;
+        if (!payment || !reference) return false;
+        const confirmed = await this.confirmPayment(reference).catch(() => null);
+        return confirmed?.status === PaymentRecordStatus.SUCCESS;
+    }
+
+    /**
      * Advance the entity a successful payment belongs to. The webhook and the
      * browser callback can both land, so every branch re-checks state first.
      * Uses direct repos (importing ride-service here would create a cycle).
