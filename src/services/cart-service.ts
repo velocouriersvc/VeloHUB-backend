@@ -5,7 +5,9 @@ import { Product } from "../models/product";
 import { CustomizationOption } from "../models/customization-option";
 import { ProductCustomization } from "../models/product-customization";
 import { MerchantProfile } from "../models/merchant-profile";
+import { User } from "../models/user";
 import { createServiceLogger } from "../utils/logger";
+import { currencyForCountry } from "../utils/currency";
 import { cartEventsTotal } from "../utils/metrics";
 
 import { ProductVariant } from "../models/product-variant";
@@ -42,6 +44,9 @@ export interface CartResponse {
     items: CartItemResponse[];
     subtotal: number;
     itemCount: number;
+    /** The merchant's charge currency (a cart is single-merchant), so the app shows
+     *  prices in the currency the order is actually charged in. */
+    currency: string;
 }
 
 export interface CartItemResponse {
@@ -69,6 +74,7 @@ export class CartService {
     private optionRepo = AppDataSource.getRepository(CustomizationOption);
     private customizationRepo = AppDataSource.getRepository(ProductCustomization);
     private merchantRepo = AppDataSource.getRepository(MerchantProfile);
+    private userRepo = AppDataSource.getRepository(User);
     private variantRepo = AppDataSource.getRepository(ProductVariant);
 
     // ── Get Cart ────────────────────────────────────────────────────
@@ -428,7 +434,11 @@ export class CartService {
         // Load merchant info
         let merchant: { businessName: string; category: string } | null = null;
         let merchantLocation: { address: string; latitude: number | null; longitude: number | null } | null = null;
+        // A cart is single-merchant, so the whole cart charges in the merchant's currency.
+        let currency = "GHS";
         if (cart.merchantId) {
+            const merchantUser = await this.userRepo.findOne({ where: { id: cart.merchantId } });
+            currency = currencyForCountry(merchantUser?.country || "GH");
             const profile = await this.merchantRepo.findOne({
                 where: { userId: cart.merchantId },
             });
@@ -466,6 +476,7 @@ export class CartService {
             items: cartItems,
             subtotal: Number(cart.subtotal),
             itemCount,
+            currency,
         };
     }
 

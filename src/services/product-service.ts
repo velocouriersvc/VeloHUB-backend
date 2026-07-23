@@ -10,6 +10,7 @@ import { MerchantProfile } from "../models/merchant-profile";
 import { NotificationType } from "../models/notification";
 import { NotificationService } from "./notification-service";
 import { createServiceLogger } from "../utils/logger";
+import { currencyForCountry } from "../utils/currency";
 import { rewriteToPublicAssetUrl } from "./upload-service";
 import { productViewsTotal } from "../utils/metrics";
 import { In, Not } from "typeorm";
@@ -24,6 +25,16 @@ function toPublicImages<T extends { images?: string[] | null }>(product: T): T {
         product.images = product.images
             .map((u) => rewriteToPublicAssetUrl(u))
             .filter((u): u is string => !!u);
+    }
+    return product;
+}
+
+// The stored product.currency is an unreliable "GHS" default (never set on create),
+// so stamp the response with the merchant's real market currency. This is the same
+// currency the order is charged in, so the app displays prices country/context aware.
+function withMerchantCurrency<T extends { currency?: string; merchant?: { country?: string | null } | null }>(product: T): T {
+    if (product) {
+        product.currency = currencyForCountry(product.merchant?.country || "GH");
     }
     return product;
 }
@@ -395,7 +406,7 @@ export class ProductService {
                 order: { createdAt: "ASC" },
             });
             (product as any).reviewSummary = await this.getReviewSummary(productId);
-            return toPublicImages(product);
+            return withMerchantCurrency(toPublicImages(product));
         }
 
         return product;
@@ -648,7 +659,7 @@ export class ProductService {
 
         log.info(`[getProducts] category="${params.category || 'ALL'}" search="${params.search || ''}" → ${total} total, returning ${products.length}`);
 
-        return { products: products.map(toPublicImages), total, page, limit };
+        return { products: products.map((p) => withMerchantCurrency(toPublicImages(p))), total, page, limit };
     }
 
     /**
@@ -692,7 +703,7 @@ export class ProductService {
             .addOrderBy("product.createdAt", "DESC");
 
         const [products, total] = await qb.skip((page - 1) * limit).take(limit).getManyAndCount();
-        return { products: products.map(toPublicImages), total, page, limit };
+        return { products: products.map((p) => withMerchantCurrency(toPublicImages(p))), total, page, limit };
     }
 
     /**
