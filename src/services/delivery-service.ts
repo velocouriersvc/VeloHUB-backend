@@ -445,13 +445,12 @@ export class DeliveryService {
             );
         }
 
-        // Proof of delivery is mandatory for coded deliveries: the driver must have
-        // entered the customer's code and captured a hand-off photo.
+        // The customer's delivery code is the mandatory handover proof. The
+        // proof-of-delivery photo is optional (the tester flow is code -> delivered ->
+        // payout with no photo step); if a client captures one it is still stored, but a
+        // missing photo must never block completion and the driver's payout.
         if (order.requireDeliveryCode && !order.deliveryCodeVerifiedAt) {
             throw new Error("Enter the customer's delivery code before completing.");
-        }
-        if (order.requireDeliveryCode && !order.podPhotoUrl) {
-            throw new Error("Take a proof-of-delivery photo before completing.");
         }
 
         // If still in_transit, transition to delivered first
@@ -501,7 +500,11 @@ export class DeliveryService {
         if (!order) throw new Error("Order not found or not assigned to you");
         if (!order.deliveryCode) throw new Error("This order has no delivery code");
 
-        if (order.status !== OrderStatus.IN_TRANSIT && order.status !== OrderStatus.READY_FOR_DELIVERY) {
+        // A driver-handshake delivery sits at PICKED_UP after the merchant releases it
+        // (merchant-service.verifyPickupCode), so PICKED_UP must be accepted here or the
+        // driver could never enter the customer's code at drop-off.
+        const verifiable = [OrderStatus.READY_FOR_DELIVERY, OrderStatus.PICKED_UP, OrderStatus.IN_TRANSIT];
+        if (!verifiable.includes(order.status)) {
             throw new Error(`Cannot verify delivery code - order status is "${order.status}"`);
         }
 
@@ -517,18 +520,25 @@ export class DeliveryService {
 
         if (valid) {
             await redis.del(key);
+            const fromStatus = order.status;
             order.deliveryCodeVerifiedAt = new Date();
             order.status = OrderStatus.DELIVERED;
             order.deliveredAt = new Date();
             await this.orderRepo.save(order);
 
-            await this.recordStatusChange(orderId, order.status, OrderStatus.DELIVERED, driverId, "driver", "Delivery code verified by driver");
-
-            emitOrderEvent(orderId, "order:status", {
-                orderId,
-                status: OrderStatus.DELIVERED,
-                updatedAt: new Date().toISOString(),
-            });
+            // The handover is committed. Audit + socket are best effort so a failure here
+            // never reports a false "invalid code" to the driver (mirrors the Round 20
+            // merchant-side hardening).
+            try {
+                await this.recordStatusChange(orderId, fromStatus, OrderStatus.DELIVERED, driverId, "driver", "Delivery code verified by driver");
+                emitOrderEvent(orderId, "order:status", {
+                    orderId,
+                    status: OrderStatus.DELIVERED,
+                    updatedAt: new Date().toISOString(),
+                });
+            } catch (err) {
+                log.warn("Delivery-verify side effects failed (verification already committed)", { orderId, error: (err as Error).message });
+            }
 
             log.info("Delivery code verified successfully", { orderId, driverId });
             return { valid: true, attemptsRemaining: MAX_CODE_ATTEMPTS, order };
@@ -552,7 +562,7 @@ export class DeliveryService {
                 deliveryType: DeliveryType.DELIVERY,
             },
             relations: {
-                customer: true,
+                customer: { buyerProfile: true },
                 merchant: { merchantProfile: true },
             },
             order: { createdAt: "DESC" },
