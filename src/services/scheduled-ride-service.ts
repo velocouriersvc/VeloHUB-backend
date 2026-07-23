@@ -13,6 +13,11 @@ const log = createServiceLogger("ScheduledRideService");
 
 // How far before the scheduled time the real ride is created and broadcast to drivers.
 const DISPATCH_LEAD_MS = 10 * 60 * 1000;
+// Cancel for free up to this many hours before the scheduled time; cancelling later
+// (or a no-show) keeps LATE_CANCEL_FEE_RATE of the fare to compensate the driver. Mirrors
+// the service-booking policy and the copy shown on the scheduling screen.
+const CANCEL_FREE_HOURS = 3;
+const LATE_CANCEL_FEE_RATE = 0.7;
 
 export interface CreateScheduledRideInput {
     customerId: string;
@@ -53,13 +58,18 @@ export class ScheduledRideService {
     private rideService = new RideService();
 
     /**
-     * Create a scheduled ride and take upfront payment. Cash is pay-at-ride (no upfront
-     * charge). momo/card return a prompt/authorization URL the app opens; the webhook
-     * marks the ride paid. Wallet settles immediately.
+     * Create a scheduled ride. Scheduled rides are PREPAID (card/momo/wallet): the
+     * 3-hour free-cancellation window and the late-cancel / no-show fee can only be
+     * enforced against money collected up front, so cash is rejected. momo/card return
+     * an authorization URL the app opens; the webhook marks the ride paid. Wallet
+     * settles immediately.
      */
     async create(input: CreateScheduledRideInput): Promise<CreateScheduledRideResult> {
         const country = input.country || "GH";
-        const method = METHOD_MAP[(input.paymentMethod || "cash").toLowerCase()] || PaymentMethodType.CASH;
+        const method = METHOD_MAP[String(input.paymentMethod || "").toLowerCase()];
+        if (!method || method === PaymentMethodType.CASH) {
+            throw new Error("Scheduled rides must be prepaid by card or mobile money.");
+        }
 
         // Recompute the fare server-side so the charged amount is authoritative.
         const fare = await this.fareService.calculateFare(
@@ -85,20 +95,16 @@ export class ScheduledRideService {
             scheduledAt: new Date(input.scheduledAt),
             estimatedFare: fare.finalFare,
             currency: fare.currency,
-            paymentMethod: input.paymentMethod || "cash",
-            paymentStatus: method === PaymentMethodType.CASH
-                ? ScheduledPaymentStatus.NOT_REQUIRED
-                : ScheduledPaymentStatus.PENDING,
+            paymentMethod: input.paymentMethod,
+            // Every scheduled ride is prepaid, so it always starts PENDING until the
+            // charge (or wallet debit) confirms.
+            paymentStatus: ScheduledPaymentStatus.PENDING,
             status: ScheduledRideStatus.SCHEDULED,
             rideId: null,
             notes: input.notes || null,
         });
         const saved = await this.repo.save(scheduled);
         log.info("Scheduled ride created", { id: saved.id, method, scheduledAt: saved.scheduledAt });
-
-        if (method === PaymentMethodType.CASH) {
-            return { scheduledRide: saved };
-        }
 
         const payment = await this.paymentService.processScheduledRidePayment({
             scheduledRideId: saved.id,
@@ -128,28 +134,40 @@ export class ScheduledRideService {
     }
 
     /**
-     * Cancel a scheduled ride the customer owns and refund any prepayment to the
-     * wallet. Only rides not yet dispatched can be cancelled here.
+     * Cancel a scheduled ride the customer owns and refund the prepayment to the wallet.
+     * Cancelling more than CANCEL_FREE_HOURS before the scheduled time is a full refund;
+     * within the window (a late cancellation / no-show) keeps LATE_CANCEL_FEE_RATE of the
+     * fare to compensate the driver and refunds the rest. Only rides not yet dispatched
+     * can be cancelled here.
      */
-    async cancel(id: string, customerId: string): Promise<{ refunded: number }> {
+    async cancel(id: string, customerId: string): Promise<{ refunded: number; feeKept: number; late: boolean }> {
         const ride = await this.repo.findOne({ where: { id, customerId } });
         if (!ride) throw new Error("Scheduled ride not found");
         if (ride.status === ScheduledRideStatus.DISPATCHED) {
             throw new Error("Ride already dispatched to a driver");
         }
         if (ride.status === ScheduledRideStatus.CANCELLED) {
-            return { refunded: 0 };
+            return { refunded: 0, feeKept: 0, late: false };
         }
 
+        const hoursToPickup = (new Date(ride.scheduledAt).getTime() - Date.now()) / 3_600_000;
+        const late = hoursToPickup < CANCEL_FREE_HOURS;
+
         let refunded = 0;
+        let feeKept = 0;
         if (ride.paymentStatus === ScheduledPaymentStatus.PAID) {
-            refunded = await this.paymentService.refundScheduledRidePayment(ride.id);
+            const paid = Number(ride.estimatedFare) || 0;
+            const refundAmount = late
+                ? Math.round(paid * (1 - LATE_CANCEL_FEE_RATE) * 100) / 100
+                : paid;
+            refunded = await this.paymentService.refundScheduledRidePayment(ride.id, refundAmount);
+            feeKept = Math.round((paid - refunded) * 100) / 100;
             ride.paymentStatus = ScheduledPaymentStatus.REFUNDED;
         }
         ride.status = ScheduledRideStatus.CANCELLED;
         await this.repo.save(ride);
-        log.info("Scheduled ride cancelled", { id, refunded });
-        return { refunded };
+        log.info("Scheduled ride cancelled", { id, refunded, feeKept, late });
+        return { refunded, feeKept, late };
     }
 
     /**

@@ -351,13 +351,23 @@ export class PaymentService {
      * Refund a scheduled ride's prepayment to the customer's wallet. Cash has nothing
      * to refund. Returns the amount refunded.
      */
-    async refundScheduledRidePayment(scheduledRideId: string): Promise<number> {
+    async refundScheduledRidePayment(scheduledRideId: string, refundAmount?: number): Promise<number> {
         const payment = await this.paymentRepo.findOne({
             where: { scheduledRideId, status: PaymentRecordStatus.SUCCESS },
         });
         if (!payment || payment.method === PaymentMethodType.CASH) return 0;
 
-        const amount = Number(payment.amount);
+        // A late cancellation / no-show refunds only part of the fare (the rest is kept
+        // to compensate the driver). Clamp to what was actually paid.
+        const paid = Number(payment.amount);
+        const amount = refundAmount != null
+            ? Math.max(0, Math.min(Math.round(refundAmount * 100) / 100, paid))
+            : paid;
+        if (amount <= 0) {
+            payment.status = PaymentRecordStatus.REFUNDED;
+            await this.paymentRepo.save(payment);
+            return 0;
+        }
         const desc = `Refund for cancelled scheduled ride ${scheduledRideId}`;
         const meta = { scheduledRideId, paymentId: payment.id, type: "scheduled_ride_refund" };
         try {
