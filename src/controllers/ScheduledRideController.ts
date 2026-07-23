@@ -72,8 +72,16 @@ export class ScheduledRideController {
                 paymentReference: result.payment?.reference,
             });
         } catch (error) {
-            log.error("Error creating scheduled ride", { error: (error as Error).message });
-            return res.status(500).json({ message: (error as Error).message || "Internal server error" });
+            const msg = (error as Error).message || "Internal server error";
+            // Business rejections (prepaid-only, future-time, payment init) are client
+            // errors, not server faults: return 400 and log at warn.
+            const isClientError = /prepaid|must be|required|future|invalid|payment/i.test(msg);
+            if (isClientError) {
+                log.warn("Scheduled ride rejected", { message: msg });
+                return res.status(400).json({ message: msg });
+            }
+            log.error("Error creating scheduled ride", { error: msg });
+            return res.status(500).json({ message: msg });
         }
     };
 
