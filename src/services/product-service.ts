@@ -715,6 +715,10 @@ export class ProductService {
         const params: any[] = [categoryParam, OrderStatus.CANCELLED, OrderStatus.REFUNDED, safeLimit];
         if (country) params.push(country.toUpperCase());
 
+        // Columns use TypeORM's default camelCase naming, so every multi-word column
+        // must be quoted (e.g. "merchantId", not merchant_id). Using snake_case here
+        // failed with "column p.merchant_id does not exist" and returned zero popular
+        // products.
         const rows = await AppDataSource.query(
             `
             SELECT
@@ -724,21 +728,21 @@ export class ProductService {
                 p.category,
                 p.price,
                 p.images,
-                p.merchant_id AS "merchantId",
-                p.stock_quantity AS "stockQuantity",
-                p.min_stock_alert AS "minStockAlert",
-                p.is_active AS "isActive",
-                p.preparation_time_min AS "preparationTimeMin",
-                p.expiration_date AS "expirationDate",
-                p.dosage_info AS "dosageInfo",
-                p.prescription_required AS "prescriptionRequired",
-                p.service_duration_min AS "serviceDurationMin",
-                p.rental_duration AS "rentalDuration",
+                p."merchantId" AS "merchantId",
+                p."stockQuantity" AS "stockQuantity",
+                p."minStockAlert" AS "minStockAlert",
+                p."isActive" AS "isActive",
+                p."preparationTimeMin" AS "preparationTimeMin",
+                p."expirationDate" AS "expirationDate",
+                p."dosageInfo" AS "dosageInfo",
+                p."prescriptionRequired" AS "prescriptionRequired",
+                p."serviceDurationMin" AS "serviceDurationMin",
+                p."rentalDuration" AS "rentalDuration",
                 p.deposit AS "deposit",
-                p.created_at AS "createdAt",
-                p.updated_at AS "updatedAt"
+                p."createdAt" AS "createdAt",
+                p."updatedAt" AS "updatedAt"
             FROM products p
-            INNER JOIN users m ON m.id = p.merchant_id
+            INNER JOIN users m ON m.id = p."merchantId"
             INNER JOIN LATERAL (
                 SELECT SUM((item->>'quantity')::int) AS popularity
                 FROM orders o,
@@ -746,8 +750,8 @@ export class ProductService {
                 WHERE (item->>'productId')::uuid = p.id
                   AND o.status NOT IN ($2, $3)
             ) pop ON pop.popularity IS NOT NULL
-            WHERE p.deleted_at IS NULL
-              AND p.is_active = true
+            WHERE p."deletedAt" IS NULL
+              AND p."isActive" = true
               ${categoryFilter}
               ${countryFilter}
             ORDER BY pop.popularity DESC
