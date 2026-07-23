@@ -56,7 +56,9 @@ export class ScheduledRideController {
                 distanceKm: Number(distanceKm),
                 durationMin: Number(durationMin),
                 scheduledAt,
-                paymentMethod: paymentMethod || "cash",
+                // No cash default: scheduled rides are prepaid, and the service rejects
+                // a missing or cash method.
+                paymentMethod,
                 country,
                 email,
                 phoneNumber,
@@ -94,7 +96,7 @@ export class ScheduledRideController {
             const userId = req.user?.id;
             if (!userId) return res.status(401).json({ message: "User ID required" });
             const result = await this.service.cancel(req.params.id, userId);
-            return res.status(200).json({ cancelled: true, refunded: result.refunded });
+            return res.status(200).json({ cancelled: true, refunded: result.refunded, feeKept: result.feeKept, late: result.late });
         } catch (error) {
             const msg = (error as Error).message || "Internal server error";
             const code = /not found/i.test(msg) ? 404 : /already dispatched/i.test(msg) ? 400 : 500;

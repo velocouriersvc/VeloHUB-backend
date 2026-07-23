@@ -53,6 +53,10 @@ export interface PackageRideCheckoutInput {
     durationMin: number;
     promoCode?: string;
     paymentMethod?: string;
+    // The sender's contact, needed to charge the prepayment. Mobile money REQUIRES a
+    // phone number; without it the charge threw and the package never reached Paystack.
+    phoneNumber?: string;
+    email?: string;
 }
 
 export type UnifiedCheckoutInput = ProductOrderCheckoutInput | ProductOrderWithDeliveryCheckoutInput | PackageRideCheckoutInput;
@@ -157,11 +161,19 @@ export class CheckoutService {
             durationMin: packageRideInput.durationMin,
             promoCode: packageRideInput.promoCode,
             paymentMethod: (packageRideInput.paymentMethod as PaymentMethod) || undefined,
+            // Required so mobile money can charge the sender before dispatch.
+            phoneNumber: packageRideInput.phoneNumber,
+            email: packageRideInput.email,
         });
 
         return {
             kind: input.kind,
             ride,
+            // Lift the gateway fields to the top level (the app reads them here), mirroring
+            // the passenger prepaid flow, so the payment webview always has a matching
+            // reference. They remain on `ride` too for backward compatibility.
+            authorizationUrl: (ride as any).authorizationUrl,
+            paymentReference: (ride as any).paymentReference,
         };
     }
 }
