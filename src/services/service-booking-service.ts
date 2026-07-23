@@ -769,29 +769,27 @@ export class ServiceBookingService {
             throw new Error("Invalid completion code");
         }
 
-        if (booking.status === ServiceBookingStatus.COMPLETED) {
-            throw new Error("Booking already completed");
+        // Idempotent: a booking that is already completed AND settled is a success,
+        // not an error (a duplicate verify tap must not surface "already completed").
+        // A booking that is completed but NOT yet settled (a prior settlement failed)
+        // falls through so the payout can be retried.
+        if (booking.status === ServiceBookingStatus.COMPLETED && booking.paymentStatus === ServicePaymentStatus.PAID) {
+            return booking;
         }
 
-        booking.status = ServiceBookingStatus.COMPLETED;
-        booking.completedAt = new Date();
-        await this.bookingRepo.save(booking);
-
-        // Trigger settlement
+        // Settlement is the single source of truth for completion: it credits the
+        // provider wallet FIRST, then marks the booking COMPLETED + PAID and notifies
+        // both parties. Because completion is saved only after the wallet credit, a
+        // settlement failure leaves the booking not-completed, so the customer never
+        // sees "completed" while the merchant got an error, and a retry is safe.
         await this.settlementService.settleServiceBooking(bookingId, merchantId, "merchant");
-
-        // Notify customer
-        await this.notificationService.notify(
-            booking.customerId,
-            NotificationType.SERVICE_COMPLETED,
-            "Service Completed! ✅",
-            `Your booking #${booking.bookingNumber} has been verified and completed.`,
-            { bookingId }
-        );
 
         log.info("Service booking completed via code", { bookingId, merchantId });
 
-        return booking;
+        return (await this.bookingRepo.findOne({
+            where: { id: bookingId },
+            relations: { customer: true, merchant: true },
+        })) || booking;
     }
 
     async getBookingById(bookingId: string, userId: string) {
@@ -834,7 +832,10 @@ export class ServiceBookingService {
         if (booking.customerId !== userId && booking.merchantId !== userId) {
             throw new Error("Unauthorized to message on this booking");
         }
-        if (!canContact(booking.status)) {
+        // Sendable whenever the chat is readable: while the job is live AND after it
+        // completes (matching getMessages), so a follow-up message never 403s and
+        // collapses the conversation on either side.
+        if (!canContact(booking.status) && booking.status !== ServiceBookingStatus.COMPLETED) {
             throw new Error("Unauthorized: chat opens once this booking is paid.");
         }
         const senderRole = userId === booking.customerId ? "customer" : "provider";

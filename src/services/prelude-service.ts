@@ -24,25 +24,40 @@ export class PreludeService {
      * Prelude handles code generation and channel selection (SMS/WhatsApp).
      */
     async sendVerification(to: string): Promise<string> {
+        const senderId = process.env.PRELUDE_SENDER_ID;
         try {
-            const senderId = process.env.PRELUDE_SENDER_ID;
-            const verification = await this.client.verification.create({
-                target: {
-                    type: "phone_number",
-                    value: to,
-                },
-                options: {
-                    sender_id: senderId
-                }
-            });
+            const verification = await this.createVerification(to, senderId);
             log.info('Verification sent successfully via Prelude', { id: verification.id, senderId });
             notificationEventsTotal.inc({ channel: 'prelude', status: 'success' });
             return verification.id;
         } catch (error) {
+            // A registered alphanumeric sender_id can be rejected for some destinations
+            // (notably Nigeria/+234). Retry once WITHOUT it so Prelude picks a default
+            // route, rather than leaving that country's users unable to receive a code.
+            if (senderId) {
+                try {
+                    const verification = await this.createVerification(to, undefined);
+                    log.info('Verification sent via Prelude on sender_id-less retry', { id: verification.id });
+                    notificationEventsTotal.inc({ channel: 'prelude', status: 'success' });
+                    return verification.id;
+                } catch (retryError) {
+                    log.error('Failed to send verification via Prelude (retry without sender_id)', { error: (retryError as Error).message });
+                    notificationEventsTotal.inc({ channel: 'prelude', status: 'failed' });
+                    throw retryError;
+                }
+            }
             log.error('Failed to send verification via Prelude', { error: (error as Error).message });
             notificationEventsTotal.inc({ channel: 'prelude', status: 'failed' });
             throw error;
         }
+    }
+
+    /** Create a Prelude verification, optionally with a sender_id. */
+    private createVerification(to: string, senderId?: string) {
+        return this.client.verification.create({
+            target: { type: "phone_number", value: to },
+            ...(senderId ? { options: { sender_id: senderId } } : {}),
+        });
     }
 
     /**

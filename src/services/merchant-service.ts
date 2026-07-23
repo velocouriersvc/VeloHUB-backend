@@ -1,5 +1,6 @@
 import { AppDataSource } from "../db/data-source";
 import { MerchantProfile, MerchantVerificationStatus } from "../models/merchant-profile";
+import { DriverProfile } from "../models/driver-profile";
 import { MerchantStats } from "../models/merchant-stats";
 import { MerchantOperatingHours } from "../models/merchant-operating-hours";
 import { Order, OrderStatus, OrderPaymentStatus, OrderPaymentMethod, OrderCancelledBy, DeliveryType } from "../models/order";
@@ -62,6 +63,7 @@ export class MerchantService {
     private orderRepo = AppDataSource.getRepository(Order);
     private historyRepo = AppDataSource.getRepository(OrderStatusHistory);
     private userRepo = AppDataSource.getRepository(User);
+    private driverProfileRepo = AppDataSource.getRepository(DriverProfile);
     private walletService = new WalletService();
     private notificationService = new NotificationService();
 
@@ -378,7 +380,30 @@ export class MerchantService {
             take: limit,
         });
 
+        // The `driver` relation is a bare User (no name/vehicle). The driver's name
+        // and vehicle live on DriverProfile, so batch-load them (one query) and attach
+        // driverName + driverVehicle to each order so the merchant sees who is coming.
+        await this.attachDriverInfo(orders);
+
         return { orders, total, page, limit };
+    }
+
+    /**
+     * Attach the assigned driver's name + vehicle (from DriverProfile) to each order,
+     * since order.driver is a bare User with no name/vehicle. One query for the batch.
+     */
+    private async attachDriverInfo(orders: Order[]): Promise<void> {
+        const driverIds = [...new Set(orders.map((o) => o.driverId).filter(Boolean))] as string[];
+        if (driverIds.length === 0) return;
+        const profiles = await this.driverProfileRepo.find({ where: { userId: In(driverIds) } });
+        const byUser = new Map(profiles.map((p) => [p.userId, p]));
+        for (const o of orders) {
+            const p = o.driverId ? byUser.get(o.driverId) : undefined;
+            (o as any).driverName = p?.fullName || null;
+            (o as any).driverVehicle = p
+                ? { model: p.vehicleModel || null, plate: p.plateNumber || null, type: p.vehicleType || null }
+                : null;
+        }
     }
 
     /**
