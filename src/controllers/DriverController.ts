@@ -268,6 +268,7 @@ export class DriverController {
                     totalRatings: live.ratingCount,
                     totalRides: live.completedTrips,
                     totalEarnings: live.totalEarnings,
+                    availableBalance: live.availableBalance,
                 },
             });
         } catch (error) {
