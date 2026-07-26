@@ -19,6 +19,7 @@ import { rideEventsTotal } from "../utils/metrics";
 import { PlatformSettings } from "../models/platform-settings";
 import { SettlementService } from "./settlement-service";
 import { Rating } from "../models/rating";
+import { Order, OrderStatus } from "../models/order";
 import { PickupCodeService } from "./pickup-code-service";
 import { WalletService } from "./wallet-service";
 import { User } from "../models/user";
@@ -981,7 +982,7 @@ export class RideService {
      * Real, public driver stats shown to the customer on an active ride (replaces the
      * hardcoded 4.9 / "1,242 rides"). Average star rating + count of completed trips.
      */
-    async getDriverPublicStats(driverUserId: string): Promise<{ rating: number; ratingCount: number; completedTrips: number; totalEarnings: number }> {
+    async getDriverPublicStats(driverUserId: string): Promise<{ rating: number; ratingCount: number; completedTrips: number; totalEarnings: number; availableBalance: number }> {
         const agg = await this.rideRepo.manager
             .getRepository(Rating)
             .createQueryBuilder("r")
@@ -996,19 +997,31 @@ export class RideService {
             .where("ride.driverId = :driverUserId", { driverUserId })
             .andWhere("ride.status = :status", { status: RideStatus.COMPLETED })
             .getRawOne<{ cnt: string; earnings: string }>();
+        // Deliveries count as completed jobs too (the driver did rides AND deliveries).
+        const deliveryAgg = await this.rideRepo.manager
+            .getRepository(Order)
+            .createQueryBuilder("o")
+            .select("COUNT(o.id)", "cnt")
+            .where("o.driverId = :driverUserId", { driverUserId })
+            .andWhere("o.status IN (:...statuses)", { statuses: [OrderStatus.COMPLETED, OrderStatus.DELIVERED] })
+            .getRawOne<{ cnt: string }>();
+        // The wallet balance is the driver's real withdrawable money; surface it so the
+        // dashboard shows the SAME figure as the wallet screen.
+        const wallet = await this.walletService.getWallet(driverUserId);
         return {
             rating: agg ? Number(Number(agg.avg).toFixed(1)) : 0,
             ratingCount: agg ? Number(agg.cnt) : 0,
-            completedTrips: rideAgg ? Number(rideAgg.cnt) : 0,
+            completedTrips: (rideAgg ? Number(rideAgg.cnt) : 0) + (deliveryAgg ? Number(deliveryAgg.cnt) : 0),
             totalEarnings: rideAgg ? Number(Number(rideAgg.earnings).toFixed(2)) : 0,
+            availableBalance: Number(wallet?.balance ?? 0),
         };
     }
 
     /** Attach real driver stats to a customer-facing ride response (no-op if unassigned). */
     async withDriverStats(ride: Ride | null): Promise<any> {
         if (!ride || !ride.driverId) return ride;
-        // Earnings are private to the driver - never expose them to the customer.
-        const { totalEarnings, ...driverStats } = await this.getDriverPublicStats(ride.driverId);
+        // Earnings and wallet balance are private to the driver - never expose to the customer.
+        const { totalEarnings, availableBalance, ...driverStats } = await this.getDriverPublicStats(ride.driverId);
         return { ...ride, driverStats };
     }
 
