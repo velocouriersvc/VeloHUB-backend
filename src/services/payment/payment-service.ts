@@ -1069,6 +1069,14 @@ export class PaymentService {
         if (event.event === "charge.success") {
             const reference = event.data.reference;
             await this.confirmPayment(reference, country);
+            return;
+        }
+
+        // On-demand payout (Paystack Transfer) lifecycle: finalize on success, and
+        // re-credit the wallet on a failed/reversed transfer.
+        if (event.event === "transfer.success" || event.event === "transfer.failed" || event.event === "transfer.reversed") {
+            const { PayoutService } = await import("../payout-service");
+            await new PayoutService().handleTransferWebhook(event.event, event.data);
         }
     }
 

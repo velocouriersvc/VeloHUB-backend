@@ -85,6 +85,12 @@ export interface PaymentProvider {
         reference: string;
     }): Promise<{ success: boolean; transferCode?: string; status?: string; message?: string }>;
 
+    /** List supported banks / momo providers for a currency (payout bank picker). */
+    listBanks?(currency: string): Promise<{ success: boolean; banks?: Array<{ name: string; code: string; type: string }>; message?: string }>;
+
+    /** Resolve an account number + bank code to the registered account name. */
+    resolveAccount?(accountNumber: string, bankCode: string): Promise<{ success: boolean; accountName?: string; message?: string }>;
+
     /**
      * Verify a payment by reference
      */

@@ -57,6 +57,14 @@ export class WalletService {
         return this.walletRepo.findOne({ where: { userId } });
     }
 
+    /** Cache/overwrite the Paystack transfer recipient code on the wallet. */
+    async setRecipientCode(userId: string, recipientCode: string): Promise<void> {
+        const wallet = await this.walletRepo.findOne({ where: { userId } });
+        if (!wallet) return;
+        wallet.paystackRecipientCode = recipientCode;
+        await this.walletRepo.save(wallet);
+    }
+
     /**
      * Ensure a Paystack transfer recipient exists for this wallet's payout account,
      * creating one from the momo/bank details on first use and caching the code on the

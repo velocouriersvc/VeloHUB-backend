@@ -265,6 +265,47 @@ export class PaystackProvider implements PaymentProvider {
     }
 
     /**
+     * List the banks / mobile-money providers Paystack supports for a currency,
+     * used to populate the payout bank picker. `type` distinguishes nuban vs momo.
+     */
+    async listBanks(currency: string): Promise<{ success: boolean; banks?: Array<{ name: string; code: string; type: string }>; message?: string }> {
+        try {
+            const response = await axios.get(`${PAYSTACK_BASE_URL}/bank`, {
+                headers: this.headers,
+                params: { currency, perPage: 100 },
+            });
+            const banks = (response.data?.data || []).map((b: any) => ({ name: b.name, code: b.code, type: b.type }));
+            return { success: response.data?.status === true, banks };
+        } catch (error) {
+            const axErr = error as AxiosError<{ message?: string }>;
+            const message = axErr.response?.data?.message || axErr.message;
+            log.error("Paystack list banks error", { error: message });
+            return { success: false, message };
+        }
+    }
+
+    /**
+     * Resolve an account number against a bank/momo code to get the registered
+     * account name. Used to verify the payout destination before creating a
+     * recipient (fraud check: the resolved name should match the user).
+     */
+    async resolveAccount(accountNumber: string, bankCode: string): Promise<{ success: boolean; accountName?: string; message?: string }> {
+        try {
+            const response = await axios.get(`${PAYSTACK_BASE_URL}/bank/resolve`, {
+                headers: this.headers,
+                params: { account_number: accountNumber, bank_code: bankCode },
+            });
+            const accountName = response.data?.data?.account_name;
+            return { success: response.data?.status === true && !!accountName, accountName };
+        } catch (error) {
+            const axErr = error as AxiosError<{ message?: string }>;
+            const message = axErr.response?.data?.message || axErr.message;
+            log.error("Paystack resolve account error", { error: message });
+            return { success: false, message };
+        }
+    }
+
+    /**
      * Verify Paystack webhook signature
      */
     verifyWebhookSignature(payload: string, signature: string): boolean {

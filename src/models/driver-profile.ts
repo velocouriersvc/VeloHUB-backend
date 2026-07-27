@@ -69,6 +69,22 @@ export class DriverProfile {
     @Column({ type: "varchar", length: 255, nullable: true })
     flagReason: string | null;
 
+    // ── Payout bank details (Paystack transfer recipient) ──
+    @Column({ type: "varchar", length: 20, nullable: true })
+    bankCode: string | null;
+
+    @Column({ type: "varchar", length: 50, nullable: true })
+    accountNumber: string | null;
+
+    @Column({ type: "varchar", length: 150, nullable: true })
+    accountName: string | null;
+
+    @Column({ type: "varchar", length: 150, nullable: true })
+    bankName: string | null;
+
+    @Column({ type: "boolean", default: false })
+    bankVerified: boolean;
+
     @OneToOne(() => User, (user: User) => user.driverProfile, { onDelete: "CASCADE" })
     @JoinColumn({ name: "userId" })
     user: User;
