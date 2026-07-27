@@ -1499,6 +1499,11 @@ export class AdminService {
                 status: tx.metadata?.status || "unknown",
                 payoutMethod: tx.metadata?.payoutMethod || "unknown",
                 accountNumber: tx.metadata?.accountNumber || "unknown",
+                // On-demand (automated) payouts itemize the fee/net + who requested it.
+                gross: Number(tx.metadata?.gross ?? tx.amount),
+                fee: tx.metadata?.fee != null ? Number(tx.metadata.fee) : null,
+                net: tx.metadata?.net != null ? Number(tx.metadata.net) : null,
+                role: tx.metadata?.role || null,
                 userId: tx.wallet?.userId,
                 userPhone: tx.wallet?.user?.phoneNumber,
                 currency: tx.wallet?.currency,

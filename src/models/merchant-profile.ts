@@ -73,6 +73,22 @@ export class MerchantProfile {
     @Column({ type: "varchar", length: 100, nullable: true })
     payoutAccount: string | null;
 
+    // ── Payout bank details (Paystack transfer recipient) ──
+    @Column({ type: "varchar", length: 20, nullable: true })
+    bankCode: string | null;
+
+    @Column({ type: "varchar", length: 50, nullable: true })
+    accountNumber: string | null;
+
+    @Column({ type: "varchar", length: 150, nullable: true })
+    accountName: string | null;
+
+    @Column({ type: "varchar", length: 150, nullable: true })
+    bankName: string | null;
+
+    @Column({ type: "boolean", default: false })
+    bankVerified: boolean;
+
     @Column({ type: "decimal", precision: 5, scale: 2, nullable: true })
     commissionRate: number | null; // overrides platform default
 
