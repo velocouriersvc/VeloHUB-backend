@@ -6,11 +6,15 @@ All three were app-side rendering/navigation bugs; the backend (deployed from de
 (chat message endpoints + /payouts endpoints re-verified live: 34 banks, message history returns).
 
 ## 1. Package Paystack payment stuck on iOS
-The package flow opened the payment webview with `router.push` (rides screen stays mounted
-mid-transition), so iOS could not present SFSafari over it. The WORKING food/services checkouts use
-`router.replace` to the same `payment-webview`. Fix: `app/rides.tsx` now uses `router.replace` for the
-package payment sheet (rides re-hydrates the active ride on mount, so tracking resumes on return). The
-R26 iOS pre-present delay stays as belt-and-suspenders.
+First attempt (`router.replace` instead of `router.push`) did NOT fix it on the built app, so the
+cause is not navigation. Real cause: the in-app SFSafari browser (`WebBrowser.openBrowserAsync`,
+PAGE_SHEET) repeatedly failed to present on iOS, and the R26 `InteractionManager.runAfterInteractions`
+delay made it worse (it can wait forever behind the rides/map animations, so the browser was never
+even opened - permanent spinner). Fix (`app/payment-webview.tsx`): on iOS, open Paystack via
+`Linking.openURL` (the SYSTEM browser, which always presents); the existing status poll + the server
+webhook confirm the payment when the user returns. Android keeps the in-app browser (reliable there),
+with a `Linking` fallback. `router.replace` is retained for the package flow (harmless, matches the
+other checkouts).
 
 ## 2. In-app service chat showed an empty window (composer stuck at top)
 `app/chat/[id].tsx` had the message `FlatList` INSIDE a `KeyboardAvoidingView` with `behavior="height"`
