@@ -34,7 +34,11 @@ export async function deliverRideMessage(
 ) {
     const msg = await chatMessageService.send(rideId, senderId, senderRole, text);
     if (io) {
+        // A job id is EITHER a ride or an order; the customer subscribes to the ride
+        // room (passenger/package) or the order room (marketplace delivery), so emit to
+        // both so the message reaches them live regardless of which they tracked.
         io.of("/rides").to(`ride:${rideId}`).emit("ride:message", msg);
+        io.of("/rides").to(`order:${rideId}`).emit("ride:message", msg);
         if (msg.driverUserId) {
             io.of("/drivers").to(`driver:${msg.driverUserId}`).emit("ride:message", msg);
         }
