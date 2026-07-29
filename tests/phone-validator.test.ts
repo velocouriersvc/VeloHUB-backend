@@ -30,10 +30,12 @@ describe("validatePhoneNumber", () => {
         expect(r.formatted).toBe("+2348012345678");
     });
 
-    it("still rejects a local number with no country context", () => {
-        // A Ghana local number (leading 0) cannot be resolved without a country code.
-        const r = validatePhoneNumber("0500647090");
-        expect(r.valid).toBe(false);
+    it("normalizes a Ghana local number (leading 0) via the default market", () => {
+        // Legacy accounts store national-format numbers (leading 0). These must resolve
+        // against the app's markets so their owners can use authed endpoints.
+        const r = validatePhoneNumber("0536690447");
+        expect(r.valid).toBe(true);
+        expect(r.formatted).toBe("+233536690447");
     });
 
     it("rejects obvious garbage", () => {

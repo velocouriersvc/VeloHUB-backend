@@ -390,23 +390,46 @@ export class ProfileService {
     }
 
     async deleteMyAccount(userId: string): Promise<void> {
-        // Soft-delete: anonymise PII and mark account as deleted
-        const user = await this.userRepository.findOne({ where: { id: userId } });
-        if (!user) throw new Error('User not found');
+        // Delete = release the unique identifiers (phone/email/appleSubjectId) and
+        // soft-delete, so the account is unreachable by login. We also catch any
+        // duplicate rows that share the same phone in a different format (e.g.
+        // "233..." vs "+233...", matched by the last 9 digits), because otherwise a
+        // surviving duplicate lets the "deleted" user sign right back in. Freeing the
+        // number means a future OTP with it creates a fresh, empty account.
+        await AppDataSource.transaction(async (manager) => {
+            const user = await manager.findOne(User, { where: { id: userId } });
+            if (!user) throw new Error('User not found');
 
-        user.email = null as any;
-        (user as any).deletedAt = new Date();
-        (user as any).isActive = false;
-        await this.userRepository.save(user);
+            const affected: User[] = [user];
+            const tail = (user.phoneNumber || '').replace(/[^0-9]/g, '').slice(-9);
+            if (tail.length === 9) {
+                const dups = await manager.createQueryBuilder(User, 'u')
+                    .where(`regexp_replace(u."phoneNumber", '[^0-9]', '', 'g') LIKE :tail`, { tail: `%${tail}` })
+                    .andWhere('u.id != :id', { id: user.id })
+                    .getMany();
+                affected.push(...dups);
+            }
 
-        // Remove user profile data
-        const userProfile = await this.userProfileRepository.findOne({ where: { userId } });
-        if (userProfile) {
-            userProfile.fullName = null;
-            userProfile.profileImageUrl = null;
-            await this.userProfileRepository.save(userProfile);
-        }
+            const now = new Date();
+            for (const u of affected) {
+                u.email = null;
+                u.phoneNumber = null;
+                u.appleSubjectId = null;
+                u.status = UserStatus.INACTIVE;
+                u.deletedAt = now;
+            }
+            await manager.save(affected);
 
-        log.info('User self-deleted account', { userId });
+            for (const u of affected) {
+                const profile = await manager.findOne(UserProfile, { where: { userId: u.id } });
+                if (profile) {
+                    profile.fullName = null;
+                    profile.profileImageUrl = null;
+                    await manager.save(profile);
+                }
+            }
+
+            log.info('User self-deleted account', { userId, releasedRows: affected.length });
+        });
     }
 }
