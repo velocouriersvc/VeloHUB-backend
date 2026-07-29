@@ -2,6 +2,7 @@ import logger from "../utils/logger";
 import { seedPlatformSettings } from "./seed-platform-settings";
 import { seedVehiclePricing } from "./seed-vehicle-pricing";
 import { seedProductCategories } from "./seed-product-categories";
+import { seedPromoCodes } from "./seed-promo-codes";
 import { syncNotificationTypeEnum } from "./sync-notification-enum";
 import { syncServiceBookingStatusEnum } from "./sync-service-booking-enum";
 import { syncOrderStatusEnum } from "./sync-order-status-enum";
@@ -25,6 +26,7 @@ export async function runSeeds(): Promise<void> {
         ["platform-settings", () => seedPlatformSettings(true)],
         ["vehicle-pricing", () => seedVehiclePricing(true)],
         ["product-categories", () => seedProductCategories(true)],
+        ["promo-codes", () => seedPromoCodes(true)],
         // Ensure the notifications enum has every value (fixes setup 500s caused by
         // missing enum values like "profile_created"/"welcome" on synchronize-only DBs).
         ["notification-enum", () => syncNotificationTypeEnum(true)],
