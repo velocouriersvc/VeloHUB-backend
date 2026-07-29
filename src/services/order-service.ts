@@ -210,6 +210,9 @@ export class OrderService {
         let discount = 0;
         let promoApplied = false;
         let promoCodeId: string | null = null;
+        // A free-delivery waiver reduces the delivery fee, not the taxable items, so
+        // it must not lower the sales-tax base.
+        let isDeliveryWaiver = false;
 
         if (input.promoCode) {
             const promoResult = await this.applyPromoCode(
@@ -223,12 +226,15 @@ export class OrderService {
                 discount = promoResult.discount;
                 promoApplied = true;
                 promoCodeId = promoResult.promoCodeId;
+                isDeliveryWaiver = promoResult.isDeliveryWaiver;
             }
         }
 
-        // 9. Local sales tax on the (discounted) subtotal
+        // 9. Local sales tax on the (item-)discounted subtotal. A delivery waiver does
+        // not reduce the taxable subtotal.
         const taxRate = settings ? Number(settings.taxRate) || 0 : 0;
-        const tax = Math.round((subtotal - discount) * (taxRate / 100) * 100) / 100;
+        const taxableDiscount = isDeliveryWaiver ? 0 : discount;
+        const tax = Math.round((subtotal - taxableDiscount) * (taxRate / 100) * 100) / 100;
 
         // 10. Total & merchant earnings
         const totalAmount = Math.round((subtotal + serviceFee + smallOrderFee + deliveryFee + tax - discount) * 100) / 100;
@@ -1043,7 +1049,7 @@ export class OrderService {
         merchantId: string,
         deliveryFee: number = 0,
         category: string | null = null
-    ): Promise<{ discount: number; promoCodeId: string } | null> {
+    ): Promise<{ discount: number; promoCodeId: string; isDeliveryWaiver: boolean } | null> {
         const promo = await this.promoRepo.findOne({
             where: { code: code.toUpperCase(), isActive: true },
         });
@@ -1100,10 +1106,15 @@ export class OrderService {
             discount = Math.min(discount, Number(promo.maxDiscountAmt));
         }
 
-        // Ensure discount doesn't exceed subtotal
-        discount = Math.min(discount, subtotal);
+        // A free-delivery waiver offsets the delivery fee, not the items, so it is
+        // bounded by the delivery fee (already set above) and must NOT be capped at
+        // the subtotal. Item discounts (percentage/fixed) can never exceed the items.
+        const isDeliveryWaiver = promo.discountType === "free_delivery";
+        if (!isDeliveryWaiver) {
+            discount = Math.min(discount, subtotal);
+        }
 
-        return { discount, promoCodeId: promo.id };
+        return { discount, promoCodeId: promo.id, isDeliveryWaiver };
     }
 
     /**
