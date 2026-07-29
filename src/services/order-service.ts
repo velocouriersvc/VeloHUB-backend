@@ -215,7 +215,9 @@ export class OrderService {
             const promoResult = await this.applyPromoCode(
                 input.promoCode,
                 subtotal,
-                cart.merchantId
+                cart.merchantId,
+                deliveryFee,
+                merchant?.category ?? null
             );
             if (promoResult) {
                 discount = promoResult.discount;
@@ -1038,7 +1040,9 @@ export class OrderService {
     private async applyPromoCode(
         code: string,
         subtotal: number,
-        merchantId: string
+        merchantId: string,
+        deliveryFee: number = 0,
+        category: string | null = null
     ): Promise<{ discount: number; promoCodeId: string } | null> {
         const promo = await this.promoRepo.findOne({
             where: { code: code.toUpperCase(), isActive: true },
@@ -1066,6 +1070,13 @@ export class OrderService {
             return null;
         }
 
+        // Check category restriction (e.g. "Pharmacy" only, "Restaurant" only).
+        // Compared case-insensitively against the merchant's category.
+        if (promo.categoryRestriction &&
+            promo.categoryRestriction.trim().toLowerCase() !== (category ?? "").trim().toLowerCase()) {
+            return null;
+        }
+
         // Check minimum order value
         if (promo.minOrderValue && subtotal < Number(promo.minOrderValue)) {
             return null;
@@ -1073,7 +1084,11 @@ export class OrderService {
 
         // Calculate discount
         let discount = 0;
-        if (promo.discountType === "fixed") {
+        if (promo.discountType === "free_delivery") {
+            // Waive the delivery fee: the discount equals the fee so the total nets it
+            // to zero. On pickup orders (deliveryFee 0) this is a no-op discount.
+            discount = deliveryFee;
+        } else if (promo.discountType === "fixed") {
             discount = Number(promo.discountValue);
         } else {
             // Default to percentage
