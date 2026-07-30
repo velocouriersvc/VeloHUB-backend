@@ -117,13 +117,12 @@ export class PayoutController {
                     return res.status(409).json({ message: "Finish your active trip before requesting a payout" });
                 }
             } else {
-                // Merchant: require the merchant role and an OTP confirmation.
+                // Merchant: only the business owner can request a payout. The former SMS OTP
+                // confirmation was removed because the code was not being delivered (it went to
+                // a MoMo number that does not receive it); payouts stay protected by the
+                // pre-verified bank/recipient and the minimum-balance check, same as drivers.
                 const isMerchant = (req.user?.roles || []).some((r) => r.name === "merchant");
                 if (!isMerchant) return res.status(403).json({ message: "Only the business owner can request a payout" });
-                const otp = String(req.body.otp || "");
-                if (!otp) return res.status(400).json({ message: "OTP_REQUIRED" });
-                const ok = await this.otp.verifyOtp(req.user!.phoneNumber, otp);
-                if (!ok) return res.status(400).json({ message: "Invalid or expired OTP" });
             }
 
             const result = await this.payouts.instantPayout(userId, {
