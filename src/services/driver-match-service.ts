@@ -24,6 +24,24 @@ const VEHICLE_COMPATIBILITY: Record<string, VehicleType[]> = {
     [VehicleType.TRUCK]: [VehicleType.TRUCK],
 };
 
+// Drivers store a free-text vehicle type from onboarding ("Car", "Motorcycle", "Van", ...),
+// but matching compares against the backend enum (bike/car/priority/suv/truck). Without this
+// mapping, "Car" never equals "car", so EVERY online driver was filtered out for EVERY tier:
+// estimates showed "No drivers" and real requests never reached a driver. Normalize here so
+// the free-text onboarding vocabulary (and common synonyms) resolves to the right tier.
+export function normalizeVehicleType(raw?: string | null): VehicleType {
+    const v = String(raw || "").trim().toLowerCase();
+    if (/(^|[^a-z])(motor|bike|bicycle|tricycle|scooter|moto|okada|keke)/.test(v)) return VehicleType.BIKE;
+    if (/(suv|van|minivan|jeep|crossover|wagon)/.test(v)) return VehicleType.SUV;
+    if (/(truck|pickup|lorry|trailer)/.test(v)) return VehicleType.TRUCK;
+    if (/(priority)/.test(v)) return VehicleType.PRIORITY;
+    if (/(car|sedan|hatchback|saloon|taxi)/.test(v)) return VehicleType.CAR;
+    // Already an enum value passes straight through; anything unknown falls back to car
+    // (the safe majority tier) so a mis-typed onboarding value still receives requests.
+    if ((Object.values(VehicleType) as string[]).includes(v)) return v as VehicleType;
+    return VehicleType.CAR;
+}
+
 export interface MatchedDriver {
     driverId: string;
     userId: string;
@@ -110,15 +128,17 @@ export class DriverMatchService {
             if (!profile) continue;
 
             // Match vehicle type by compatibility (not strict equality), so a car/priority
-            // request reaches both car and priority drivers.
+            // request reaches both car and priority drivers. The driver's stored type is
+            // free text ("Car", "Motorcycle", ...), so normalize it to the enum first.
+            const driverType = normalizeVehicleType(profile.vehicleType);
             const compatible: string[] = VEHICLE_COMPATIBILITY[vehicleType] || [vehicleType];
-            if (!compatible.includes(profile.vehicleType)) continue;
+            if (!compatible.includes(driverType)) continue;
 
             matched.push({
                 driverId: profile.id,
                 userId: profile.userId,
                 fullName: profile.fullName,
-                vehicleType: profile.vehicleType,
+                vehicleType: driverType,
                 plateNumber: profile.plateNumber || "N/A",
                 lat: nearby.location.lat,
                 lng: nearby.location.lng,
