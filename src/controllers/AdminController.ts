@@ -1941,6 +1941,38 @@ export class AdminController {
         }
     }
 
+    updateUser = async (req: AuthRequest, res: Response) => {
+        try {
+            const adminId = req.user?.id;
+            if (!adminId) return res.status(401).json({ message: "User ID required" });
+
+            const { id } = req.params;
+            const { phoneNumber, country } = req.body || {};
+            if (phoneNumber === undefined && country === undefined) {
+                return res.status(400).json({ message: "Provide phoneNumber and/or country to update" });
+            }
+
+            const result = await this.adminService.updateUser(id, { phoneNumber, country });
+
+            await AuditLogController.record({
+                action: "Update User Details",
+                entity_type: "user",
+                entity_id: id,
+                performed_by: req.user?.email || "Admin",
+                details: `Updated ${[phoneNumber !== undefined ? "phone" : null, country !== undefined ? "country" : null].filter(Boolean).join(" + ")}`,
+                risk_level: AuditRiskLevel.HIGH
+            });
+
+            return res.json(result);
+        } catch (error) {
+            const msg = (error as Error).message || "Internal server error";
+            log.error("Error updating user:", error);
+            if (msg.includes("not found")) return res.status(404).json({ message: msg });
+            if (/invalid|already in use|empty|2-letter/i.test(msg)) return res.status(400).json({ message: msg });
+            return res.status(500).json({ message: "Internal server error" });
+        }
+    };
+
     updateUserRoles = async (req: AuthRequest, res: Response) => {
         try {
             const adminId = req.user?.id;

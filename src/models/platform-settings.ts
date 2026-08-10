@@ -139,8 +139,13 @@ export class PlatformSettings {
 
     // ── General ─────────────────────────────────────────────────────
 
+    // Referrer reward: credited to the inviter when the referee's first ride/order completes.
     @Column({ type: "decimal", precision: 10, scale: 2, default: 5.00 })
     referralRewardAmount: number;
+
+    // Referee reward: credited to the new user at signup when they enter a valid code.
+    @Column({ type: "decimal", precision: 10, scale: 2, default: 10.00 })
+    referralRefereeReward: number;
 
     @Column({ type: "integer", default: 10 })
     leaderboardLimit: number;

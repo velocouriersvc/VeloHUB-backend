@@ -40,13 +40,13 @@ export class AuthController {
 
     verifyOTP = async (req: Request, res: Response) => {
         try {
-            const { phoneNumber, code } = req.body as VerifyOtpPayload;
+            const { phoneNumber, code, referralCode } = req.body as VerifyOtpPayload & { referralCode?: string };
 
             if (!phoneNumber || !code) {
                 return res.status(400).json({ message: "Phone number and code are required" });
             }
 
-            const result = await this.authService.verifyOtp(phoneNumber, code);
+            const result = await this.authService.verifyOtp(phoneNumber, code, referralCode);
 
             if (!result) {
                 return res.status(401).json({ message: "Invalid or expired OTP" });
@@ -62,14 +62,14 @@ export class AuthController {
     // Email + password registration & login
     register = async (req: Request, res: Response) => {
         try {
-            const { firstName, lastName, email, phoneNumber, password, country } = req.body || {};
+            const { firstName, lastName, email, phoneNumber, password, country, referralCode } = req.body || {};
             if (!firstName || !lastName || !email || !phoneNumber || !password) {
                 return res.status(400).json({ message: "firstName, lastName, email, phoneNumber and password are required" });
             }
             if (String(password).length < 6) {
                 return res.status(400).json({ message: "Password must be at least 6 characters" });
             }
-            const result = await this.authService.registerWithPassword({ firstName, lastName, email, phoneNumber, password, country });
+            const result = await this.authService.registerWithPassword({ firstName, lastName, email, phoneNumber, password, country, referralCode });
             return res.status(201).json(result);
         } catch (error) {
             const message = (error as Error).message || "Internal server error";

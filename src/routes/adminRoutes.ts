@@ -117,6 +117,7 @@ router.get("/users", adminRole, adminController.getUsers);
  *         description: Roles updated
  */
 router.put("/users/:id/roles", adminRole, adminController.updateUserRoles);
+router.patch("/users/:id", adminRole, adminController.updateUser);
 
 /**
  * @openapi

@@ -30,6 +30,7 @@ import { PromoCode } from "../models/promo-code";
 import { Banner } from "../models/banner";
 import { ReferralCode } from "../models/referral-code";
 import { ReferralLink, ReferralStatus } from "../models/referral-link";
+import { validatePhoneNumber } from "../utils/phone-validator";
 import { Broadcast } from "../models/broadcast";
 import { BuyerProfile } from "../models/buyer-profile";
 import { DriverProfile } from "../models/driver-profile";
@@ -2967,6 +2968,31 @@ export class AdminService {
             created_date: u.createdAt,
             last_active: u.lastLoginAt
         }));
+    }
+
+    /** Admin edit of a user's phone number and/or country. Phone is normalized to E.164
+     *  and checked for uniqueness; country is a 2-letter ISO code. */
+    async updateUser(userId: string, input: { phoneNumber?: string; country?: string }) {
+        const user = await this.userRepo.findOne({ where: { id: userId } });
+        if (!user) throw new Error("User not found");
+
+        if (input.phoneNumber !== undefined) {
+            const raw = String(input.phoneNumber || "").trim();
+            if (!raw) throw new Error("Phone number cannot be empty");
+            const v = validatePhoneNumber(raw);
+            if (!v.valid || !v.formatted) throw new Error("Invalid phone number format");
+            const clash = await this.userRepo.findOne({ where: { phoneNumber: v.formatted } });
+            if (clash && clash.id !== userId) throw new Error("That phone number is already in use by another account");
+            user.phoneNumber = v.formatted;
+        }
+        if (input.country !== undefined) {
+            const c = String(input.country || "").trim().toUpperCase();
+            if (c && c.length !== 2) throw new Error("Country must be a 2-letter ISO code (e.g. GH)");
+            if (c) user.country = c;
+        }
+
+        await this.userRepo.save(user);
+        return { id: user.id, phoneNumber: user.phoneNumber, country: user.country, email: user.email, status: user.status };
     }
 
     async updateUserRoles(userId: string, targetRoles: RoleType[], adminId: string) {

@@ -26,6 +26,7 @@ import rideRoutes from "./routes/rideRoutes";
 import driverRoutes from "./routes/driverRoutes";
 import paymentRoutes from "./routes/paymentRoutes";
 import walletRoutes from "./routes/walletRoutes";
+import referralRoutes from "./routes/referralRoutes";
 import payoutRoutes from "./routes/payoutRoutes";
 import locationRoutes from "./routes/locationRoutes";
 import ratingRoutes from "./routes/ratingRoutes";
@@ -128,6 +129,7 @@ app.use("/api/v1/services/bookings", serviceBookingRoutes);
 app.use("/api/v1/services/subscriptions", subscriptionRoutes);
 app.use("/api/v1/identity", identityRoutes);
 app.use("/api/v1/checkout", checkoutRoutes);
+app.use("/api/v1/referrals", referralRoutes);
 app.use("/api/v1/admin/supabase", supabaseRoutes);
 
 app.use("/api/orders", orderRoutes);

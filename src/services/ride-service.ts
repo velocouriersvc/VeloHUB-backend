@@ -17,7 +17,9 @@ import { PreludeService } from "./prelude-service";
 import { createServiceLogger } from "../utils/logger";
 import { rideEventsTotal } from "../utils/metrics";
 import { PlatformSettings } from "../models/platform-settings";
+import { DriverProfile } from "../models/driver-profile";
 import { SettlementService } from "./settlement-service";
+import { ReferralService } from "./referral-service";
 import { Rating } from "../models/rating";
 import { Order, OrderStatus } from "../models/order";
 import { PickupCodeService } from "./pickup-code-service";
@@ -101,6 +103,7 @@ export class RideService {
     private preludeService: PreludeService;
     private settlementService: SettlementService;
     private walletService: WalletService;
+    private referralService: ReferralService;
 
     constructor() {
         this.fareService = new FareService();
@@ -111,6 +114,7 @@ export class RideService {
         this.preludeService = new PreludeService();
         this.settlementService = new SettlementService();
         this.walletService = new WalletService();
+        this.referralService = new ReferralService();
     }
 
     // ── Fare Estimate ──
@@ -547,6 +551,9 @@ export class RideService {
 
         const updatedRide = await this.rideRepo.save(ride);
 
+        // Count the acceptance (drives the acceptance-rate stat).
+        await this.rideRepo.manager.getRepository(DriverProfile).increment({ userId: driverUserId }, "ridesAccepted", 1).catch(() => {});
+
         // Mark driver as busy
         await this.redisLocation.setDriverStatus(driverUserId, "busy");
         log.info("Ride accepted", { rideId, driverUserId });
@@ -814,6 +821,9 @@ export class RideService {
         // Fetch refreshed ride
         const updated = await this.getRideOrFail(rideId);
 
+        // If this customer was referred, their first completed ride pays the referrer (idempotent).
+        await this.referralService.rewardReferrerOnFirstCompletion(updated.customerId).catch(() => {});
+
         // Best-effort cleanup: settlement is already durable, so a Redis/socket hiccup
         // here must never bubble a 400 to the driver after their money has moved.
         try {
@@ -982,7 +992,7 @@ export class RideService {
      * Real, public driver stats shown to the customer on an active ride (replaces the
      * hardcoded 4.9 / "1,242 rides"). Average star rating + count of completed trips.
      */
-    async getDriverPublicStats(driverUserId: string): Promise<{ rating: number; ratingCount: number; completedTrips: number; totalEarnings: number; availableBalance: number }> {
+    async getDriverPublicStats(driverUserId: string): Promise<{ rating: number; ratingCount: number; completedTrips: number; totalEarnings: number; availableBalance: number; acceptanceRate: number | null }> {
         const agg = await this.rideRepo.manager
             .getRepository(Rating)
             .createQueryBuilder("r")
@@ -1008,12 +1018,20 @@ export class RideService {
         // The wallet balance is the driver's real withdrawable money; surface it so the
         // dashboard shows the SAME figure as the wallet screen.
         const wallet = await this.walletService.getWallet(driverUserId);
+        // Real acceptance rate from tracked offers/accepts. null when the driver has never
+        // been offered a job yet, so the app shows "New" instead of a made-up percentage.
+        const profile = await this.rideRepo.manager.getRepository(DriverProfile)
+            .findOne({ where: { userId: driverUserId }, select: ["ridesOffered", "ridesAccepted"] });
+        const offered = profile?.ridesOffered ?? 0;
+        const accepted = profile?.ridesAccepted ?? 0;
+        const acceptanceRate = offered > 0 ? Math.min(100, Math.round((accepted / offered) * 100)) : null;
         return {
             rating: agg ? Number(Number(agg.avg).toFixed(1)) : 0,
             ratingCount: agg ? Number(agg.cnt) : 0,
             completedTrips: (rideAgg ? Number(rideAgg.cnt) : 0) + (deliveryAgg ? Number(deliveryAgg.cnt) : 0),
             totalEarnings: rideAgg ? Number(Number(rideAgg.earnings).toFixed(2)) : 0,
             availableBalance: Number(wallet?.balance ?? 0),
+            acceptanceRate,
         };
     }
 
