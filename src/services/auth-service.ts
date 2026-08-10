@@ -14,6 +14,7 @@ import { MerchantProfile } from "../models/merchant-profile";
 import { UserProfile } from "../models/user-profile";
 import { createServiceLogger } from "../utils/logger";
 import { hashPassword, verifyPassword } from "../utils/password";
+import { ReferralService } from "./referral-service";
 
 const log = createServiceLogger("AuthService");
 
@@ -22,6 +23,7 @@ export class AuthService {
     private roleRepository = AppDataSource.getRepository(Role);
     private userRoleRepository = AppDataSource.getRepository(UserRole);
     private otpService = new OtpService();
+    private referralService = new ReferralService();
 
     private async getProfileByPhone(phoneNumber: string): Promise<Profile | null> {
         const { data: profile, error } = await supabase
@@ -80,7 +82,7 @@ export class AuthService {
         });
     }
 
-    async verifyOtp(phoneNumber: string, code: string): Promise<AuthResponse | null> {
+    async verifyOtp(phoneNumber: string, code: string, referralCode?: string): Promise<AuthResponse | null> {
         // 1. Check verification with OtpService (Local DB)
         const isApproved = await this.otpService.verifyOtp(phoneNumber, code);
 
@@ -104,6 +106,7 @@ export class AuthService {
             });
             await this.userRepository.save(user);
             log.info("New user created", { userId: user.id });
+            await this.referralService.applyAtSignup(user.id, referralCode, user.country);
         }
 
         user.lastLoginAt = new Date();
@@ -166,6 +169,7 @@ export class AuthService {
         phoneNumber: string;
         password: string;
         country?: string;
+        referralCode?: string;
     }): Promise<AuthResponse> {
         const email = input.email.trim().toLowerCase();
         const fullName = `${input.firstName.trim()} ${input.lastName.trim()}`.trim();
@@ -195,6 +199,8 @@ export class AuthService {
         const buyerProfileRepo = AppDataSource.getRepository(BuyerProfile);
         const profile = buyerProfileRepo.create({ userId: user.id, fullName });
         await buyerProfileRepo.save(profile);
+
+        await this.referralService.applyAtSignup(user.id, input.referralCode, user.country);
 
         const reloaded = await this.userRepository.findOne({
             where: { id: user.id },

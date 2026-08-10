@@ -2,6 +2,7 @@ import { Response } from "express";
 import { AuthRequest } from "../middleware/role-middleware";
 import { RideService } from "../services/ride-service";
 import { FareService } from "../services/fare-service";
+import { MerchantService } from "../services/merchant-service";
 import { RedisLocationService } from "../services/redis-location-service";
 import { RatingService } from "../services/rating-service";
 import { createServiceLogger } from "../utils/logger";
@@ -17,6 +18,7 @@ const log = createServiceLogger("DriverController");
 export class DriverController {
     private rideService = new RideService();
     private fareService = new FareService();
+    private merchantService = new MerchantService();
     private redisLocation = new RedisLocationService();
     private ratingService = new RatingService();
     private driverProfileRepo = AppDataSource.getRepository(DriverProfile);
@@ -254,6 +256,26 @@ export class DriverController {
      * GET /driver/stats
      * Get driver's stats (rating, total rides, earnings)
      */
+    /**
+     * GET /driver/nearby-merchants?lat=&lng=&radius=
+     * Nearby approved merchants for the driver demand map (pins by category).
+     */
+    getNearbyMerchants = async (req: AuthRequest, res: Response) => {
+        try {
+            const lat = Number(req.query.lat);
+            const lng = Number(req.query.lng);
+            const radius = req.query.radius ? Number(req.query.radius) : 20;
+            if (!lat || !lng || Number.isNaN(lat) || Number.isNaN(lng)) {
+                return res.status(400).json({ message: "lat and lng are required" });
+            }
+            const merchants = await this.merchantService.getNearbyMerchants(lat, lng, radius);
+            return res.json({ merchants });
+        } catch (error) {
+            log.error("Error getting nearby merchants", { error: (error as Error).message });
+            return res.status(500).json({ message: "Internal server error" });
+        }
+    };
+
     getStats = async (req: AuthRequest, res: Response) => {
         try {
             const userId = req.user?.id;
@@ -269,6 +291,7 @@ export class DriverController {
                     totalRides: live.completedTrips,
                     totalEarnings: live.totalEarnings,
                     availableBalance: live.availableBalance,
+                    acceptanceRate: live.acceptanceRate,
                 },
             });
         } catch (error) {

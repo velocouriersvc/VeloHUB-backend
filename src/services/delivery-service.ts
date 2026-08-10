@@ -7,6 +7,7 @@ import { User } from "../models/user";
 import { RedisLocationService } from "./redis-location-service";
 import { SettlementService, SettlementResult } from "./settlement-service";
 import { WalletService } from "./wallet-service";
+import { ReferralService } from "./referral-service";
 import { DriverProfile } from "../models/driver-profile";
 import { vehicleMeetsTier } from "../utils/vehicle-tier";
 import { NotificationService } from "./notification-service";
@@ -66,6 +67,7 @@ export class DeliveryService {
     private settlementService = new SettlementService();
     private walletService = new WalletService();
     private notificationService = new NotificationService();
+    private referralService = new ReferralService();
 
     // ── Available Deliveries ────────────────────────────────────────
 
@@ -214,6 +216,9 @@ export class DeliveryService {
             order.driverPickupCode = String(Math.floor(1000 + Math.random() * 9000));
 
             await this.orderRepo.save(order);
+
+            // Count the acceptance (drives the driver acceptance-rate stat, same as rides).
+            await AppDataSource.getRepository(DriverProfile).increment({ userId: driverId }, "ridesAccepted", 1).catch(() => {});
 
             // Tell the driver their pickup PIN (also shown big + as a QR in the app).
             await this.notificationService.notify(
@@ -472,6 +477,9 @@ export class DeliveryService {
 
         // Trigger settlement
         const settlement = await this.settlementService.settleOrder(orderId, driverId, "driver");
+
+        // If the buyer was referred, their first completed order pays the referrer (idempotent).
+        await this.referralService.rewardReferrerOnFirstCompletion(order.customerId).catch(() => {});
 
         // Release the driver back to available (best-effort: the payout is already
         // durable, so a Redis hiccup must never bubble a 400 after the money moved).

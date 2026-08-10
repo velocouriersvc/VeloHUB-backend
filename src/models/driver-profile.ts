@@ -85,6 +85,14 @@ export class DriverProfile {
     @Column({ type: "boolean", default: false })
     bankVerified: boolean;
 
+    // Acceptance-rate tracking: incremented each time a ride/delivery is offered
+    // (broadcast) to this driver, and each time they accept one. rate = accepted/offered.
+    @Column({ type: "int", default: 0 })
+    ridesOffered: number;
+
+    @Column({ type: "int", default: 0 })
+    ridesAccepted: number;
+
     @OneToOne(() => User, (user: User) => user.driverProfile, { onDelete: "CASCADE" })
     @JoinColumn({ name: "userId" })
     user: User;

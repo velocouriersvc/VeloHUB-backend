@@ -1,4 +1,5 @@
 import { AppDataSource } from "../db/data-source";
+import { In } from "typeorm";
 import { DriverProfile, DriverVerificationStatus } from "../models/driver-profile";
 import { RedisLocationService } from "./redis-location-service";
 import { NotificationService } from "./notification-service";
@@ -161,6 +162,11 @@ export class DriverMatchService {
         // Track broadcast in Redis
         await this.redisLocation.addToBroadcast(rideId, driverUserIds);
         log.info("Ride broadcasted to drivers", { rideId, driverCount: driverUserIds.length });
+
+        // Count this as an "offer" for each recipient (drives the acceptance-rate stat).
+        if (driverUserIds.length) {
+            await this.driverProfileRepo.increment({ userId: In(driverUserIds) }, "ridesOffered", 1).catch(() => {});
+        }
 
         // Notify each driver via push notification + WebSocket
         for (const driverUserId of driverUserIds) {

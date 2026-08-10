@@ -357,6 +357,7 @@ router.get("/rides/history", driverRole, driverController.getRideHistory);
  *         description: Invalid API key or role not approved
  */
 router.get("/stats", driverRole, driverController.getStats);
+router.get("/nearby-merchants", driverRole, driverController.getNearbyMerchants);
 
 // ════════════════════════════════════════════════════════════════════
 //  DRIVER PROFILE

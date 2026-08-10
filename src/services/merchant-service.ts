@@ -183,6 +183,36 @@ export class MerchantService {
     /**
      * Toggle merchant online status (isOpen).
      */
+    /** Nearby approved merchants (with coordinates) for the driver demand map, grouped by
+     *  category so the app can pin food / pharmacy / grocery / marketplace / services. */
+    async getNearbyMerchants(lat: number, lng: number, radiusKm = 20): Promise<Array<{ id: string; businessName: string; category: string; latitude: number; longitude: number }>> {
+        const rows = await this.profileRepo.createQueryBuilder("mp")
+            .select("mp.userId", "id")
+            .addSelect("mp.businessName", "businessName")
+            .addSelect("mp.category", "category")
+            .addSelect("mp.latitude", "latitude")
+            .addSelect("mp.longitude", "longitude")
+            .where("mp.latitude IS NOT NULL AND mp.longitude IS NOT NULL")
+            .andWhere("mp.status = :st", { st: MerchantVerificationStatus.APPROVED })
+            .andWhere(
+                `(6371 * acos(LEAST(1,
+                    cos(radians(:lat)) * cos(radians(mp.latitude)) *
+                    cos(radians(mp.longitude) - radians(:lng)) +
+                    sin(radians(:lat)) * sin(radians(mp.latitude))
+                ))) <= :radius`,
+                { lat, lng, radius: radiusKm }
+            )
+            .limit(100)
+            .getRawMany();
+        return rows.map((r: any) => ({
+            id: r.id,
+            businessName: r.businessName || "Store",
+            category: String(r.category || "marketplace"),
+            latitude: Number(r.latitude),
+            longitude: Number(r.longitude),
+        }));
+    }
+
     async toggleOpen(merchantId: string, isOpen: boolean): Promise<MerchantProfile & { storeLink: string }> {
         const profile = await this.profileRepo.findOne({ where: { userId: merchantId } });
         if (!profile) throw new Error("Merchant profile not found");
