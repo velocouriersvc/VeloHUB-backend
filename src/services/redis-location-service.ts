@@ -95,6 +95,17 @@ export class RedisLocationService {
     }
 
     /**
+     * Count drivers currently online (Redis status === "online"). Same source the matcher
+     * uses (findNearbyDrivers), so it matches what the app shows. Auto-expires with the 5-min TTL.
+     */
+    async countOnlineDrivers(): Promise<number> {
+        const keys = await this.scanKeys(`${DRIVER_STATUS_KEY}:*`);
+        if (keys.length === 0) return 0;
+        const values = await redis.mget(...keys);
+        return values.filter((v) => v === "online").length;
+    }
+
+    /**
      * Remove driver from Redis (offline)
      */
     async removeDriver(driverId: string): Promise<void> {
