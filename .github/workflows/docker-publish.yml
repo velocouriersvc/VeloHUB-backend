@@ -3,6 +3,7 @@ name: Build and Deploy to Production
 on:
   push:
     branches: [ "main" ]
+  workflow_dispatch:
 
 env:
   REGISTRY: ghcr.io
@@ -64,6 +65,8 @@ jobs:
       # If GHCR_PULL_TOKEN is empty, the package is expected to be PUBLIC.
       GHCR_PULL_TOKEN: ${{ secrets.GHCR_PULL_TOKEN }}
       GHCR_PULL_USER: ${{ secrets.GHCR_PULL_USER }}
+      # Spacemail SMTP mailbox password (set as a repo secret). Enables password-reset emails.
+      SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
     steps:
       - name: Deploy to VPS
         id: deploy
@@ -75,7 +78,7 @@ jobs:
           port: ${{ secrets.VPS_PORT }}
           request_pty: true
           command_timeout: 900s
-          envs: STRIPE_SECRET_KEY,STRIPE_WEBHOOK_SECRET,GHCR_PULL_TOKEN,GHCR_PULL_USER
+          envs: STRIPE_SECRET_KEY,STRIPE_WEBHOOK_SECRET,GHCR_PULL_TOKEN,GHCR_PULL_USER,SMTP_PASSWORD
           script: |
             echo "=========================================="
             echo "🚀 DEPLOYMENT STARTED"
@@ -97,6 +100,29 @@ jobs:
               --from-literal=STRIPE_WEBHOOK_SECRET="$STRIPE_WEBHOOK_SECRET" \
               --dry-run=client -o yaml | sudo kubectl apply -f -
             echo "Secrets updated."
+            echo ""
+
+            # ── Step 0.1: SMTP config (Spacemail) for password-reset emails ──
+            # Non-secret SMTP settings go in velo-config; the password goes in velo-secrets.
+            # These keys do not overlap, so envFrom order (config then secret) is irrelevant.
+            # Port 465 implicit TLS: the app's SMTP client has no STARTTLS, so 465 + secure=true.
+            echo "── UPDATING SMTP CONFIG ──"
+            sudo kubectl -n velo patch configmap velo-config --type merge -p '{"data":{
+              "SMTP_HOST":"mail.spacemail.com",
+              "SMTP_PORT":"465",
+              "SMTP_SECURE":"true",
+              "SMTP_AUTH":"true",
+              "SMTP_USER":"noreply@velocouriersvc.com",
+              "SMTP_FROM":"noreply@velocouriersvc.com",
+              "SMTP_FROM_NAME":"Velo Courier"
+            }}' && echo "velo-config SMTP set to mail.spacemail.com:465."
+            if [ -n "$SMTP_PASSWORD" ]; then
+              sudo kubectl -n velo patch secret velo-secrets --type merge \
+                -p "{\"stringData\":{\"SMTP_PASSWORD\":\"$SMTP_PASSWORD\"}}" \
+                && echo "velo-secrets SMTP_PASSWORD set."
+            else
+              echo "WARNING: SMTP_PASSWORD repo secret is empty - reset emails will NOT send until it is set."
+            fi
             echo ""
 
             # ── Step 0.5: Ensure GHCR image-pull access ──
