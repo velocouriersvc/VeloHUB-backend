@@ -38,8 +38,13 @@ data:
   # Should point to the HTTPS domain fronting /velo-uploads via Nginx/Ingress.
   MINIO_PUBLIC_URL: "https://api.velocouriersvc.com"
 
-  # SMTP (Postfix on VPS host - see docs/K8S_EMAIL_SETUP.md)
-  SMTP_HOST: "10.42.0.1"                    # pod gateway → host Postfix
-  SMTP_PORT: "25"
+  # SMTP - Spacemail authenticated relay (see docs/K8S_EMAIL_SETUP.md).
+  # Port 465 implicit TLS: the email-service SMTP client does implicit TLS only (no STARTTLS),
+  # so use 465 + SMTP_SECURE=true. SMTP_PASSWORD lives in the velo-secrets Secret, not here.
+  SMTP_HOST: "mail.spacemail.com"
+  SMTP_PORT: "465"
+  SMTP_SECURE: "true"
+  SMTP_AUTH: "true"
+  SMTP_USER: "noreply@velocouriersvc.com"
   SMTP_FROM: "noreply@velocouriersvc.com"
   SMTP_FROM_NAME: "Velo Courier"
