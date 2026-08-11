@@ -32,24 +32,30 @@ export class ReferralService {
     }
 
     /**
-     * Reward amounts + currency for a user's MARKET, sourced from the user's wallet currency
-     * (where the credit actually lands) so the displayed currency and amount always agree.
-     * Falls back to a country code, then the US/DEFAULT row.
+     * Per-currency reward amounts + currency, resolved in priority order:
+     * (1) an explicit `preferCurrency` (the user's DEFAULT currency, for display),
+     * (2) the user's wallet currency (where a credit actually lands),
+     * (3) `fallbackCountry`, then (4) the US/DEFAULT row. The returned `currency` is the
+     * resolved row's currency, so the amount and its symbol always agree.
      */
-    private async rewardsForWalletOf(userId: string, fallbackCountry?: string): Promise<{ referrer: number; referee: number; currency: string }> {
-        const wallet = await this.wallet.getWallet(userId);
-        let s = wallet?.currency ? await this.settingsRepo.findOne({ where: { currency: wallet.currency } }) : null;
+    private async rewardsForWalletOf(userId: string, fallbackCountry?: string, preferCurrency?: string): Promise<{ referrer: number; referee: number; currency: string }> {
+        let s = preferCurrency ? await this.settingsRepo.findOne({ where: { currency: preferCurrency } }) : null;
+        if (!s) {
+            const wallet = await this.wallet.getWallet(userId);
+            if (wallet?.currency) s = await this.settingsRepo.findOne({ where: { currency: wallet.currency } });
+        }
         if (!s && fallbackCountry) s = await this.settingsRepo.findOne({ where: { country: fallbackCountry } });
         if (!s) s = await this.settingsRepo.findOne({ where: { country: "US" } });
         return {
             referrer: Number(s?.referralRewardAmount ?? 25) || 25,
             referee: Number(s?.referralRefereeReward ?? 10) || 10,
-            currency: wallet?.currency || s?.currency || "USD",
+            currency: s?.currency || preferCurrency || "USD",
         };
     }
 
-    /** The user's referral code (created on first request) plus reward amounts + progress. */
-    async getOrCreateCode(userId: string) {
+    /** The user's referral code (created on first request) plus reward amounts + progress.
+     *  `displayCurrency` (the app's Default Currency) picks which market's amounts to show. */
+    async getOrCreateCode(userId: string, displayCurrency?: string) {
         let rec = await this.codeRepo.findOne({ where: { userId } });
         if (!rec) {
             let code = this.genCode();
@@ -64,7 +70,7 @@ export class ReferralService {
             }
         }
         const user = await this.userRepo.findOne({ where: { id: userId } });
-        const rewards = await this.rewardsForWalletOf(userId, user?.country || "GH");
+        const rewards = await this.rewardsForWalletOf(userId, user?.country || "GH", displayCurrency);
         const links = await this.linkRepo.find({ where: { referrerId: userId } });
         const completed = links.filter((l) => l.status === ReferralStatus.COMPLETED);
         return {
