@@ -1947,9 +1947,13 @@ export class AdminController {
             if (!adminId) return res.status(401).json({ message: "User ID required" });
 
             const { id } = req.params;
-            const { phoneNumber, country } = req.body || {};
+            // The new phone is sent as `newPhoneNumber`, NOT `phoneNumber`: the auth middleware reads
+            // the caller's identity from req.body.phoneNumber, so a `phoneNumber` field here would
+            // hijack admin auth (resolving the caller as the target's phone -> "User not found").
+            const { newPhoneNumber, phoneNumber: legacyPhone, country } = req.body || {};
+            const phoneNumber = newPhoneNumber ?? legacyPhone;
             if (phoneNumber === undefined && country === undefined) {
-                return res.status(400).json({ message: "Provide phoneNumber and/or country to update" });
+                return res.status(400).json({ message: "Provide newPhoneNumber and/or country to update" });
             }
 
             const result = await this.adminService.updateUser(id, { phoneNumber, country });

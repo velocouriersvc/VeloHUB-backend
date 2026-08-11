@@ -22,17 +22,22 @@ Result: a Ghana-wallet user sees GH₵ 80.00 / GH₵ 10.00 (the real GH amounts)
 
 ## Issue 2a - Admin "Edit Details" returned "User not found"
 
-The edit endpoint is correct: a live probe (guest admin `+233000000000`) confirmed
-`PATCH /admin/users/:id` with a valid `User.id` + `{country}` returns 200. The 404 came from editing a
-**stale row** (a user that no longer existed), which is easy to hit after test users are deleted.
+**Root cause (found via live probe):** the auth middleware resolves the caller from
+`req.body.phoneNumber || req.body.phone || ... || req.headers['x-user-phone']` (`role-middleware.ts:34`).
+So when an admin edits a **phone number**, the `phoneNumber` field in the PATCH body shadowed the admin's
+`x-user-phone` header - the middleware tried to authenticate the caller as the *target's new phone*, failed
+to find it, and returned "User not found". Country-only edits worked; phone edits always failed. Confirmed
+live: `PATCH /admin/users/:id` with `{country}` -> 200, but with `{phoneNumber}` -> 404 "User not found".
 
 **Fixes:**
-- Admin `velo-admin/src/pages/Riders.jsx`: `saveEdit` sends only fields the admin actually changed (no
-  re-sending the unchanged local-format phone); on a 404 it refreshes the list and shows "This user no
-  longer exists. The list has been refreshed." instead of a confusing error.
-- Backend `admin-service.updateUser`: distinct "No user exists with that id" message (vs the auth
-  middleware's "User not found"); passes the target/existing country as a region hint to
-  `validatePhoneNumber` so local-format numbers ("0248...") normalize to E.164.
+- The new phone is now sent as **`newPhoneNumber`** (not `phoneNumber`), so it can't collide with the
+  middleware's caller lookup. `AdminController.updateUser` reads `newPhoneNumber` (falls back to
+  `phoneNumber` for compatibility); `velo-admin/src/pages/Riders.jsx` `saveEdit` sends `newPhoneNumber`.
+- `saveEdit` also sends only fields the admin actually changed; on a 404 it refreshes the list and shows a
+  clear message.
+- Backend `admin-service.updateUser`: distinct "No user exists with that id" message (vs the middleware's
+  "User not found"); passes the target/existing country as a region hint to `validatePhoneNumber` so
+  local-format numbers ("0248...") normalize to E.164.
 
 ## Issue 2b - Admin dashboard: live Merchants online + Drivers online
 
