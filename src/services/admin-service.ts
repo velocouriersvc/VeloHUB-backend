@@ -38,6 +38,7 @@ import { UserProfile } from "../models/user-profile";
 import { VehiclePricing } from "../models/vehicle-pricing";
 import { PlatformWithdrawal } from "../models/platform-withdrawal";
 import { createServiceLogger } from "../utils/logger";
+import { RedisLocationService } from "./redis-location-service";
 import { formatCurrency, currencyForCountry } from "../utils/currency";
 import { orderEventsTotal } from "../utils/metrics";
 import { getCountryName } from "../utils/country";
@@ -100,6 +101,7 @@ export interface AdminDashboard {
         activeMerchants: number;
         activeDrivers: number;
         activeDriversByCountry: Record<string, number>;
+        driversOnline: number;
         monthlyActiveUsers: number;
         monthlyActiveUsersByCountry: Record<string, number>;
         totalListings: number;
@@ -148,6 +150,7 @@ export class AdminService {
     private driverProfileRepo = AppDataSource.getRepository(DriverProfile);
 
     private walletService = new WalletService();
+    private redisLocation = new RedisLocationService();
     private _paymentService?: PaymentService;
     private get paymentService(): PaymentService {
         if (!this._paymentService) {
@@ -200,7 +203,8 @@ export class AdminService {
             monthlyActiveUsers,
             monthlyActiveUsersByCountryRaw,
             totalListings,
-            totalListingsByCountryRaw
+            totalListingsByCountryRaw,
+            driversOnline
         ] = await Promise.all([
             this.userRepo.count(),
             this.userRepo.createQueryBuilder("u").select("u.country", "country").addSelect("COUNT(u.id)", "count").groupBy("u.country").getRawMany(),
@@ -269,6 +273,7 @@ export class AdminService {
                 .addSelect("COUNT(p.id)", "count")
                 .groupBy("u.country")
                 .getRawMany(),
+            this.redisLocation.countOnlineDrivers().catch(() => 0),
         ]);
 
         // Today's numbers & breakdowns
@@ -419,6 +424,7 @@ export class AdminService {
                 activeMerchants,
                 activeDrivers,
                 activeDriversByCountry: formatStats(activeDriversByCountryRaw),
+                driversOnline,
                 monthlyActiveUsers,
                 monthlyActiveUsersByCountry: formatStats(monthlyActiveUsersByCountryRaw),
                 totalListings,
@@ -2974,12 +2980,14 @@ export class AdminService {
      *  and checked for uniqueness; country is a 2-letter ISO code. */
     async updateUser(userId: string, input: { phoneNumber?: string; country?: string }) {
         const user = await this.userRepo.findOne({ where: { id: userId } });
-        if (!user) throw new Error("User not found");
+        if (!user) throw new Error("No user exists with that id"); // distinct from the auth middleware's "User not found"
 
         if (input.phoneNumber !== undefined) {
             const raw = String(input.phoneNumber || "").trim();
             if (!raw) throw new Error("Phone number cannot be empty");
-            const v = validatePhoneNumber(raw);
+            // Use the target/existing country as the region hint so a local-format number (e.g. "0248...") parses.
+            const region = String(input.country || user.country || "").trim().toUpperCase() || undefined;
+            const v = validatePhoneNumber(raw, region);
             if (!v.valid || !v.formatted) throw new Error("Invalid phone number format");
             const clash = await this.userRepo.findOne({ where: { phoneNumber: v.formatted } });
             if (clash && clash.id !== userId) throw new Error("That phone number is already in use by another account");

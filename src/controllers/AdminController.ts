@@ -1967,7 +1967,7 @@ export class AdminController {
         } catch (error) {
             const msg = (error as Error).message || "Internal server error";
             log.error("Error updating user:", error);
-            if (msg.includes("not found")) return res.status(404).json({ message: msg });
+            if (msg.includes("not found") || /no user exists/i.test(msg)) return res.status(404).json({ message: msg });
             if (/invalid|already in use|empty|2-letter/i.test(msg)) return res.status(400).json({ message: msg });
             return res.status(500).json({ message: "Internal server error" });
         }

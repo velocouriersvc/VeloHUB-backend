@@ -31,13 +31,20 @@ export class ReferralService {
         return s;
     }
 
-    private async rewardsFor(country: string): Promise<{ referrer: number; referee: number; currency: string }> {
-        let s = await this.settingsRepo.findOne({ where: { country } });
+    /**
+     * Reward amounts + currency for a user's MARKET, sourced from the user's wallet currency
+     * (where the credit actually lands) so the displayed currency and amount always agree.
+     * Falls back to a country code, then the US/DEFAULT row.
+     */
+    private async rewardsForWalletOf(userId: string, fallbackCountry?: string): Promise<{ referrer: number; referee: number; currency: string }> {
+        const wallet = await this.wallet.getWallet(userId);
+        let s = wallet?.currency ? await this.settingsRepo.findOne({ where: { currency: wallet.currency } }) : null;
+        if (!s && fallbackCountry) s = await this.settingsRepo.findOne({ where: { country: fallbackCountry } });
         if (!s) s = await this.settingsRepo.findOne({ where: { country: "US" } });
         return {
             referrer: Number(s?.referralRewardAmount ?? 25) || 25,
             referee: Number(s?.referralRefereeReward ?? 10) || 10,
-            currency: s?.currency || "USD",
+            currency: wallet?.currency || s?.currency || "USD",
         };
     }
 
@@ -57,15 +64,14 @@ export class ReferralService {
             }
         }
         const user = await this.userRepo.findOne({ where: { id: userId } });
-        const rewards = await this.rewardsFor(user?.country || "GH");
-        const wallet = await this.wallet.getWallet(userId);
+        const rewards = await this.rewardsForWalletOf(userId, user?.country || "GH");
         const links = await this.linkRepo.find({ where: { referrerId: userId } });
         const completed = links.filter((l) => l.status === ReferralStatus.COMPLETED);
         return {
             code: rec?.code || "",
             referrerReward: rewards.referrer,
             refereeReward: rewards.referee,
-            currency: wallet?.currency || rewards.currency,
+            currency: rewards.currency,
             invited: links.length,
             completed: completed.length,
             earned: completed.reduce((sum, l) => sum + Number(l.rewardAmount || 0), 0),
@@ -81,15 +87,21 @@ export class ReferralService {
             if (!owner || owner.userId === newUserId) return; // invalid code or self-referral
             if (await this.linkRepo.findOne({ where: { referredId: newUserId } })) return; // already referred
 
-            const rewards = await this.rewardsFor(country || "GH");
+            // Ensure the referee has a wallet (in their market's currency) before pricing/crediting.
+            if (!(await this.wallet.getWallet(newUserId))) await this.wallet.createWallet(newUserId, country || "GH");
+
+            // Each party is rewarded in THEIR OWN market/wallet currency: the link stores the
+            // referrer's future payout (their market); the referee is credited their market's amount.
+            const referrerRewards = await this.rewardsForWalletOf(owner.userId);
+            const refereeRewards = await this.rewardsForWalletOf(newUserId, country || "GH");
             await this.linkRepo.save(this.linkRepo.create({
                 referrerId: owner.userId,
                 referredId: newUserId,
                 referralCodeString: code,
                 status: ReferralStatus.PENDING,
-                rewardAmount: rewards.referrer,
+                rewardAmount: referrerRewards.referrer,
             }));
-            await this.creditWalletSafe(newUserId, rewards.referee, country || "GH", `Referral bonus for joining with code ${code}`, { type: "referral_referee", code });
+            await this.creditWalletSafe(newUserId, refereeRewards.referee, country || "GH", `Referral bonus for joining with code ${code}`, { type: "referral_referee", code });
             log.info("Referral applied at signup", { newUserId, referrerId: owner.userId, code });
         } catch (e) {
             log.warn("applyAtSignup failed (non-fatal)", { newUserId, error: (e as Error).message });
