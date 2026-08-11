@@ -1686,6 +1686,7 @@ export class AdminService {
             lateCancellationFeeMax: number;
             cancellationWindowMinutes: number;
             referralRewardAmount: number;
+            referralRefereeReward: number;
             leaderboardLimit: number;
             usdExchangeRate: number;
             paymentProcessingFeeRate: number;
