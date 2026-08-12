@@ -106,6 +106,24 @@ export class RedisLocationService {
     }
 
     /**
+     * Coordinates of active drivers, for a public coverage map. Coarsened to ~110 m (3 decimals)
+     * and stripped of any driver identity so a live map cannot precisely track an individual.
+     * Sourced from driver:location:* (5-min TTL), so it reflects drivers active in the last 5 minutes.
+     */
+    async getOnlineDriverPoints(): Promise<{ lat: number; lng: number }[]> {
+        const keys = await this.scanKeys(`${DRIVER_LOCATION_KEY}:*`);
+        if (keys.length === 0) return [];
+        const points: { lat: number; lng: number }[] = [];
+        for (const key of keys) {
+            const data = await redis.hgetall(key);
+            const lat = Number(data?.lat), lng = Number(data?.lng);
+            if (!isFinite(lat) || !isFinite(lng)) continue;
+            points.push({ lat: Math.round(lat * 1000) / 1000, lng: Math.round(lng * 1000) / 1000 });
+        }
+        return points;
+    }
+
+    /**
      * Remove driver from Redis (offline)
      */
     async removeDriver(driverId: string): Promise<void> {
