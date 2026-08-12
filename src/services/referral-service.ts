@@ -32,24 +32,34 @@ export class ReferralService {
     }
 
     /**
-     * Per-currency reward amounts + currency, resolved in priority order:
-     * (1) an explicit `preferCurrency` (the user's DEFAULT currency, for display),
-     * (2) the user's wallet currency (where a credit actually lands),
-     * (3) `fallbackCountry`, then (4) the US/DEFAULT row. The returned `currency` is the
-     * resolved row's currency, so the amount and its symbol always agree.
+     * Reward amounts always denominated in the USER'S currency. We resolve the target currency
+     * FIRST (explicit display currency -> wallet currency -> fallbackCountry's currency -> USD),
+     * then the amounts: the per-currency config row for that currency if one exists (e.g. GHS -> 80),
+     * otherwise the DEFAULT (then US) baseline. We never borrow an unrelated market's currency, so a
+     * user whose currency has no dedicated config (e.g. EUR) sees their own currency with the baseline
+     * amount instead of GHS.
      */
     private async rewardsForWalletOf(userId: string, fallbackCountry?: string, preferCurrency?: string): Promise<{ referrer: number; referee: number; currency: string }> {
-        let s = preferCurrency ? await this.settingsRepo.findOne({ where: { currency: preferCurrency } }) : null;
-        if (!s) {
+        // 1. Target currency.
+        let currency = String(preferCurrency || "").trim().toUpperCase();
+        if (!currency) {
             const wallet = await this.wallet.getWallet(userId);
-            if (wallet?.currency) s = await this.settingsRepo.findOne({ where: { currency: wallet.currency } });
+            currency = String(wallet?.currency || "").trim().toUpperCase();
         }
-        if (!s && fallbackCountry) s = await this.settingsRepo.findOne({ where: { country: fallbackCountry } });
-        if (!s) s = await this.settingsRepo.findOne({ where: { country: "US" } });
+        if (!currency && fallbackCountry) {
+            const cRow = await this.settingsRepo.findOne({ where: { country: fallbackCountry } });
+            currency = String(cRow?.currency || "").trim().toUpperCase();
+        }
+        if (!currency) currency = "USD";
+
+        // 2. Amounts: this currency's own config, else the DEFAULT (then US) baseline.
+        const row = (await this.settingsRepo.findOne({ where: { currency } }))
+            || (await this.settingsRepo.findOne({ where: { country: "DEFAULT" } }))
+            || (await this.settingsRepo.findOne({ where: { country: "US" } }));
         return {
-            referrer: Number(s?.referralRewardAmount ?? 25) || 25,
-            referee: Number(s?.referralRefereeReward ?? 10) || 10,
-            currency: s?.currency || preferCurrency || "USD",
+            referrer: Number(row?.referralRewardAmount ?? 5) || 5,
+            referee: Number(row?.referralRefereeReward ?? 10) || 10,
+            currency,
         };
     }
 
