@@ -96,10 +96,10 @@ export class ReferralService {
             // Ensure the referee has a wallet (in their market's currency) before pricing/crediting.
             if (!(await this.wallet.getWallet(newUserId))) await this.wallet.createWallet(newUserId, country || "GH");
 
-            // Each party is rewarded in THEIR OWN market/wallet currency: the link stores the
-            // referrer's future payout (their market); the referee is credited their market's amount.
+            // Record the pending link (referrer's future payout, in their own market). NO credit is
+            // paid yet: both the referee's and the referrer's rewards are granted only after the
+            // referee's FIRST purchase completes, and are non-withdrawable (see rewardReferrerOnFirstCompletion).
             const referrerRewards = await this.rewardsForWalletOf(owner.userId);
-            const refereeRewards = await this.rewardsForWalletOf(newUserId, country || "GH");
             await this.linkRepo.save(this.linkRepo.create({
                 referrerId: owner.userId,
                 referredId: newUserId,
@@ -107,15 +107,15 @@ export class ReferralService {
                 status: ReferralStatus.PENDING,
                 rewardAmount: referrerRewards.referrer,
             }));
-            await this.creditWalletSafe(newUserId, refereeRewards.referee, country || "GH", `Referral bonus for joining with code ${code}`, { type: "referral_referee", code });
-            log.info("Referral applied at signup", { newUserId, referrerId: owner.userId, code });
+            log.info("Referral link created at signup (credit deferred to first purchase)", { newUserId, referrerId: owner.userId, code });
         } catch (e) {
             log.warn("applyAtSignup failed (non-fatal)", { newUserId, error: (e as Error).message });
         }
     }
 
-    /** Reward the referrer when the referee completes their FIRST ride or order. Idempotent
-     *  (only a PENDING link is ever paid, then flipped to COMPLETED). Non-fatal on error. */
+    /** When the referee completes their FIRST ride/order (i.e. buys something), pay BOTH parties their
+     *  referral reward as NON-WITHDRAWABLE (in-app only) credit. Idempotent (only a PENDING link is ever
+     *  paid, then flipped to COMPLETED). Non-fatal on error. */
     async rewardReferrerOnFirstCompletion(referredUserId: string): Promise<void> {
         try {
             const link = await this.linkRepo.findOne({ where: { referredId: referredUserId, status: ReferralStatus.PENDING } });
@@ -125,21 +125,30 @@ export class ReferralService {
             await this.linkRepo.save(link);
 
             const referrer = await this.userRepo.findOne({ where: { id: link.referrerId } });
-            const amount = Number(link.rewardAmount || 0);
-            await this.creditWalletSafe(link.referrerId, amount, referrer?.country || "GH", "Referral reward - your invite made their first booking", { type: "referral_referrer", referredId: referredUserId });
+            const referrerAmount = Number(link.rewardAmount || 0);
+            const refereeAmount = (await this.rewardsForWalletOf(referredUserId)).referee; // referee's own market
+
+            // The referee bought something, so both rewards unlock now (in-app credit, not withdrawable).
+            await this.creditWalletSafe(link.referrerId, referrerAmount, referrer?.country || "GH", "Referral reward - your invite made their first purchase", { type: "referral_referrer", referredId: referredUserId });
+            await this.creditWalletSafe(referredUserId, refereeAmount, referrer?.country || "GH", "Referral bonus - unlocked by your first purchase", { type: "referral_referee", referrerId: link.referrerId });
+
             await this.notifications
-                .notify(link.referrerId, NotificationType.WALLET_CREDITED, "Referral reward earned", `You earned ${amount} credit because your invite completed their first VeloHUB booking.`, {})
+                .notify(link.referrerId, NotificationType.WALLET_CREDITED, "Referral reward earned", `You earned ${referrerAmount} in-app credit because your invite made their first VeloHUB purchase.`, {})
                 .catch(() => {});
-            log.info("Referral reward paid to referrer", { referrerId: link.referrerId, referredUserId, amount });
+            await this.notifications
+                .notify(referredUserId, NotificationType.WALLET_CREDITED, "Referral bonus unlocked", `Your ${refereeAmount} referral credit is now in your wallet for in-app use.`, {})
+                .catch(() => {});
+            log.info("Referral rewards paid on first purchase", { referrerId: link.referrerId, referredUserId, referrerAmount, refereeAmount });
         } catch (e) {
             log.warn("rewardReferrerOnFirstCompletion failed (non-fatal)", { referredUserId, error: (e as Error).message });
         }
     }
 
+    /** All referral credit is promo/non-withdrawable: spendable in-app, excluded from payouts. */
     private async creditWalletSafe(userId: string, amount: number, country: string, description: string, metadata: Record<string, any>) {
         if (!amount || amount <= 0) return;
         let w = await this.wallet.getWallet(userId);
         if (!w) w = await this.wallet.createWallet(userId, country);
-        await this.wallet.credit(userId, amount, description, metadata);
+        await this.wallet.credit(userId, amount, description, metadata, true); // promo: non-withdrawable
     }
 }

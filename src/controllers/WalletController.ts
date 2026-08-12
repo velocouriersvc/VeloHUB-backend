@@ -24,7 +24,10 @@ export class WalletController {
                 wallet = await this.walletService.createWallet(userId);
             }
 
-            return res.json({ wallet });
+            // withdrawableBalance excludes non-withdrawable promo/referral credit (spendable in-app only).
+            const promoBalance = Number(wallet.promoBalance || 0);
+            const withdrawableBalance = Math.max(0, Number(wallet.balance) - promoBalance);
+            return res.json({ wallet: { ...wallet, promoBalance, withdrawableBalance } });
         } catch (error) {
             log.error("Error getting wallet", { error: (error as Error).message });
             return res.status(500).json({ message: "Internal server error" });

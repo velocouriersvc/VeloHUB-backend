@@ -141,14 +141,16 @@ export class WalletService {
         if (!payoutMethod) throw new Error("Payout method is required");
         if (!accountNumber) throw new Error("Account number is required");
 
-        const hasBalance = await this.hasEnoughBalance(userId, amount);
-        if (!hasBalance) throw new Error("Insufficient wallet balance for this payout");
+        // Payouts may only draw the WITHDRAWABLE balance (excludes non-withdrawable promo/referral credit).
+        if (amount > (await this.getWithdrawableBalance(userId))) throw new Error("Insufficient withdrawable balance for this payout");
 
         const tx = await this.debit(
             userId,
             amount,
             `Payout request: ${payoutMethod} to ${accountNumber}`,
-            { type: "payout", payoutMethod, accountNumber, status: "pending" }
+            { type: "payout", payoutMethod, accountNumber, status: "pending" },
+            false,
+            true // withdrawableOnly
         );
 
         try {
@@ -192,14 +194,24 @@ export class WalletService {
         return Number(wallet.balance);
     }
 
+    /** Withdrawable (payout-eligible) balance = total balance minus non-withdrawable promo credit. */
+    async getWithdrawableBalance(userId: string): Promise<number> {
+        const wallet = await this.walletRepo.findOne({ where: { userId } });
+        if (!wallet) throw new Error("Wallet not found");
+        return Math.max(0, Number(wallet.balance) - Number(wallet.promoBalance || 0));
+    }
+
     /**
-     * Credit wallet (add funds)
+     * Credit wallet (add funds). `promo=true` marks the amount as non-withdrawable promo/referral
+     * credit: it adds to both `balance` (so it is spendable in-app) and `promoBalance` (so it is
+     * excluded from payouts).
      */
     async credit(
         userId: string,
         amount: number,
         description: string,
-        metadata?: Record<string, any>
+        metadata?: Record<string, any>,
+        promo: boolean = false
     ): Promise<WalletTransaction> {
         if (amount <= 0) throw new Error("Credit amount must be positive");
 
@@ -211,6 +223,7 @@ export class WalletService {
 
         // Update wallet balance
         wallet.balance = balanceAfter;
+        if (promo) wallet.promoBalance = Number(wallet.promoBalance || 0) + amount;
         await this.walletRepo.save(wallet);
 
         // Log transaction
@@ -239,7 +252,8 @@ export class WalletService {
         amount: number,
         description: string,
         metadata?: Record<string, any>,
-        allowNegative: boolean = false
+        allowNegative: boolean = false,
+        withdrawableOnly: boolean = false
     ): Promise<WalletTransaction> {
         if (amount <= 0) throw new Error("Debit amount must be positive");
 
@@ -247,14 +261,22 @@ export class WalletService {
         if (!wallet) throw new Error("Wallet not found");
 
         const balanceBefore = Number(wallet.balance);
-        if (!allowNegative && balanceBefore < amount) {
+        const promoBefore = Number(wallet.promoBalance || 0);
+        if (withdrawableOnly) {
+            // Payouts: never draw down the non-withdrawable promo/referral credit.
+            if (amount > balanceBefore - promoBefore) {
+                throw new Error("Insufficient withdrawable balance");
+            }
+        } else if (!allowNegative && balanceBefore < amount) {
             throw new Error("Insufficient wallet balance");
         }
 
         const balanceAfter = balanceBefore - amount;
 
-        // Update wallet balance
+        // Update wallet balance. For in-app/other debits, keep the invariant promoBalance <= balance
+        // (so promo is consumed as the balance falls); payouts leave promoBalance intact.
         wallet.balance = balanceAfter;
+        if (!withdrawableOnly) wallet.promoBalance = Math.min(promoBefore, Math.max(0, balanceAfter));
         await this.walletRepo.save(wallet);
 
         // Log transaction

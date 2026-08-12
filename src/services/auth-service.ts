@@ -82,7 +82,7 @@ export class AuthService {
         });
     }
 
-    async verifyOtp(phoneNumber: string, code: string, referralCode?: string): Promise<AuthResponse | null> {
+    async verifyOtp(phoneNumber: string, code: string, referralCode?: string, email?: string): Promise<AuthResponse | null> {
         // 1. Check verification with OtpService (Local DB)
         const isApproved = await this.otpService.verifyOtp(phoneNumber, code);
 
@@ -99,9 +99,17 @@ export class AuthService {
         const isNewUser = !user;
 
         if (!user) {
+            const cleanEmail = String(email || "").trim().toLowerCase();
+            // The one-time-code flow now delivers via email, so a brand-new phone user gets that
+            // email on file (enables email password reset later). Ignore it if already taken.
+            let emailToSet: string | undefined = cleanEmail || undefined;
+            if (emailToSet && await this.userRepository.findOne({ where: { email: emailToSet } })) {
+                emailToSet = undefined;
+            }
             user = this.userRepository.create({
                 id: crypto.randomUUID(),
                 phoneNumber,
+                email: emailToSet,
                 status: UserStatus.ACTIVE,
             });
             await this.userRepository.save(user);

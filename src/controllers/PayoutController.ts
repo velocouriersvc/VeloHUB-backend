@@ -102,9 +102,10 @@ export class PayoutController {
             if (!bank) return res.status(400).json({ message: "Add your bank details before requesting a payout" });
 
             const min = MIN_BALANCE[(wallet.currency || "NGN").toUpperCase()] ?? 0;
-            const balance = Number(wallet.balance);
+            // Only the withdrawable balance counts (promo/referral credit is spendable in-app, not withdrawable).
+            const balance = await this.wallet.getWithdrawableBalance(userId);
             if (balance <= min) {
-                return res.status(400).json({ message: `A minimum balance of ${min} ${wallet.currency} is required for instant payouts` });
+                return res.status(400).json({ message: `A minimum withdrawable balance of ${min} ${wallet.currency} is required for instant payouts` });
             }
 
             if (role === "driver") {
