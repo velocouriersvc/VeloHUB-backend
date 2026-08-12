@@ -40,13 +40,13 @@ export class AuthController {
 
     verifyOTP = async (req: Request, res: Response) => {
         try {
-            const { phoneNumber, code, referralCode } = req.body as VerifyOtpPayload & { referralCode?: string };
+            const { phoneNumber, code, referralCode, email } = req.body as VerifyOtpPayload & { referralCode?: string; email?: string };
 
             if (!phoneNumber || !code) {
                 return res.status(400).json({ message: "Phone number and code are required" });
             }
 
-            const result = await this.authService.verifyOtp(phoneNumber, code, referralCode);
+            const result = await this.authService.verifyOtp(phoneNumber, code, referralCode, email);
 
             if (!result) {
                 return res.status(401).json({ message: "Invalid or expired OTP" });

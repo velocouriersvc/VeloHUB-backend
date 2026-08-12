@@ -13,6 +13,11 @@ export class Wallet {
     @Column({ type: "decimal", precision: 12, scale: 2, default: 0 })
     balance: number;
 
+    // The non-withdrawable subset of `balance` (referral/promo credit): spendable in-app but
+    // never payable out. Invariant: promoBalance <= balance. Withdrawable = balance - promoBalance.
+    @Column({ type: "decimal", precision: 12, scale: 2, default: 0 })
+    promoBalance: number;
+
     @Column({ type: "varchar", length: 3, default: "GHS" })
     currency: string;
 

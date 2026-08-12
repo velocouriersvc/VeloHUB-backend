@@ -134,8 +134,9 @@ export class PayoutService {
 
         const { fee, net, currency } = payoutBreakdown(amount, wallet.currency || "NGN");
         if (net <= 0) throw new Error("Amount is too small to cover the transfer fee");
-        if (!(await this.wallet.hasEnoughBalance(userId, amount))) {
-            throw new Error("Insufficient wallet balance for this payout");
+        // Payouts may only draw the WITHDRAWABLE balance (excludes non-withdrawable promo/referral credit).
+        if (amount > (await this.wallet.getWithdrawableBalance(userId))) {
+            throw new Error("Insufficient withdrawable balance for this payout");
         }
 
         const reference = `PO-${uuidv4().slice(0, 12)}`;
@@ -148,7 +149,7 @@ export class PayoutService {
             reference,
             paystackTransferFee: fee,
             ...(input.audit || {}),
-        });
+        }, false, true); // withdrawableOnly: never spend promo credit
 
         const transfer = await this.wallet.initiatePayoutTransfer(userId, {
             amount: net,

@@ -843,10 +843,9 @@ export class MerchantService {
         if (!payoutMethod) throw new Error("Payout method is required");
         if (!accountNumber) throw new Error("Account number is required");
 
-        // Check wallet balance
-        const hasBalance = await this.walletService.hasEnoughBalance(merchantId, amount);
-        if (!hasBalance) {
-            throw new Error("Insufficient wallet balance for this payout");
+        // Payouts may only draw the WITHDRAWABLE balance (excludes non-withdrawable promo/referral credit).
+        if (amount > (await this.walletService.getWithdrawableBalance(merchantId))) {
+            throw new Error("Insufficient withdrawable balance for this payout");
         }
 
         // Get wallet for currency
@@ -863,7 +862,9 @@ export class MerchantService {
                 payoutMethod,
                 accountNumber,
                 status: "pending", // Admin must approve actual disbursement
-            }
+            },
+            false,
+            true // withdrawableOnly
         );
 
         // Create (or reuse) the Paystack transfer recipient now so admin approval can

@@ -33,17 +33,14 @@ export class OtpService {
             return "test-session-id";
         }
 
-        // Email channel: generate the code locally and deliver it via SMTP (EmailService).
-        // Cheaper than SMS and offered as an alternative verification method.
-        if (channel === 'email') {
-            if (!email) {
-                throw new Error("Email address is required to send an email verification code.");
-            }
+        // EMAIL OTP is now the verification channel (Prelude SMS is disabled to save cost). When an
+        // email is supplied we generate the code locally and deliver it via SMTP (EmailService).
+        if (email) {
             const code = String(Math.floor(100000 + Math.random() * 900000)); // 6-digit
             const expiresAt = new Date(Date.now() + 10 * 60000); // 10 mins
 
             await this.otpRepository.delete({ phoneNumber });
-            const otp = this.otpRepository.create({ phoneNumber, code, expiresAt, channel });
+            const otp = this.otpRepository.create({ phoneNumber, code, expiresAt, channel: 'email' });
             await this.otpRepository.save(otp);
 
             const sent = await EmailService.sendOtp(email, code);
@@ -54,26 +51,18 @@ export class OtpService {
             return "email-otp";
         }
 
-        // Trigger Prelude's verification - they handle code generation and channel selection (SMS/WhatsApp)
-        const verificationId = await this.preludeService.sendVerification(phoneNumber);
-        // Optional: still store metadata in the DB for audit/history
-        const expiresAt = new Date();
-        expiresAt.setMinutes(expiresAt.getMinutes() + 10);
+        // ── Prelude SMS/WhatsApp OTP: DISABLED to save cost (kept for easy re-enable) ──
+        // To restore SMS OTP, uncomment this block and stop requiring an email above.
+        // const verificationId = await this.preludeService.sendVerification(phoneNumber);
+        // const expiresAt = new Date();
+        // expiresAt.setMinutes(expiresAt.getMinutes() + 10);
+        // await this.otpRepository.delete({ phoneNumber });
+        // const otp = this.otpRepository.create({ phoneNumber, code: verificationId.slice(0, 6), expiresAt, channel });
+        // await this.otpRepository.save(otp);
+        // log.info("OTP request sent successfully via Prelude");
+        // return verificationId;
 
-        // Deactivate previous OTPs for this phone number
-        await this.otpRepository.delete({ phoneNumber });
-
-        const otp = this.otpRepository.create({
-            phoneNumber,
-            code: verificationId.slice(0, 6), // Reference to the verification request
-            expiresAt,
-            channel,
-        });
-
-        await this.otpRepository.save(otp);
-        
-        log.info(`OTP request sent successfully via Prelude`);
-        return verificationId;
+        throw new Error("An email address is required to send a verification code.");
     }
 
     async verifyOtp(phoneNumber: string, code: string): Promise<boolean> {
@@ -107,33 +96,15 @@ export class OtpService {
             return false;
         }
 
-        // Otherwise verification is handled by Prelude (SMS / WhatsApp).
-        const isVerifiedByPrelude = await this.preludeService.checkVerification(phoneNumber, code);
+        // ── Prelude SMS/WhatsApp verification: DISABLED (email OTP only). Kept for easy re-enable. ──
+        // const isVerifiedByPrelude = await this.preludeService.checkVerification(phoneNumber, code);
+        // if (!isVerifiedByPrelude) { ... return false; }
+        // (mark local record verified) ... return true;
 
-        if (!isVerifiedByPrelude) {
-            log.warn("OTP verification failed via Prelude - invalid or expired code");
-            authEventsTotal.inc({ event: "otp_failed", channel: "unknown" });
-            return false;
-        }
-
-        // Mark local record as verified if it exists
-        const otp = await this.otpRepository.findOne({
-            where: {
-                phoneNumber,
-                isVerified: false,
-            },
-            order: { createdAt: "DESC" }
-        });
-
-        if (otp) {
-            otp.isVerified = true;
-            await this.otpRepository.save(otp);
-        }
-
-        log.info("OTP verified successfully by Prelude");
-        authEventsTotal.inc({ event: "otp_verified", channel: otp?.channel || "prelude" });
-
-        return true;
+        // No valid (unexpired, unverified) email OTP matched this code.
+        log.warn("OTP verification failed - no valid code on file");
+        authEventsTotal.inc({ event: "otp_failed", channel: "email" });
+        return false;
     }
 
     async cleanup(): Promise<void> {

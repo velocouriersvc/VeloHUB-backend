@@ -47,4 +47,4 @@ data:
   SMTP_AUTH: "true"
   SMTP_USER: "noreply@velocouriersvc.com"
   SMTP_FROM: "noreply@velocouriersvc.com"
-  SMTP_FROM_NAME: "Velo Courier"
+  SMTP_FROM_NAME: "Velo Courier Services"
