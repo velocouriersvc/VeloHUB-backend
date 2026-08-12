@@ -25,6 +25,12 @@ const log = createServiceLogger("DevController");
 export class DevController {
     getAllData = async (req: Request, res: Response) => {
         try {
+            // SECURITY: this dev dump exposes users, OTP/reset codes, KYC identifications, wallets, etc.
+            // It must never be reachable in production (the api key is public), so it is disabled there.
+            if (process.env.NODE_ENV === "production") {
+                return res.status(404).json({ message: "Not found" });
+            }
+
             const users = await AppDataSource.getRepository(User).find({
                 relations: ["userRoles", "userRoles.role"]
             });
