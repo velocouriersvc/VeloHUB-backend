@@ -36,18 +36,40 @@ export class OtpService {
         // EMAIL OTP is now the verification channel (Prelude SMS is disabled to save cost). When an
         // email is supplied we generate the code locally and deliver it via SMTP (EmailService).
         if (email) {
-            const code = String(Math.floor(100000 + Math.random() * 900000)); // 6-digit
-            const expiresAt = new Date(Date.now() + 10 * 60000); // 10 mins
+            // Idempotent: a rapid re-request (double-tap / client retry) within 90s reuses the same live
+            // code instead of rotating it, so a user who already received the first email is not invalidated.
+            const recent = await this.otpRepository.findOne({
+                where: {
+                    phoneNumber,
+                    channel: 'email',
+                    isVerified: false,
+                    createdAt: MoreThan(new Date(Date.now() - 90 * 1000)),
+                    expiresAt: MoreThan(new Date()),
+                },
+                order: { createdAt: "DESC" },
+            });
 
-            await this.otpRepository.delete({ phoneNumber });
-            const otp = this.otpRepository.create({ phoneNumber, code, expiresAt, channel: 'email' });
-            await this.otpRepository.save(otp);
+            let code: string;
+            if (recent) {
+                code = recent.code;
+            } else {
+                code = String(Math.floor(100000 + Math.random() * 900000)); // 6-digit
+                await this.otpRepository.delete({ phoneNumber });
+                const otp = this.otpRepository.create({
+                    phoneNumber,
+                    code,
+                    expiresAt: new Date(Date.now() + 10 * 60000), // 10 mins
+                    channel: 'email',
+                });
+                await this.otpRepository.save(otp);
+            }
 
+            // EmailService delivers via the primary relay and falls back to the backup relay on failure.
             const sent = await EmailService.sendOtp(email, code);
             if (!sent) {
                 throw new Error("Failed to send the email verification code. Please try again.");
             }
-            log.info("Email OTP sent successfully");
+            log.info("Email OTP sent successfully", { reused: !!recent });
             return "email-otp";
         }
 

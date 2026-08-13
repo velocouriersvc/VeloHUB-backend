@@ -67,6 +67,8 @@ jobs:
       GHCR_PULL_USER: ${{ secrets.GHCR_PULL_USER }}
       # Spacemail SMTP mailbox password (set as a repo secret). Enables password-reset emails.
       SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+      # Microsoft 365 fallback SMTP mailbox password (set as a repo secret). Enables the OTP fallback relay.
+      FALLBACK_SMTP_PASSWORD: ${{ secrets.FALLBACK_SMTP_PASSWORD }}
     steps:
       - name: Deploy to VPS
         id: deploy
@@ -78,7 +80,7 @@ jobs:
           port: ${{ secrets.VPS_PORT }}
           request_pty: true
           command_timeout: 900s
-          envs: STRIPE_SECRET_KEY,STRIPE_WEBHOOK_SECRET,GHCR_PULL_TOKEN,GHCR_PULL_USER,SMTP_PASSWORD
+          envs: STRIPE_SECRET_KEY,STRIPE_WEBHOOK_SECRET,GHCR_PULL_TOKEN,GHCR_PULL_USER,SMTP_PASSWORD,FALLBACK_SMTP_PASSWORD
           script: |
             echo "=========================================="
             echo "🚀 DEPLOYMENT STARTED"
@@ -114,14 +116,28 @@ jobs:
               "SMTP_AUTH":"true",
               "SMTP_USER":"noreply@velocouriersvc.com",
               "SMTP_FROM":"noreply@velocouriersvc.com",
-              "SMTP_FROM_NAME":"Velo Courier Services"
-            }}' && echo "velo-config SMTP set to mail.spacemail.com:465."
+              "SMTP_FROM_NAME":"Velo Courier Services",
+              "FALLBACK_SMTP_HOST":"smtp.office365.com",
+              "FALLBACK_SMTP_PORT":"587",
+              "FALLBACK_SMTP_STARTTLS":"true",
+              "FALLBACK_SMTP_AUTH":"true",
+              "FALLBACK_SMTP_USER":"noreply@velo-brand.com",
+              "FALLBACK_SMTP_FROM":"noreply@velo-brand.com",
+              "FALLBACK_SMTP_FROM_NAME":"Velo Courier Services"
+            }}' && echo "velo-config SMTP (primary + fallback) set."
             if [ -n "$SMTP_PASSWORD" ]; then
               sudo kubectl -n velo patch secret velo-secrets --type merge \
                 -p "{\"stringData\":{\"SMTP_PASSWORD\":\"$SMTP_PASSWORD\"}}" \
                 && echo "velo-secrets SMTP_PASSWORD set."
             else
               echo "WARNING: SMTP_PASSWORD repo secret is empty - reset emails will NOT send until it is set."
+            fi
+            if [ -n "$FALLBACK_SMTP_PASSWORD" ]; then
+              sudo kubectl -n velo patch secret velo-secrets --type merge \
+                -p "{\"stringData\":{\"FALLBACK_SMTP_PASSWORD\":\"$FALLBACK_SMTP_PASSWORD\"}}" \
+                && echo "velo-secrets FALLBACK_SMTP_PASSWORD set."
+            else
+              echo "WARNING: FALLBACK_SMTP_PASSWORD repo secret is empty - the OTP fallback relay stays dormant until it is set."
             fi
             echo ""
 
