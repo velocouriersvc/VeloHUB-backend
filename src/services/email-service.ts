@@ -1,25 +1,31 @@
 import * as net from 'net';
 import * as tls from 'tls';
 
-/* ─────────────────────────────────────────────
+/* ---------------------------------------------
  *  EmailService - lightweight SMTP client
  *
- *  Sends email via Postfix (port 25, no auth) when running in K8s,
- *  or via an authenticated SMTP relay (Gmail, Brevo, etc.).
+ *  Sends email via an authenticated SMTP relay (Spacemail, Gmail, etc.) or a
+ *  local Postfix (port 25, no auth). Zero external dependencies - raw sockets.
  *
- *  Zero external dependencies - uses raw TCP sockets.
- *  If you prefer nodemailer, swap the `send()` implementation.
+ *  Resilient delivery: send() tries the PRIMARY relay first and, if that fails,
+ *  falls back to a SECOND relay (FALLBACK_SMTP_*, e.g. Microsoft 365 on 587
+ *  STARTTLS). Either success returns true.
  *
- *  Env vars (injected from ConfigMap / Secret):
- *    SMTP_HOST       – e.g. 10.42.0.1 (pod gateway → host Postfix)
- *    SMTP_PORT       – e.g. 25
- *    SMTP_FROM       – e.g. noreply@velocouriersvc.com
- *    SMTP_FROM_NAME  – e.g. Velo Courier
- *    SMTP_AUTH       – "true" to enable LOGIN auth (Gmail relay)
- *    SMTP_USER       – username (only when AUTH is true)
- *    SMTP_PASSWORD   – password (only when AUTH is true)
- *    SMTP_SECURE     – "true" for implicit TLS (port 465)
- * ───────────────────────────────────────────── */
+ *  Primary env vars (injected from ConfigMap / Secret):
+ *    SMTP_HOST       host, e.g. mail.spacemail.com
+ *    SMTP_PORT       port, e.g. 465
+ *    SMTP_FROM       from address, e.g. noreply@velocouriersvc.com
+ *    SMTP_FROM_NAME  display name, e.g. Velo Courier Services
+ *    SMTP_AUTH       "true" to enable LOGIN auth
+ *    SMTP_USER       username (only when AUTH is true)
+ *    SMTP_PASSWORD   password (only when AUTH is true)
+ *    SMTP_SECURE     "true" for implicit TLS (port 465)
+ *    SMTP_STARTTLS   "true" to upgrade a plaintext connection to TLS (port 587)
+ *
+ *  Fallback env vars: same keys prefixed FALLBACK_SMTP_* (defaults suit
+ *  Microsoft 365: smtp.office365.com:587, STARTTLS + AUTH). The fallback is
+ *  used only when both a host and a password are configured.
+ * --------------------------------------------- */
 
 interface Attachment {
     filename: string;
@@ -44,6 +50,7 @@ interface SmtpConfig {
     user: string;
     password: string;
     secure: boolean;
+    starttls: boolean;
 }
 
 function getConfig(): SmtpConfig {
@@ -56,6 +63,30 @@ function getConfig(): SmtpConfig {
         user: process.env.SMTP_USER || '',
         password: process.env.SMTP_PASSWORD || '',
         secure: process.env.SMTP_SECURE === 'true',
+        starttls: process.env.SMTP_STARTTLS === 'true',
+    };
+}
+
+/**
+ * Backup relay used when the primary send fails. Defaults suit Microsoft 365
+ * (smtp.office365.com:587, STARTTLS + AUTH LOGIN). Returns null unless both a
+ * host and a password are configured, so an unconfigured fallback stays dormant.
+ */
+function getFallbackConfig(): SmtpConfig | null {
+    const host = process.env.FALLBACK_SMTP_HOST || '';
+    const password = process.env.FALLBACK_SMTP_PASSWORD || '';
+    if (!host || !password) return null;
+    const user = process.env.FALLBACK_SMTP_USER || '';
+    return {
+        host,
+        port: parseInt(process.env.FALLBACK_SMTP_PORT || '587', 10),
+        from: process.env.FALLBACK_SMTP_FROM || user,
+        fromName: process.env.FALLBACK_SMTP_FROM_NAME || 'Velo Courier Services',
+        auth: process.env.FALLBACK_SMTP_AUTH !== 'false',
+        user,
+        password,
+        secure: process.env.FALLBACK_SMTP_SECURE === 'true',
+        starttls: process.env.FALLBACK_SMTP_STARTTLS !== 'false',
     };
 }
 
@@ -96,21 +127,28 @@ function waitForGreeting(socket: net.Socket): Promise<string> {
     });
 }
 
+/** Upgrade a plaintext SMTP socket to TLS after a STARTTLS command (port 587). */
+function upgradeToTls(socket: net.Socket, host: string): Promise<tls.TLSSocket> {
+    return new Promise((resolve, reject) => {
+        const secure = tls.connect({ socket, servername: host }, () => resolve(secure));
+        secure.once('error', reject);
+    });
+}
+
 export class EmailService {
     /* ── Public API ── */
 
     static async send(options: EmailOptions): Promise<boolean> {
-        const cfg = getConfig();
-        const hasAttachments = !!(options.attachments && options.attachments.length > 0);
+        const primary = getConfig();
 
-        if (!cfg.host) {
+        if (!primary.host) {
             if (process.env.NODE_ENV === 'development') {
                 console.log('--------------------------------------------------');
                 console.log('📧 [EmailService] DEVELOPMENT MODE - SIMULATING SEND');
                 console.log(`To: ${options.to}`);
                 console.log(`Subject: ${options.subject}`);
-                if (hasAttachments) {
-                    console.log(`Attachments: ${options.attachments?.map(a => a.filename).join(', ')}`);
+                if (options.attachments?.length) {
+                    console.log(`Attachments: ${options.attachments.map(a => a.filename).join(', ')}`);
                 }
                 console.log('--------------------------------------------------');
                 return true;
@@ -119,13 +157,101 @@ export class EmailService {
             return false;
         }
 
+        // Try the primary relay; if it fails, fall back to the backup relay (when configured).
+        if (await this.sendVia(primary, options)) return true;
+
+        const fallback = getFallbackConfig();
+        if (fallback) {
+            console.warn('[EmailService] primary relay failed, trying fallback relay');
+            if (await this.sendVia(fallback, options)) return true;
+        }
+
+        if (process.env.NODE_ENV === 'development') {
+            console.log('📧 [EmailService] FALLBACK TO SIMULATION (Real SMTP failed)');
+            console.log(`To: ${options.to} | Subject: ${options.subject}`);
+            return true;
+        }
+        return false;
+    }
+
+    /* Deliver one message through a single relay. Resolves false on any failure. */
+    private static sendVia(cfg: SmtpConfig, options: EmailOptions): Promise<boolean> {
         const recipients = Array.isArray(options.to) ? options.to : [options.to];
-        const fromHeader = `${cfg.fromName} <${cfg.from}>`;
+        const message = this.buildMessage(cfg, recipients, options);
+
+        return new Promise((resolve) => {
+            let socket: net.Socket = cfg.secure
+                ? tls.connect({ port: cfg.port, host: cfg.host })
+                : net.createConnection({ port: cfg.port, host: cfg.host });
+
+            let settled = false;
+            const done = (ok: boolean) => {
+                if (settled) return;
+                settled = true;
+                resolve(ok);
+            };
+
+            const attach = (s: net.Socket) => {
+                s.setTimeout(15_000);
+                s.on('timeout', () => {
+                    console.error(`[EmailService] ${cfg.host} connection timed out`);
+                    s.destroy();
+                    done(false);
+                });
+                s.on('error', (err) => {
+                    console.error(`[EmailService] ${cfg.host} socket error:`, err.message);
+                    done(false);
+                });
+            };
+            attach(socket);
+
+            (async () => {
+                try {
+                    await waitForGreeting(socket);
+                    await smtpCommand(socket, `EHLO velo-api`, '250');
+
+                    // STARTTLS: upgrade the plaintext connection to TLS, then greet again (port 587).
+                    if (cfg.starttls) {
+                        await smtpCommand(socket, 'STARTTLS', '220');
+                        socket = await upgradeToTls(socket, cfg.host);
+                        attach(socket);
+                        await smtpCommand(socket, `EHLO velo-api`, '250');
+                    }
+
+                    if (cfg.auth && cfg.user && cfg.password) {
+                        await smtpCommand(socket, 'AUTH LOGIN', '334');
+                        await smtpCommand(socket, Buffer.from(cfg.user).toString('base64'), '334');
+                        await smtpCommand(socket, Buffer.from(cfg.password).toString('base64'), '235');
+                    }
+
+                    await smtpCommand(socket, `MAIL FROM:<${cfg.from}>`, '250');
+                    for (const rcpt of recipients) {
+                        await smtpCommand(socket, `RCPT TO:<${rcpt}>`, '250');
+                    }
+                    await smtpCommand(socket, 'DATA', '354');
+                    await smtpCommand(socket, `${message}\r\n.`, '250');
+                    await smtpCommand(socket, 'QUIT', '221');
+
+                    socket.end();
+                    console.log(`[EmailService] sent to ${recipients.join(', ')} via ${cfg.host}`);
+                    done(true);
+                } catch (err: any) {
+                    console.error(`[EmailService] ${cfg.host} conversation failed:`, err.message);
+                    socket.destroy();
+                    done(false);
+                }
+            })();
+        });
+    }
+
+    /* Build the RFC822 message (headers + body/attachments) for a given relay. */
+    private static buildMessage(cfg: SmtpConfig, recipients: string[], options: EmailOptions): string {
         const body = options.html || options.text || '';
         const isHtml = !!options.html;
+        const hasAttachments = !!(options.attachments && options.attachments.length > 0);
 
-        let messageLines: string[] = [
-            `From: ${fromHeader}`,
+        const lines: string[] = [
+            `From: ${cfg.fromName} <${cfg.from}>`,
             `To: ${recipients.join(', ')}`,
             `Subject: ${options.subject}`,
             `MIME-Version: 1.0`,
@@ -134,98 +260,25 @@ export class EmailService {
 
         if (hasAttachments) {
             const boundary = `----=_Part_${Math.random().toString(36).substring(2)}`;
-            messageLines.push(`Content-Type: multipart/mixed; boundary="${boundary}"`, ``);
-
-            // Add body part
-            messageLines.push(`--${boundary}`);
-            messageLines.push(`Content-Type: ${isHtml ? 'text/html' : 'text/plain'}; charset=UTF-8`);
-            messageLines.push(`Content-Transfer-Encoding: 7bit`, ``);
-            messageLines.push(body);
-
-            // Add attachments
+            lines.push(`Content-Type: multipart/mixed; boundary="${boundary}"`, ``);
+            lines.push(`--${boundary}`);
+            lines.push(`Content-Type: ${isHtml ? 'text/html' : 'text/plain'}; charset=UTF-8`);
+            lines.push(`Content-Transfer-Encoding: 7bit`, ``);
+            lines.push(body);
             for (const att of options.attachments!) {
-                messageLines.push(`--${boundary}`);
-                messageLines.push(`Content-Type: ${att.contentType}; name="${att.filename}"`);
-                messageLines.push(`Content-Transfer-Encoding: base64`);
-                messageLines.push(`Content-Disposition: attachment; filename="${att.filename}"`, ``);
-                messageLines.push(att.content);
+                lines.push(`--${boundary}`);
+                lines.push(`Content-Type: ${att.contentType}; name="${att.filename}"`);
+                lines.push(`Content-Transfer-Encoding: base64`);
+                lines.push(`Content-Disposition: attachment; filename="${att.filename}"`, ``);
+                lines.push(att.content);
             }
-
-            messageLines.push(`--${boundary}--`);
+            lines.push(`--${boundary}--`);
         } else {
-            messageLines.push(`Content-Type: ${isHtml ? 'text/html' : 'text/plain'}; charset=UTF-8`, ``);
-            messageLines.push(body);
+            lines.push(`Content-Type: ${isHtml ? 'text/html' : 'text/plain'}; charset=UTF-8`, ``);
+            lines.push(body);
         }
 
-        const message = messageLines.join('\r\n');
-
-        return new Promise((resolve) => {
-            const socket = cfg.secure 
-                ? tls.connect({ port: cfg.port, host: cfg.host }) 
-                : net.createConnection({ port: cfg.port, host: cfg.host });
-
-            socket.setTimeout(15_000);
-
-            socket.on('timeout', () => {
-                console.error('[EmailService] SMTP connection timed out');
-                socket.destroy();
-                resolve(false);
-            });
-
-            socket.on('error', (err) => {
-                console.error('[EmailService] SMTP socket error:', err.message);
-                resolve(false);
-            });
-
-            (async () => {
-                try {
-                    await waitForGreeting(socket);
-                    await smtpCommand(socket, `EHLO velo-api`, '250');
-
-                    /* Optional AUTH LOGIN (for Gmail relay, etc.) */
-                    if (cfg.auth && cfg.user && cfg.password) {
-                        await smtpCommand(socket, 'AUTH LOGIN', '334');
-                        await smtpCommand(
-                            socket,
-                            Buffer.from(cfg.user).toString('base64'),
-                            '334',
-                        );
-                        await smtpCommand(
-                            socket,
-                            Buffer.from(cfg.password).toString('base64'),
-                            '235',
-                        );
-                    }
-
-                    await smtpCommand(socket, `MAIL FROM:<${cfg.from}>`, '250');
-
-                    for (const rcpt of recipients) {
-                        await smtpCommand(socket, `RCPT TO:<${rcpt}>`, '250');
-                    }
-
-                    await smtpCommand(socket, 'DATA', '354');
-                    await smtpCommand(socket, `${message}\r\n.`, '250');
-                    await smtpCommand(socket, 'QUIT', '221');
-
-                    socket.end();
-                    console.log(`[EmailService] sent to ${recipients.join(', ')}`);
-                    resolve(true);
-                } catch (err: any) {
-                    console.error('[EmailService] SMTP conversation failed:', err.message);
-                    socket.destroy();
-                    
-                    if (process.env.NODE_ENV === 'development') {
-                        console.log('📧 [EmailService] FALLBACK TO SIMULATION (Real SMTP failed)');
-                        console.log(`To: ${options.to}`);
-                        console.log(`Subject: ${options.subject}`);
-                        resolve(true);
-                        return;
-                    }
-                    
-                    resolve(false);
-                }
-            })();
-        });
+        return lines.join('\r\n');
     }
 
     /* ── Branded, responsive email shell (table-based for email-client safety) ── */

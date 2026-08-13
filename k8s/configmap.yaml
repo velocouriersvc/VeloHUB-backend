@@ -39,8 +39,7 @@ data:
   MINIO_PUBLIC_URL: "https://api.velocouriersvc.com"
 
   # SMTP - Spacemail authenticated relay (see docs/K8S_EMAIL_SETUP.md).
-  # Port 465 implicit TLS: the email-service SMTP client does implicit TLS only (no STARTTLS),
-  # so use 465 + SMTP_SECURE=true. SMTP_PASSWORD lives in the velo-secrets Secret, not here.
+  # Port 465 implicit TLS. SMTP_PASSWORD lives in the velo-secrets Secret, not here.
   SMTP_HOST: "mail.spacemail.com"
   SMTP_PORT: "465"
   SMTP_SECURE: "true"
@@ -48,3 +47,13 @@ data:
   SMTP_USER: "noreply@velocouriersvc.com"
   SMTP_FROM: "noreply@velocouriersvc.com"
   SMTP_FROM_NAME: "Velo Courier Services"
+
+  # Fallback SMTP - Microsoft 365 (STARTTLS on 587). Used only when the primary relay fails.
+  # FALLBACK_SMTP_PASSWORD lives in the velo-secrets Secret, not here.
+  FALLBACK_SMTP_HOST: "smtp.office365.com"
+  FALLBACK_SMTP_PORT: "587"
+  FALLBACK_SMTP_STARTTLS: "true"
+  FALLBACK_SMTP_AUTH: "true"
+  FALLBACK_SMTP_USER: "noreply@velo-brand.com"
+  FALLBACK_SMTP_FROM: "noreply@velo-brand.com"
+  FALLBACK_SMTP_FROM_NAME: "Velo Courier Services"
