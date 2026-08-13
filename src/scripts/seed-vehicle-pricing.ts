@@ -13,9 +13,6 @@ import { Zone } from "../models/zone";
  */
 export const PRICING_SEED_VERSION = 2;
 
-const MI_TO_KM = 1.60934;
-const perMile = (v: number) => +(v / MI_TO_KM).toFixed(4);
-
 interface PricingRow {
     vehicleType: VehicleType;
     country: string;
@@ -41,12 +38,15 @@ const GH_PRICING: PricingRow[] = [
     { vehicleType: VehicleType.TRUCK, country: "GH", basePrice: 40.00, pricePerKm: 4.50, pricePerMin: 0.80, minimumFare: 40.00, bookingFee: 7.00, riderServiceFee: 0, maxPassengers: 2 },
 ];
 
-// ── USA (USD) - exact client spec, PER-MILE rates stored per-km ─────
+// ── USA (USD) - client-adjusted fares (Aug 2026): the July book brought down ~15%, set
+// EXPLICITLY (not per-mile) so the admin dashboard values and this seed agree and a future
+// price-book version bump can never revert US to the old higher fares.
 const US_PRICING: PricingRow[] = [
-    { vehicleType: VehicleType.BIKE,  country: "US", basePrice: 2.00,  pricePerKm: perMile(0.65), pricePerMin: 0.20, minimumFare: 2.00,  bookingFee: 2.50, riderServiceFee: 0, maxPassengers: 1 },
-    { vehicleType: VehicleType.CAR,   country: "US", basePrice: 3.00,  pricePerKm: perMile(1.35), pricePerMin: 0.35, minimumFare: 3.00,  bookingFee: 4.00, riderServiceFee: 0, maxPassengers: 4 },
-    { vehicleType: VehicleType.SUV,   country: "US", basePrice: 5.50,  pricePerKm: perMile(2.45), pricePerMin: 0.55, minimumFare: 5.50,  bookingFee: 5.50, riderServiceFee: 0, maxPassengers: 6 },
-    { vehicleType: VehicleType.TRUCK, country: "US", basePrice: 12.00, pricePerKm: perMile(3.75), pricePerMin: 0.70, minimumFare: 12.00, bookingFee: 8.00, riderServiceFee: 0, maxPassengers: 2 },
+    { vehicleType: VehicleType.BIKE,     country: "US", basePrice: 0.85, pricePerKm: 0.34, pricePerMin: 0.09, minimumFare: 0.85,  bookingFee: 1.28, riderServiceFee: 0, maxPassengers: 1 },
+    { vehicleType: VehicleType.CAR,      country: "US", basePrice: 1.57, pricePerKm: 0.55, pricePerMin: 0.17, minimumFare: 1.70,  bookingFee: 2.13, riderServiceFee: 0, maxPassengers: 4 },
+    { vehicleType: VehicleType.PRIORITY, country: "US", basePrice: 2.13, pricePerKm: 0.89, pricePerMin: 0.37, minimumFare: 3.19,  bookingFee: 2.98, riderServiceFee: 0, maxPassengers: 4 },
+    { vehicleType: VehicleType.SUV,      country: "US", basePrice: 3.83, pricePerKm: 1.29, pricePerMin: 0.47, minimumFare: 4.68,  bookingFee: 4.68, riderServiceFee: 0, maxPassengers: 6 },
+    { vehicleType: VehicleType.TRUCK,    country: "US", basePrice: 8.50, pricePerKm: 1.98, pricePerMin: 0.60, minimumFare: 10.20, bookingFee: 6.80, riderServiceFee: 0, maxPassengers: 2 },
 ];
 
 // ── Canada (CAD) - exact client spec (already per-km) ───────────────
