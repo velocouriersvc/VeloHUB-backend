@@ -48,6 +48,15 @@ failed and the user was stuck: no retry, no backup provider.
   `@velo-brand.com`).
 - Primary (Spacemail) path is unchanged behavior and covered by the primary-success test.
 
+## Critical finding (live prod)
+
+While testing I found that **email-OTP delivery is currently failing in production**: `POST /auth/request-otp`
+with `channel:email` returns 500 for a real number, while the test-number path (which skips the email send)
+returns 200. That isolates the fault to the **primary Spacemail relay send itself** - the DB, controller, and
+validation all work. This is very likely the real reason the fallback was requested. The fallback below is the
+fix: once activated it delivers OTP via Microsoft 365 even while Spacemail is down. (Diagnosing Spacemail
+itself needs the mailbox credentials / pod logs, which are not accessible from here.)
+
 ## Action required (Microsoft 365 admin - you)
 
 1. Add the GitHub repo secret `FALLBACK_SMTP_PASSWORD` = the `noreply@velo-brand.com` mailbox password.
