@@ -137,7 +137,9 @@ export class FareService {
         }
         const commissionRate = settings ? Number(settings.rideCommissionRate) / 100 : PLATFORM_COMMISSION_RATE;
         const serviceFeeRate = settings ? Number(settings.defaultServiceFeeRate) / 100 : SERVICE_FEE_RATE;
-        const maxSurge = settings ? Number(settings.maxSurgeMultiplier) : MAX_SURGE_MULTIPLIER;
+        // Floor the surge CAP at 1.0: a maxSurgeMultiplier of 0 (a misconfigured market) must never
+        // cap the surge to 0, which would collapse every fare to the minimum. Surge is always >= 1x.
+        const maxSurge = Math.max(1, settings ? Number(settings.maxSurgeMultiplier) : MAX_SURGE_MULTIPLIER);
         const currency = settings?.currency || currencyForCountry(country);
 
         // 3. Resolve the current surge multiplier (capped inside computeRideFare)
