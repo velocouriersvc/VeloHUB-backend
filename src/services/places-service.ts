@@ -1,5 +1,6 @@
 import axios from "axios";
 import { createServiceLogger } from "../utils/logger";
+import { currencyForCountry } from "../utils/currency";
 
 const log = createServiceLogger("PlacesService");
 
@@ -15,6 +16,35 @@ export interface PlaceDetails {
     address: string;
     lat: number;
     lng: number;
+    country: string;   // ISO2, e.g. "US" - drives the market + currency
+    city: string;
+    currency: string;  // e.g. "USD"
+}
+
+export interface ReverseGeocodeResult {
+    address: string;
+    country: string;
+    city: string;
+    currency: string;
+}
+
+interface GoogleAddressComponent {
+    long_name: string;
+    short_name: string;
+    types: string[];
+}
+
+/** Pull the ISO2 country and a best-effort city from Google address_components. */
+function extractCountryCity(components: GoogleAddressComponent[] = []): { country: string; city: string } {
+    const find = (type: string) => components.find((c) => c.types.includes(type));
+    const country = find("country")?.short_name || "";
+    const city =
+        find("locality")?.long_name ||
+        find("postal_town")?.long_name ||
+        find("administrative_area_level_2")?.long_name ||
+        find("administrative_area_level_1")?.long_name ||
+        "";
+    return { country, city };
 }
 
 export interface DistanceResult {
@@ -79,7 +109,7 @@ export class PlacesService {
         const response = await axios.get(`${GOOGLE_MAPS_BASE}/place/details/json`, {
             params: {
                 place_id: placeId,
-                fields: "formatted_address,geometry",
+                fields: "formatted_address,geometry,address_components",
                 key: this.apiKey,
                 sessiontoken: sessionToken,
             },
@@ -88,11 +118,15 @@ export class PlacesService {
         const result = response.data.result;
         if (!result) throw new Error("Place not found");
 
+        const { country, city } = extractCountryCity(result.address_components);
         return {
             placeId,
             address: result.formatted_address,
             lat: result.geometry.location.lat,
             lng: result.geometry.location.lng,
+            country,
+            city,
+            currency: currencyForCountry(country),
         };
     }
 
@@ -131,7 +165,7 @@ export class PlacesService {
     /**
      * Reverse geocode coordinates to an address
      */
-    async reverseGeocode(lat: number, lng: number): Promise<string> {
+    async reverseGeocode(lat: number, lng: number): Promise<ReverseGeocodeResult> {
         const response = await axios.get(`${GOOGLE_MAPS_BASE}/geocode/json`, {
             params: {
                 latlng: `${lat},${lng}`,
@@ -144,6 +178,12 @@ export class PlacesService {
             throw new Error("No address found for coordinates");
         }
 
-        return results[0].formatted_address;
+        const { country, city } = extractCountryCity(results[0].address_components);
+        return {
+            address: results[0].formatted_address,
+            country,
+            city,
+            currency: currencyForCountry(country),
+        };
     }
 }

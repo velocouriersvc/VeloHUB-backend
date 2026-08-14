@@ -84,8 +84,8 @@ export class PlacesController {
                 return res.status(400).json({ message: "lat and lng are required" });
             }
 
-            const address = await this.placesService.reverseGeocode(Number(lat), Number(lng));
-            return res.json({ address });
+            const result = await this.placesService.reverseGeocode(Number(lat), Number(lng));
+            return res.json(result);
         } catch (error) {
             log.error("Error reverse geocoding", { error: (error as Error).message });
             return res.status(400).json({ message: (error as Error).message || "Internal server error" });

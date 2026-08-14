@@ -9,8 +9,9 @@ const placesController = new PlacesController();
 // Apply API Key Middleware
 router.use(apiKeyMiddleware);
 
-// Address search + place details are public (api-key only) so anonymous web shoppers can set their
-// precise delivery address before signing in. Distance/reverse-geocode stay behind a role.
+// Address search, place details and reverse-geocode are public (api-key only) so anonymous web shoppers
+// can set their precise delivery address (and have currency auto-detected) before signing in. Only the
+// distance lookup stays behind a role.
 const anyRole = requireRole(["buyer", "driver"]);
 
 /**
@@ -138,6 +139,6 @@ router.post("/distance", anyRole, placesController.getDistance);
  *       403:
  *         description: Invalid API key or role not approved
  */
-router.post("/reverse-geocode", anyRole, placesController.reverseGeocode);
+router.post("/reverse-geocode", placesController.reverseGeocode);
 
 export default router;
