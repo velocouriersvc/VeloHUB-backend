@@ -22,4 +22,18 @@ router.use(apiKeyMiddleware);
  */
 router.get("/live", mapController.getLive);
 
+/**
+ * @openapi
+ * /map/users:
+ *   get:
+ *     tags: [Map]
+ *     summary: Signed-up user counts per country for the public coverage map
+ *     security:
+ *       - ApiKeyAuth: []
+ *     responses:
+ *       200:
+ *         description: "{ users: [{ country, count }] } - aggregate only, no identities or coordinates"
+ */
+router.get("/users", mapController.getUsers);
+
 export default router;
