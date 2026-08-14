@@ -19,7 +19,7 @@ const anyRole = requireRole(["buyer", "driver"]);
  *   get:
  *     tags: [Places]
  *     summary: Search places (autocomplete)
- *     description: Returns Google Places predictions as the user types. Biased to Ghana. Requires **buyer** or **driver** role.
+ *     description: Returns Google Places predictions as the user types. Worldwide, region-biased. Public (api key only).
  *     security:
  *       - ApiKeyAuth: []
  *     parameters:
