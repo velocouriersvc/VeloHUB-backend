@@ -30,6 +30,10 @@ animated confirm/alert modal, adds signed-up users to the Coverage map, and depl
 - **`GET /map/users`** (public, api-key only, like `/map/live`): returns signed-up user counts grouped by
   country `{ users: [{ country, count }] }`. Aggregate only - users store just a `country`, so no identities
   or precise locations are exposed. Added to `MapController` + `mapRoutes`.
+- **`/places/autocomplete` + `/places/details` made public** (api-key only; dropped the buyer/driver role):
+  anonymous web shoppers must be able to search their delivery address before signing in for Issue 1 to work.
+  The controller methods read only query params, so this is safe; `/places/distance` + `/reverse-geocode`
+  stay role-gated.
 
 ## Verification
 

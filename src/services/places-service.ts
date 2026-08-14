@@ -53,7 +53,8 @@ export class PlacesService {
             params: {
                 input,
                 key: this.apiKey,
-                components: "country:gh", // Restrict to Ghana
+                // Worldwide address search (no country restriction). Google biases results to the
+                // caller's region by default, so nearby matches still rank first.
                 sessiontoken: sessionToken,
             },
         });
