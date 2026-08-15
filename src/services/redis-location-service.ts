@@ -124,6 +124,26 @@ export class RedisLocationService {
     }
 
     /**
+     * Full live state of every active driver (identity included), for the admin analytics map.
+     * Sourced from driver:location:* (5-min TTL). Unlike getOnlineDriverPoints this keeps the
+     * driverId + heading + status so the admin can see and click a specific driver.
+     */
+    async getOnlineDriverStates(): Promise<Array<{ driverId: string; lat: number; lng: number; heading: number; status: string }>> {
+        const keys = await this.scanKeys(`${DRIVER_LOCATION_KEY}:*`);
+        if (keys.length === 0) return [];
+        const out: Array<{ driverId: string; lat: number; lng: number; heading: number; status: string }> = [];
+        for (const key of keys) {
+            const driverId = key.replace(`${DRIVER_LOCATION_KEY}:`, "");
+            const data = await redis.hgetall(key);
+            const lat = Number(data?.lat), lng = Number(data?.lng);
+            if (!isFinite(lat) || !isFinite(lng)) continue;
+            const status = (await this.getDriverStatus(driverId)) || "online";
+            out.push({ driverId, lat, lng, heading: Number(data?.heading) || 0, status });
+        }
+        return out;
+    }
+
+    /**
      * Remove driver from Redis (offline)
      */
     async removeDriver(driverId: string): Promise<void> {
