@@ -146,6 +146,22 @@ export class AdminController {
     /**
      * GET /admin/rides
      */
+    getMapLive = async (_req: Request, res: Response) => {
+        try {
+            return res.json(await this.adminService.getMapLive());
+        } catch (error) {
+            return res.status(500).json({ message: (error as Error).message || "Internal server error" });
+        }
+    };
+
+    getMapMerchants = async (_req: Request, res: Response) => {
+        try {
+            return res.json(await this.adminService.getMapMerchants());
+        } catch (error) {
+            return res.status(500).json({ message: (error as Error).message || "Internal server error" });
+        }
+    };
+
     getRides = async (req: Request, res: Response) => {
         try {
             const rides = await this.rideRepo.find({

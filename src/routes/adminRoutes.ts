@@ -84,6 +84,10 @@ router.get("/merchants", adminRole, adminController.getMerchants);
  */
 router.get("/rides", adminRole, adminController.getRides);
 
+// Live analytics map: online drivers + active orders/rides + stats, and merchants with coordinates.
+router.get("/map/live", adminRole, adminController.getMapLive);
+router.get("/map/merchants", adminRole, adminController.getMapMerchants);
+
 router.get("/users", adminRole, adminController.getUsers);
 
 /**
@@ -1304,7 +1308,7 @@ router.post("/payments/:id/refund-to-wallet", adminRole, adminController.refundG
 router.get("/reports/orders", adminRole, adminController.getOrderReport);
 
 // ────────────────────────────────────────────────────────────────
-//  Support – Wallet Actions
+//  Support - Wallet Actions
 // ────────────────────────────────────────────────────────────────
 
 /**

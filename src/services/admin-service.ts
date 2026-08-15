@@ -178,6 +178,108 @@ export class AdminService {
     private buyerProfileRepo = AppDataSource.getRepository(BuyerProfile);
     private categoryRepo = AppDataSource.getRepository(MerchantCategory);
 
+    /* ================= ADMIN LIVE MAP ================= */
+
+    private nameOfUser(u?: User | null): string {
+        if (!u) return "Unknown";
+        return u.driverProfile?.fullName || u.buyerProfile?.fullName || u.merchantProfile?.businessName
+            || u.userProfile?.fullName || u.email?.split("@")[0] || u.phoneNumber || "Unknown";
+    }
+
+    /**
+     * Live operational data for the admin analytics map: online drivers (with identity + live coords),
+     * active orders/rides (with customer + driver + pickup/dropoff), and headline stats.
+     */
+    async getMapLive(): Promise<any> {
+        // 1. Online drivers from Redis, joined with their identity.
+        const states = await this.redisLocation.getOnlineDriverStates();
+        let drivers: any[] = [];
+        if (states.length) {
+            const ids = states.map((s) => s.driverId);
+            const users = await this.userRepo.find({ where: { id: In(ids) }, relations: ["driverProfile"] });
+            const byId = new Map(users.map((u) => [u.id, u]));
+            drivers = states.map((s) => {
+                const u = byId.get(s.driverId);
+                const dp = u?.driverProfile;
+                return {
+                    driverId: s.driverId, lat: s.lat, lng: s.lng, heading: s.heading, status: s.status,
+                    name: dp?.fullName || u?.phoneNumber || "Driver", phone: u?.phoneNumber || null,
+                    vehicleType: dp?.vehicleType || null, vehicleModel: dp?.vehicleModel || null,
+                    plateNumber: dp?.plateNumber || null, vehicleColor: dp?.vehicleColor || null,
+                    region: dp?.region || null,
+                };
+            });
+        }
+
+        // 2. Active rides (searching -> ongoing) with real pickup/dropoff coordinates.
+        const activeRideStatuses = [RideStatus.SEARCHING, RideStatus.ACCEPTED, RideStatus.DRIVER_ENROUTE, RideStatus.ARRIVED, RideStatus.ONGOING];
+        const rides = await this.rideRepo.find({
+            where: { status: In(activeRideStatuses) },
+            relations: ["customer", "customer.buyerProfile", "driver", "driver.driverProfile"],
+            order: { createdAt: "DESC" }, take: 200,
+        });
+        const rideOrders = rides.map((r) => ({
+            id: r.id, kind: "ride", status: r.status, vehicleType: r.vehicleType,
+            customerName: this.nameOfUser(r.customer), customerPhone: r.customer?.phoneNumber || null,
+            driverName: r.driver ? this.nameOfUser(r.driver) : null, driverPhone: r.driver?.phoneNumber || null,
+            amount: r.finalFare != null ? Number(r.finalFare) : null, currency: r.currency || null,
+            pickup: { lat: Number(r.pickupLat), lng: Number(r.pickupLng), address: r.pickupAddress },
+            dropoff: { lat: Number(r.dropoffLat), lng: Number(r.dropoffLng), address: r.dropoffAddress },
+        }));
+
+        // 3. Active product orders (delivery type) that have delivery coordinates.
+        const activeOrderStatuses = [OrderStatus.ACCEPTED, OrderStatus.PREPARING, OrderStatus.READY_FOR_PICKUP, OrderStatus.READY_FOR_DELIVERY, OrderStatus.DRIVER_ASSIGNED, OrderStatus.PICKED_UP, OrderStatus.IN_TRANSIT];
+        const orders = await this.orderRepo.find({
+            where: { status: In(activeOrderStatuses) },
+            relations: ["customer", "customer.buyerProfile", "driver", "driver.driverProfile", "merchant", "merchant.merchantProfile"],
+            order: { createdAt: "DESC" }, take: 200,
+        });
+        const productOrders = orders.filter((o) => o.deliveryLat != null && o.deliveryLng != null).map((o) => {
+            const mp = o.merchant?.merchantProfile;
+            return {
+                id: o.id, kind: "order", status: o.status,
+                customerName: this.nameOfUser(o.customer), customerPhone: o.customer?.phoneNumber || null,
+                driverName: o.driver ? this.nameOfUser(o.driver) : null, driverPhone: o.driver?.phoneNumber || null,
+                merchantName: mp?.businessName || null,
+                amount: o.totalAmount != null ? Number(o.totalAmount) : null, currency: o.currency || null,
+                pickup: (mp && mp.latitude != null && mp.longitude != null)
+                    ? { lat: Number(mp.latitude), lng: Number(mp.longitude), address: mp.address || mp.businessName || "" } : null,
+                dropoff: { lat: Number(o.deliveryLat), lng: Number(o.deliveryLng), address: o.deliveryAddress || "" },
+            };
+        });
+
+        // 4. Headline stats.
+        const [onlineDrivers, merchantsCount, usersCount, usersByCountryRaw] = await Promise.all([
+            this.redisLocation.countOnlineDrivers(),
+            this.merchantProfileRepo.count(),
+            this.userRepo.count(),
+            this.userRepo.createQueryBuilder("u").select("u.country", "country").addSelect("COUNT(*)", "count")
+                .where("u.country IS NOT NULL AND u.country <> ''").groupBy("u.country").getRawMany(),
+        ]);
+        const usersByCountry = usersByCountryRaw.map((r) => ({ country: String(r.country), count: Number(r.count) }));
+
+        const allOrders = [...rideOrders, ...productOrders];
+        return {
+            drivers, orders: allOrders,
+            stats: { onlineDrivers, activeOrders: allOrders.length, merchants: merchantsCount, users: usersCount, usersByCountry },
+        };
+    }
+
+    /** Merchants with coordinates for the admin map (identity + business details). */
+    async getMapMerchants(): Promise<any> {
+        const profiles = await this.merchantProfileRepo.find({
+            where: { latitude: Not(IsNull()), longitude: Not(IsNull()) },
+            relations: ["user"], take: 2000,
+        });
+        const merchants = profiles.map((mp) => ({
+            id: mp.userId, businessName: mp.businessName, category: mp.category || null,
+            ownerName: mp.user ? this.nameOfUser(mp.user) : null, phone: mp.businessPhone || mp.user?.phoneNumber || null,
+            city: mp.region || null, country: mp.user?.country || null, status: mp.status || null,
+            address: mp.address || null, lat: Number(mp.latitude), lng: Number(mp.longitude),
+        }));
+        return { merchants };
+    }
+
     async getDashboard(): Promise<AdminDashboard> {
         const today = new Date();
         today.setHours(0, 0, 0, 0);
