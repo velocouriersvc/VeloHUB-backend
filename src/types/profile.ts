@@ -40,6 +40,9 @@ export interface DriverSetupPayload {
     email: string;
     location: string;
     country_code: string;
+    // Geocoded operating base (auto-detected at signup). Replaces the manual region dropdown.
+    latitude?: number;
+    longitude?: number;
     vehicle_type: string;
     vehicle_number: string;
     vehicle_model?: string;

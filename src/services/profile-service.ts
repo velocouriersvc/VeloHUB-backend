@@ -161,6 +161,8 @@ export class ProfileService {
                 vehicleModel: cut(data.vehicle_model, 100) || null,
                 vehicleColor: cut(data.vehicle_color, 50) || null,
                 region: cut(data.location, 100),
+                latitude: data.latitude ?? null,
+                longitude: data.longitude ?? null,
                 identificationId: idRecord?.id || null,
                 status: DriverVerificationStatus.PENDING
             };

@@ -38,6 +38,13 @@ export class DriverProfile {
     @Column({ type: "varchar", length: 100, nullable: true })
     region: string | null;
 
+    // Operating base location, auto-detected at signup (no manual region needed).
+    @Column({ type: "double precision", nullable: true })
+    latitude: number | null;
+
+    @Column({ type: "double precision", nullable: true })
+    longitude: number | null;
+
     @Column({ type: "varchar", length: 50, nullable: true })
     vehicleColor: string | null;
 
