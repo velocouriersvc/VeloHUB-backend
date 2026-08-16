@@ -37,6 +37,17 @@ Backend (`develop` -> `main`):
 
 ## Deploy note
 
-The driver-signup change reaches devices only through a **new EAS build (no OTA)**. The clustering and backend
-coordinate storage are live immediately; the app fix needs a build/submit. (Scope: driver only - buyer/merchant
-still use the region field.)
+The signup changes reach devices only through a **new EAS build (no OTA)**. The clustering and backend
+coordinate storage are live immediately; the app fixes need a build/submit.
+
+## 3. Buyer + merchant signup (same fix)
+
+Extended the auto-location fix to the other two signup screens, since the same Ghana-only region dropdown
+affected them:
+- `buyer.tsx`: removed the region `SelectMenu`; auto-detects a location label via `expo-location` (no
+  coordinates stored - buyers use device GPS at runtime; `BuyerProfile` keeps the label in `region`).
+- `merchant.tsx`: removed the redundant `Operating Location` `SelectMenu` (merchant setup already auto-detects
+  its business address + latitude/longitude via the map picker / device location); the auto-location effect
+  now also derives a region label. `merchantSchema`/`buyerSchema` `location` is optional.
+- No backend change (buyer stores `region = location` label; merchant already persists coordinates). App
+  `tsc` = 0 errors; no em/en dashes.
