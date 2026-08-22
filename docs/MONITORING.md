@@ -50,7 +50,7 @@ Complete guide for setting up **Prometheus**, **Grafana**, and **Loki** to monit
 - SSH access to your VPS
 
 ```bash
-ssh emma24@38.242.149.20
+ssh emma24@162.35.106.11
 ```
 
 Verify the metrics endpoint works:
@@ -553,7 +553,7 @@ After deploying, access Grafana and import these dashboards.
 
 ```
 https://monitoring.velocouriersvc.com
-# or directly: http://38.242.149.20:30300
+# or directly: http://162.35.106.11:30300
 ```
 
 Login: `admin` / `VeloAdmin2024!`
@@ -782,7 +782,7 @@ Set up `monitoring.velocouriersvc.com` to point to Grafana.
 
 Add an **A record** in your domain registrar:
 ```
-monitoring.velocouriersvc.com → 38.242.149.20
+monitoring.velocouriersvc.com → 162.35.106.11
 ```
 
 ### 2. Create Nginx Config
@@ -840,7 +840,7 @@ kubectl get all -n monitoring
 ### View Prometheus Targets
 
 ```
-http://38.242.149.20:30300  →  Grafana
+http://162.35.106.11:30300  →  Grafana
 ```
 Or port-forward Prometheus locally:
 ```bash
@@ -851,7 +851,7 @@ kubectl port-forward svc/prometheus 9090:9090 -n monitoring
 ### View API Metrics Directly
 
 ```bash
-curl http://38.242.149.20:30080/metrics
+curl http://162.35.106.11:30080/metrics
 ```
 
 ### Restart Prometheus After Config Change
@@ -913,7 +913,7 @@ kubectl apply -f prometheus-config.yaml -f prometheus.yaml -f node-exporter.yaml
 
 | Component | Port | Access |
 |---|---|---|
-| VeloHub API `/metrics` | `30080` | `http://38.242.149.20:30080/metrics` |
+| VeloHub API `/metrics` | `30080` | `http://162.35.106.11:30080/metrics` |
 | Prometheus | `9090` | Internal (ClusterIP) - port-forward to access |
 | Grafana | `30300` | `https://monitoring.velocouriersvc.com` |
 | Loki | `3100` | Internal (ClusterIP) - queried via Grafana |
