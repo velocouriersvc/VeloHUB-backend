@@ -50,8 +50,12 @@ export class PaymentController {
                 return res.status(400).json({ message: "Missing stripe-signature" });
             }
 
-            // Use raw body for Stripe signature verification
-            const payload = typeof req.body === "string" ? req.body : JSON.stringify(req.body);
+            // Raw bytes as Stripe signed them (express.raw gives a Buffer).
+            // Falling back to JSON.stringify cannot reproduce the original bytes,
+            // so it would always fail verification.
+            const payload = req.body instanceof Buffer
+                ? req.body.toString("utf8")
+                : typeof req.body === "string" ? req.body : JSON.stringify(req.body);
             await this.paymentService.handleStripeWebhook(payload, signature);
 
             return res.status(200).json({ received: true });

@@ -62,6 +62,11 @@ app.use(cors());
 // Webhook routes must come before express.json()
 app.use('/api/v1/identity/webhook', express.raw({ type: 'application/json' }));
 app.post('/api/v1/payments/webhook', express.raw({ type: 'application/json' }));
+// Stripe signs the EXACT bytes it sent. Without raw body here the request fell
+// through to express.json() and the controller re-serialised it with
+// JSON.stringify, which does not reproduce those bytes, so every Stripe payment
+// webhook failed signature verification regardless of the secret.
+app.use('/api/v1/payments/stripe-webhook', express.raw({ type: 'application/json' }));
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
