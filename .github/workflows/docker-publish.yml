@@ -61,6 +61,7 @@ jobs:
     env:
       STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
       STRIPE_WEBHOOK_SECRET: ${{ secrets.STRIPE_WEBHOOK_SECRET }}
+      STRIPE_IDENTITY_WEBHOOK_SECRET: ${{ secrets.STRIPE_IDENTITY_WEBHOOK_SECRET }}
       # Optional: set these repo secrets to keep the GHCR package PRIVATE.
       # If GHCR_PULL_TOKEN is empty, the package is expected to be PUBLIC.
       GHCR_PULL_TOKEN: ${{ secrets.GHCR_PULL_TOKEN }}
@@ -80,7 +81,7 @@ jobs:
           port: ${{ secrets.VPS_PORT }}
           request_pty: true
           command_timeout: 900s
-          envs: STRIPE_SECRET_KEY,STRIPE_WEBHOOK_SECRET,GHCR_PULL_TOKEN,GHCR_PULL_USER,SMTP_PASSWORD,FALLBACK_SMTP_PASSWORD
+          envs: STRIPE_SECRET_KEY,STRIPE_WEBHOOK_SECRET,STRIPE_IDENTITY_WEBHOOK_SECRET,GHCR_PULL_TOKEN,GHCR_PULL_USER,SMTP_PASSWORD,FALLBACK_SMTP_PASSWORD
           script: |
             echo "=========================================="
             echo "🚀 DEPLOYMENT STARTED"
@@ -89,19 +90,25 @@ jobs:
             echo "📦 Image: ghcr.io/velocouriersvc/velo-backend:latest"
             echo ""
 
-            # ── Step 0: Update Kubernetes secrets ──
-            echo "── UPDATING SECRETS ──"
-            sudo kubectl -n velo patch secret velo-secrets \
-              --type='json' \
-              -p="[
-                {\"op\":\"replace\",\"path\":\"/data/STRIPE_SECRET_KEY\",\"value\":\"$(echo -n "$STRIPE_SECRET_KEY" | base64 -w 0)\"},
-                {\"op\":\"replace\",\"path\":\"/data/STRIPE_WEBHOOK_SECRET\",\"value\":\"$(echo -n "$STRIPE_WEBHOOK_SECRET" | base64 -w 0)\"}
-              ]" 2>/dev/null || \
-            sudo kubectl -n velo create secret generic velo-secrets \
-              --from-literal=STRIPE_SECRET_KEY="$STRIPE_SECRET_KEY" \
-              --from-literal=STRIPE_WEBHOOK_SECRET="$STRIPE_WEBHOOK_SECRET" \
-              --dry-run=client -o yaml | sudo kubectl apply -f -
-            echo "Secrets updated."
+            # -- Step 0: Update Kubernetes secrets --
+            # Each value is written ONLY when the repo secret is non-empty. An
+            # unconditional write meant an unset repo secret silently blanked a
+            # live value - this is how STRIPE_WEBHOOK_SECRET ended up empty in
+            # production, disabling webhook signature verification.
+            echo "-- UPDATING SECRETS --"
+            set_secret() {
+              if [ -n "$2" ]; then
+                sudo kubectl -n velo patch secret velo-secrets --type merge                   -p "{\"stringData\":{\"$1\":\"$2\"}}" && echo "velo-secrets $1 set."
+              else
+                echo "WARNING: $1 repo secret is empty - leaving the existing cluster value untouched."
+              fi
+            }
+            set_secret STRIPE_SECRET_KEY "$STRIPE_SECRET_KEY"
+            set_secret STRIPE_WEBHOOK_SECRET "$STRIPE_WEBHOOK_SECRET"
+            # Stripe issues a separate signing secret per webhook endpoint, so the
+            # Identity endpoint (/api/v1/identity/webhook) cannot share the
+            # payments one. Falls back to STRIPE_WEBHOOK_SECRET when unset.
+            set_secret STRIPE_IDENTITY_WEBHOOK_SECRET "$STRIPE_IDENTITY_WEBHOOK_SECRET"
             echo ""
 
             # ── Step 0.1: SMTP config (Spacemail) for password-reset emails ──
