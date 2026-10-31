@@ -1,6 +1,9 @@
 import { Request, Response } from "express";
 import { AuthRequest } from "../middleware/role-middleware";
-import { IdentityVerificationService } from "../services/identity/identity-verification-service";
+import {
+    IdentityError,
+    IdentityVerificationService,
+} from "../services/identity/identity-verification-service";
 import { AppDataSource } from "../db/data-source";
 import { User } from "../models/user";
 import { Identification } from "../models/identification";
@@ -26,8 +29,37 @@ export class IdentityController {
             const result = await this.identityService.createVerificationSession(userId);
             return res.status(201).json(result);
         } catch (error) {
-            log.error("Error creating identity session", { error: (error as Error).message });
-            return res.status(500).json({ message: "Internal server error", error: (error as Error).message });
+            // Expected failures get a meaningful status and a message the app
+            // can show, instead of every one surfacing as "Internal server error".
+            if (error instanceof IdentityError) {
+                switch (error.code) {
+                    case "user_not_found":
+                        log.warn("Identity session requested for unknown user", {
+                            message: error.message,
+                        });
+                        return res.status(404).json({ message: "User not found" });
+                    case "not_configured":
+                        log.error("Identity verification is not configured", {
+                            message: error.message,
+                        });
+                        return res.status(503).json({
+                            message:
+                                "Identity verification is temporarily unavailable. Please try again later.",
+                        });
+                    case "provider_error":
+                        // Already logged with full Stripe context by the service.
+                        return res.status(502).json({
+                            message:
+                                "Identity verification is temporarily unavailable. Please try again later.",
+                        });
+                }
+            }
+
+            log.error("Error creating identity session", {
+                error: (error as Error).message,
+                stack: (error as Error).stack,
+            });
+            return res.status(500).json({ message: "Internal server error" });
         }
     };
 

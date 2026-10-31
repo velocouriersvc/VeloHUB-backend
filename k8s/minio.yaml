@@ -30,7 +30,13 @@ spec:
     spec:
       containers:
         - name: minio
-          image: minio/minio:latest
+          # Pinned, not :latest. A floating tag forces imagePullPolicy Always, so
+          # every restart re-pulls from Docker Hub; when anonymous pulls are
+          # refused or rate limited the pod cannot start even though the image is
+          # already on the node. Pinning + IfNotPresent keeps MinIO restartable
+          # without depending on Docker Hub being reachable.
+          image: minio/minio:RELEASE.2025-04-22T22-12-26Z
+          imagePullPolicy: IfNotPresent
           command: ["minio"]
           args: ["server", "/data", "--console-address", ":9001"]
           ports:

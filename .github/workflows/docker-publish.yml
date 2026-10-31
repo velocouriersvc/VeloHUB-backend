@@ -176,6 +176,16 @@ jobs:
             ]' || echo "startupProbe patch skipped (already set or patch unsupported)."
             echo ""
 
+            # ── Step 1.6: Ensure ndots:1 ──
+            # The node's resolv.conf carries the host provider's search domains and
+            # kubelet copies them into every pod. With the default ndots:5, names
+            # like api.stripe.com / mail.spacemail.com are tried against those
+            # suffixes first and fail before the real name is queried, breaking ALL
+            # outbound calls while in-cluster DNS still works. Idempotent.
+            echo "── ENSURING DNS ndots:1 ──"
+            sudo kubectl -n velo patch deployment velo-api --type merge               -p '{"spec":{"template":{"spec":{"dnsConfig":{"options":[{"name":"ndots","value":"1"}]}}}}}'               || echo "dnsConfig patch skipped."
+            echo ""
+
             # ── Step 2: Restart deployment ──
             echo "── RESTARTING DEPLOYMENT ──"
             sudo kubectl -n velo rollout restart deployment/velo-api

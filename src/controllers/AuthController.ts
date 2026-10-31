@@ -1,5 +1,5 @@
 import { Request, Response } from "express";
-import { AuthService } from "../services/auth-service";
+import { AuthService, OtpDeliveryError } from "../services/auth-service";
 import { RequestOtpPayload, VerifyOtpPayload, AuthenticatedRequest } from "../types/auth";
 import { AppDataSource } from "../db/data-source";
 import { UserRole, RoleStatus } from "../models/user-role";
@@ -33,7 +33,18 @@ export class AuthController {
                 message: channel === 'email' ? "Verification code sent to your email" : "OTP sent successfully"
             });
         } catch (error) {
-            log.error("Error requesting OTP", { error: (error as Error).message });
+            // A delivery failure is an upstream problem, not an internal fault.
+            // Returning 502 keeps the app from telling users "our servers are
+            // unavailable" when the API is healthy and only mail is failing.
+            if (error instanceof OtpDeliveryError) {
+                return res.status(502).json({
+                    message: "We could not send your verification code right now. Please try again in a moment.",
+                });
+            }
+            log.error("Error requesting OTP", {
+                error: (error as Error).message,
+                stack: (error as Error).stack,
+            });
             return res.status(500).json({ message: "Internal server error" });
         }
     };

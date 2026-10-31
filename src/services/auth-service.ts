@@ -18,6 +18,19 @@ import { ReferralService } from "./referral-service";
 
 const log = createServiceLogger("AuthService");
 
+/**
+ * The verification code could not be delivered (SMTP relay down, credentials
+ * missing, outbound mail port blocked). This is an upstream delivery failure,
+ * not a bug in the request, so it must not surface to the app as a generic
+ * 500 "our servers are unavailable".
+ */
+export class OtpDeliveryError extends Error {
+    constructor(public readonly channel: string, message: string) {
+        super(message);
+        this.name = "OtpDeliveryError";
+    }
+}
+
 export class AuthService {
     private userRepository = AppDataSource.getRepository(User);
     private roleRepository = AppDataSource.getRepository(Role);
@@ -45,8 +58,15 @@ export class AuthService {
             await this.otpService.createOtp(phoneNumber, channel, email);
             log.info("OTP request initiated", { channel });
         } catch (error) {
-            log.error("Failed to request OTP", { error: (error as Error).message });
-            throw new Error(`Failed to send verification code via ${channel}. Please try again later.`);
+            log.error("Failed to request OTP", {
+                channel,
+                error: (error as Error).message,
+                stack: (error as Error).stack,
+            });
+            throw new OtpDeliveryError(
+                channel,
+                `Failed to send verification code via ${channel}. Please try again later.`,
+            );
         }
     }
 
