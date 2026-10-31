@@ -15,6 +15,17 @@ spec:
       labels:
         app: velo-api
     spec:
+      # The node's resolv.conf carries the host provider's search domains
+      # (is.cc, trouble-free.net, interserver.net) and kubelet copies them into
+      # every pod. With the default ndots:5, a name like "api.stripe.com" is
+      # tried against each of those suffixes first and the lookup fails before
+      # the real name is ever queried, so ALL outbound calls (Stripe, SMTP)
+      # died with ENOTFOUND while in-cluster DNS kept working. ndots:1 makes any
+      # dotted name resolve directly; bare service names still use the search list.
+      dnsConfig:
+        options:
+          - name: ndots
+            value: "1"
       # This secret must be created with kubectl create secret docker-registry regcred ...
       imagePullSecrets:
         - name: regcred
