@@ -11,7 +11,7 @@ import { Zone } from "../models/zone";
  * pod restarts. On ordinary boots the seed only inserts missing rows.
  * Bump PRICING_SEED_VERSION whenever the price book below changes.
  */
-export const PRICING_SEED_VERSION = 2;
+export const PRICING_SEED_VERSION = 3;
 
 interface PricingRow {
     vehicleType: VehicleType;
@@ -132,6 +132,28 @@ function withIncrease(rows: PricingRow[]): PricingRow[] {
 // Velo Priority tier = Velo Basic (car) x 1.25 (client range 1.16-1.35) wherever a
 // country has no explicit priority row. Percent fee / levy carry over unchanged
 // (the percent scales naturally with the larger base).
+/**
+ * Across-the-board fare trim (Oct 2026): every market, every vehicle tier comes
+ * down 3%. Applied last, to the fully assembled book, so derived rows (the
+ * Priority tier and the India book) are reduced by exactly the same amount as
+ * the hand-written ones and no market can drift.
+ *
+ * Scales the fare components and the booking fee only. The Lagos road levy is a
+ * statutory pass-through and riderServiceFee is a separate platform fee, so
+ * both carry over untouched - same convention as FARE_INCREASE above.
+ */
+const FARE_REDUCTION = 0.97;
+function withReduction(rows: PricingRow[]): PricingRow[] {
+    return rows.map(r => ({
+        ...r,
+        basePrice: +(r.basePrice * FARE_REDUCTION).toFixed(2),
+        pricePerKm: +(Number(r.pricePerKm) * FARE_REDUCTION).toFixed(4),
+        pricePerMin: +(r.pricePerMin * FARE_REDUCTION).toFixed(2),
+        minimumFare: +(r.minimumFare * FARE_REDUCTION).toFixed(2),
+        bookingFee: +(Number(r.bookingFee ?? 0) * FARE_REDUCTION).toFixed(2),
+    }));
+}
+
 const PRIORITY_MULTIPLIER = 1.25;
 function withPriority(rows: PricingRow[]): PricingRow[] {
     const countries = [...new Set(rows.map(r => r.country))];
@@ -155,7 +177,7 @@ function withPriority(rows: PricingRow[]): PricingRow[] {
     return [...rows, ...extra];
 }
 
-const ALL_PRICING: PricingRow[] = withPriority([
+const ALL_PRICING: PricingRow[] = withReduction(withPriority([
     ...GH_PRICING,
     ...US_PRICING,
     ...CA_PRICING,
@@ -167,7 +189,7 @@ const ALL_PRICING: PricingRow[] = withPriority([
         ...UG_PRICING,
         ...inPricing(),
     ]),
-]);
+]));
 
 // ── Geofence surcharge zones (find-or-create; admin-editable afterwards) ──
 const SURCHARGE_ZONES = [
