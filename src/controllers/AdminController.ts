@@ -154,6 +154,14 @@ export class AdminController {
         }
     };
 
+    getMapUsers = async (_req: Request, res: Response) => {
+        try {
+            return res.json(await this.adminService.getMapUsers());
+        } catch (error) {
+            return res.status(500).json({ message: (error as Error).message || "Internal server error" });
+        }
+    };
+
     getMapMerchants = async (_req: Request, res: Response) => {
         try {
             return res.json(await this.adminService.getMapMerchants());

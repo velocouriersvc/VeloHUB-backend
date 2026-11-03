@@ -266,6 +266,70 @@ export class AdminService {
     }
 
     /** Merchants with coordinates for the admin map (identity + business details). */
+    /**
+     * Users for the admin live map.
+     *
+     * Users do not store a location of their own (only a country), so a precise
+     * point is derived from the most recent place we actually saw them: the
+     * dropoff of their latest order, or the pickup of their latest ride.
+     * Everyone else is returned as a per-country tally so the map can still
+     * account for the whole user base instead of silently dropping it. No
+     * coordinate is ever invented.
+     */
+    async getMapUsers(): Promise<any> {
+        // Latest known coordinate per customer, orders and rides combined.
+        const rows: Array<{ userId: string; lat: string; lng: string; source: string; seenAt: Date }> =
+            await this.userRepo.query(`
+                SELECT DISTINCT ON ("userId") "userId", lat, lng, source, "seenAt"
+                FROM (
+                    SELECT o."customerId" AS "userId", o."deliveryLat" AS lat, o."deliveryLng" AS lng,
+                           'order' AS source, o."createdAt" AS "seenAt"
+                    FROM orders o
+                    WHERE o."customerId" IS NOT NULL AND o."deliveryLat" IS NOT NULL AND o."deliveryLng" IS NOT NULL
+                    UNION ALL
+                    SELECT r."customerId", r."pickupLat", r."pickupLng", 'ride', r."createdAt"
+                    FROM rides r
+                    WHERE r."customerId" IS NOT NULL AND r."pickupLat" IS NOT NULL AND r."pickupLng" IS NOT NULL
+                ) pts
+                ORDER BY "userId", "seenAt" DESC
+            `);
+
+        const located = new Map(rows.map((r) => [r.userId, r]));
+        const users = located.size
+            ? await this.userRepo.find({
+                where: { id: In([...located.keys()]) },
+                relations: ["buyerProfile"],
+            })
+            : [];
+
+        const points = users.map((u) => {
+            const p = located.get(u.id)!;
+            return {
+                id: u.id,
+                name: this.nameOfUser(u) || u.phoneNumber || "User",
+                phone: u.phoneNumber || null,
+                country: u.country || null,
+                lat: Number(p.lat),
+                lng: Number(p.lng),
+                source: p.source,
+                lastSeenAt: p.seenAt,
+            };
+        });
+
+        // Whole-base tally so every user is represented, located or not.
+        const byCountryRaw = await this.userRepo.createQueryBuilder("u")
+            .select("u.country", "country").addSelect("COUNT(*)", "count")
+            .where("u.country IS NOT NULL AND u.country <> ''")
+            .groupBy("u.country").getRawMany();
+
+        const totalUsers = await this.userRepo.count();
+        return {
+            users: points,
+            byCountry: byCountryRaw.map((r) => ({ country: String(r.country), count: Number(r.count) })),
+            stats: { totalUsers, located: points.length },
+        };
+    }
+
     async getMapMerchants(): Promise<any> {
         const profiles = await this.merchantProfileRepo.find({
             where: { latitude: Not(IsNull()), longitude: Not(IsNull()) },
