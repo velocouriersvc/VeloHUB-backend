@@ -38,6 +38,11 @@ data:
   # Should point to the HTTPS domain fronting /velo-uploads via Nginx/Ingress.
   MINIO_PUBLIC_URL: "https://api.velocouriersvc.com"
 
+  # Where Stripe sends a user back after hosted payout onboarding. Must be
+  # https (Stripe rejects custom schemes); the page then hands control back to
+  # the app via the velo:// deep link.
+  PAYOUT_ONBOARDING_RETURN_URL: "https://velocouriersvc.com/payouts"
+
   # SMTP - Spacemail authenticated relay (see docs/K8S_EMAIL_SETUP.md).
   # Port 465 implicit TLS. SMTP_PASSWORD lives in the velo-secrets Secret, not here.
   SMTP_HOST: "mail.spacemail.com"
