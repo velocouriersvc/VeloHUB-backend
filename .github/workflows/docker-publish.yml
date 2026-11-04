@@ -250,28 +250,46 @@ jobs:
 
       - name: Deployment summary
         if: always()
+        env:
+          # Passed as environment variables, never interpolated into the script
+          # body. A commit message is attacker-controlled text: inlined with the
+          # ${{ }} syntax it gets pasted into the shell and executed, and this
+          # step runs with STRIPE_SECRET_KEY, SMTP_PASSWORD and GHCR_PULL_TOKEN
+          # in scope, so a message containing $(...) could read them straight out.
+          #
+          # It also simply broke: a multi-line message turned its second line
+          # into a command and failed the job with "command not found", long
+          # after the deploy itself had already succeeded.
+          COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
+          COMMIT_AUTHOR: ${{ github.actor }}
+          COMMIT_SHA: ${{ github.sha }}
+          DEPLOY_OUTCOME: ${{ steps.deploy.outcome }}
         run: |
-          if [ "${{ steps.deploy.outcome }}" == "success" ]; then
-            echo "## ✅ Deployment Successful" >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "| Detail | Value |" >> $GITHUB_STEP_SUMMARY
-            echo "|--------|-------|" >> $GITHUB_STEP_SUMMARY
-            echo "| **Status** | ✅ Success |" >> $GITHUB_STEP_SUMMARY
-            echo "| **Commit** | \`${{ github.sha }}\` |" >> $GITHUB_STEP_SUMMARY
-            echo "| **Author** | ${{ github.actor }} |" >> $GITHUB_STEP_SUMMARY
-            echo "| **Message** | ${{ github.event.head_commit.message }} |" >> $GITHUB_STEP_SUMMARY
-            echo "| **Image** | \`ghcr.io/velocouriersvc/velo-backend:latest\` |" >> $GITHUB_STEP_SUMMARY
-            echo "| **Time** | $(date -u '+%Y-%m-%d %H:%M:%S UTC') |" >> $GITHUB_STEP_SUMMARY
+          # Subject line only, with table pipes escaped so they cannot break the row.
+          SUBJECT=$(printf '%s' "$COMMIT_MESSAGE" | head -n 1 | tr -d '\r' | sed 's/|/\&#124;/g')
+
+          if [ "$DEPLOY_OUTCOME" = "success" ]; then
+            echo "## Deployment Successful" >> $GITHUB_STEP_SUMMARY
+            STATUS="Success"
           else
-            echo "## ❌ Deployment Failed" >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "| Detail | Value |" >> $GITHUB_STEP_SUMMARY
-            echo "|--------|-------|" >> $GITHUB_STEP_SUMMARY
-            echo "| **Status** | ❌ Failed |" >> $GITHUB_STEP_SUMMARY
-            echo "| **Commit** | \`${{ github.sha }}\` |" >> $GITHUB_STEP_SUMMARY
-            echo "| **Author** | ${{ github.actor }} |" >> $GITHUB_STEP_SUMMARY
-            echo "| **Message** | ${{ github.event.head_commit.message }} |" >> $GITHUB_STEP_SUMMARY
-            echo "| **Time** | $(date -u '+%Y-%m-%d %H:%M:%S UTC') |" >> $GITHUB_STEP_SUMMARY
+            echo "## Deployment Failed" >> $GITHUB_STEP_SUMMARY
+            STATUS="Failed"
+          fi
+
+          {
+            echo ""
+            echo "| Detail | Value |"
+            echo "|--------|-------|"
+            echo "| **Status** | ${STATUS} |"
+            echo "| **Commit** | \`${COMMIT_SHA}\` |"
+            echo "| **Author** | ${COMMIT_AUTHOR} |"
+            echo "| **Message** | ${SUBJECT} |"
+            echo "| **Time** | $(date -u '+%Y-%m-%d %H:%M:%S UTC') |"
+          } >> $GITHUB_STEP_SUMMARY
+
+          if [ "$DEPLOY_OUTCOME" = "success" ]; then
+            echo "| **Image** | \`ghcr.io/velocouriersvc/velo-backend:latest\` |" >> $GITHUB_STEP_SUMMARY
+          else
             echo "" >> $GITHUB_STEP_SUMMARY
             echo "Check the **Deploy to VPS** step logs above for full diagnostics." >> $GITHUB_STEP_SUMMARY
           fi
