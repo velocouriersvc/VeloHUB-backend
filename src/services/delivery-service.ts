@@ -481,6 +481,11 @@ export class DeliveryService {
         // If the buyer was referred, their first completed order pays the referrer (idempotent).
         await this.referralService.rewardReferrerOnFirstCompletion(order.customerId).catch(() => {});
 
+        // The same delivery is a qualifying job for a referred driver and for a
+        // referred merchant, so each side's partner referral moves forward.
+        await this.referralService.recordPartnerJob(driverId).catch(() => {});
+        await this.referralService.recordPartnerJob(order.merchantId).catch(() => {});
+
         // Release the driver back to available (best-effort: the payout is already
         // durable, so a Redis hiccup must never bubble a 400 after the money moved).
         // Mirrors ride-service.completeRide so the driver can take the next request.

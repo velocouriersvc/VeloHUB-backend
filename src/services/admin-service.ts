@@ -1893,6 +1893,8 @@ export class AdminService {
             cancellationWindowMinutes: number;
             referralRewardAmount: number;
             referralRefereeReward: number;
+            partnerReferralRewardAmount: number;
+            partnerReferralThreshold: number;
             leaderboardLimit: number;
             usdExchangeRate: number;
             paymentProcessingFeeRate: number;
@@ -2918,10 +2920,27 @@ export class AdminService {
             .select("SUM(rl.rewardAmount)", "total")
             .getRawOne();
 
+        const byProgram = await this.referralLinkRepo.createQueryBuilder("rl")
+            .select("rl.program", "program")
+            .addSelect("COUNT(*)::int", "total")
+            .addSelect("SUM(CASE WHEN rl.status = 'completed' THEN 1 ELSE 0 END)::int", "completed")
+            .addSelect("COALESCE(SUM(CASE WHEN rl.status = 'completed' THEN rl.rewardAmount ELSE 0 END), 0)", "rewards")
+            .groupBy("rl.program")
+            .getRawMany();
+
         return {
             totalReferrals,
             completedReferrals,
+            pendingReferrals: totalReferrals - completedReferrals,
             totalRewardsIssued: parseFloat(totalRewardsIssued?.total || "0"),
+            // Customer and partner referrals cost very different amounts, so they
+            // are reported apart rather than as one blended number.
+            byProgram: byProgram.map(r => ({
+                program: r.program,
+                total: Number(r.total || 0),
+                completed: Number(r.completed || 0),
+                rewards: parseFloat(r.rewards || "0"),
+            })),
         };
     }
 

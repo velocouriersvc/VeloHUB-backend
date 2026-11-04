@@ -147,6 +147,15 @@ export class PlatformSettings {
     @Column({ type: "decimal", precision: 10, scale: 2, default: 10.00 })
     referralRefereeReward: number;
 
+    // Partner referral: paid to BOTH sides when a referred driver or merchant
+    // completes `partnerReferralThreshold` trips or orders. Worth more than the
+    // customer reward because onboarding a working partner is worth more.
+    @Column({ type: "decimal", precision: 10, scale: 2, default: 25.00 })
+    partnerReferralRewardAmount: number;
+
+    @Column({ type: "integer", default: 10 })
+    partnerReferralThreshold: number;
+
     @Column({ type: "integer", default: 10 })
     leaderboardLimit: number;
 

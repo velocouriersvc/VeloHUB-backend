@@ -1,6 +1,6 @@
 import { AppDataSource } from "../db/data-source";
 import { ReferralCode } from "../models/referral-code";
-import { ReferralLink, ReferralStatus } from "../models/referral-link";
+import { ReferralLink, ReferralStatus, ReferralProgram } from "../models/referral-link";
 import { PlatformSettings } from "../models/platform-settings";
 import { User } from "../models/user";
 import { WalletService } from "./wallet-service";
@@ -39,7 +39,7 @@ export class ReferralService {
      * user whose currency has no dedicated config (e.g. EUR) sees their own currency with the baseline
      * amount instead of GHS.
      */
-    private async rewardsForWalletOf(userId: string, fallbackCountry?: string, preferCurrency?: string): Promise<{ referrer: number; referee: number; currency: string }> {
+    private async rewardsForWalletOf(userId: string, fallbackCountry?: string, preferCurrency?: string): Promise<{ referrer: number; referee: number; partner: number; partnerThreshold: number; currency: string }> {
         // 1. Target currency.
         let currency = String(preferCurrency || "").trim().toUpperCase();
         if (!currency) {
@@ -59,8 +59,20 @@ export class ReferralService {
         return {
             referrer: Number(row?.referralRewardAmount ?? 5) || 5,
             referee: Number(row?.referralRefereeReward ?? 10) || 10,
+            partner: Number(row?.partnerReferralRewardAmount ?? 25) || 25,
+            partnerThreshold: Number(row?.partnerReferralThreshold ?? 10) || 10,
             currency,
         };
+    }
+
+    /** True when the user is a driver or merchant, which puts them on the partner programme. */
+    private async isPartner(userId: string): Promise<boolean> {
+        const rows = await this.userRepo.query(
+            `SELECT 1 FROM user_roles ur JOIN roles r ON r.id = ur."roleId"
+             WHERE ur."userId" = $1 AND r.name IN ('driver','merchant') LIMIT 1`,
+            [userId],
+        );
+        return rows.length > 0;
     }
 
     /** The user's referral code (created on first request) plus reward amounts + progress.
@@ -87,6 +99,11 @@ export class ReferralService {
             code: rec?.code || "",
             referrerReward: rewards.referrer,
             refereeReward: rewards.referee,
+            // The partner programme, so the invite screen can offer the driver /
+            // merchant pitch to the people it actually applies to.
+            partnerReward: rewards.partner,
+            partnerThreshold: rewards.partnerThreshold,
+            isPartner: await this.isPartner(userId),
             currency: rewards.currency,
             invited: links.length,
             completed: completed.length,
@@ -123,35 +140,93 @@ export class ReferralService {
         }
     }
 
-    /** When the referee completes their FIRST ride/order (i.e. buys something), pay BOTH parties their
-     *  referral reward as NON-WITHDRAWABLE (in-app only) credit. Idempotent (only a PENDING link is ever
-     *  paid, then flipped to COMPLETED). Non-fatal on error. */
-    async rewardReferrerOnFirstCompletion(referredUserId: string): Promise<void> {
+    /**
+     * A referred user did something that can count toward their referral.
+     *
+     * `kind` is "purchase" when they bought as a customer, or "partner_job" when
+     * they completed work as a driver or merchant. The first qualifying event
+     * settles which programme the link is on, and it never changes afterwards:
+     *
+     *  - a plain buyer lands on CUSTOMER and pays out on that single purchase
+     *  - a driver or merchant lands on PARTNER and pays out once they have
+     *    completed the configured number of trips or orders
+     *
+     * A partner's own shopping therefore does not shortcut the partner bar, and
+     * a buyer is never held to it. Idempotent and non-fatal.
+     */
+    async recordQualifyingActivity(referredUserId: string, kind: "purchase" | "partner_job"): Promise<void> {
         try {
             const link = await this.linkRepo.findOne({ where: { referredId: referredUserId, status: ReferralStatus.PENDING } });
             if (!link) return;
+
+            // Settle the programme on the first qualifying event.
+            if (link.program === ReferralProgram.UNDECIDED) {
+                const partner = await this.isPartner(referredUserId);
+                const rewards = await this.rewardsForWalletOf(link.referrerId);
+                if (partner) {
+                    link.program = ReferralProgram.PARTNER;
+                    link.requiredProgress = rewards.partnerThreshold;
+                    link.rewardAmount = rewards.partner;
+                } else {
+                    link.program = ReferralProgram.CUSTOMER;
+                    link.requiredProgress = 1;
+                    link.rewardAmount = rewards.referrer;
+                }
+            }
+
+            // Only the matching kind of work moves the needle.
+            const counts = link.program === ReferralProgram.PARTNER
+                ? kind === "partner_job"
+                : kind === "purchase";
+            if (!counts) {
+                await this.linkRepo.save(link);
+                return;
+            }
+
+            link.progress = Number(link.progress || 0) + 1;
+            if (link.progress < link.requiredProgress) {
+                await this.linkRepo.save(link);
+                log.info("Referral progress recorded", { referredUserId, program: link.program, progress: link.progress, required: link.requiredProgress });
+                return;
+            }
+
             link.status = ReferralStatus.COMPLETED;
             link.completedAt = new Date();
             await this.linkRepo.save(link);
 
             const referrer = await this.userRepo.findOne({ where: { id: link.referrerId } });
             const referrerAmount = Number(link.rewardAmount || 0);
-            const refereeAmount = (await this.rewardsForWalletOf(referredUserId)).referee; // referee's own market
+            const refereeRewards = await this.rewardsForWalletOf(referredUserId);
+            const refereeAmount = link.program === ReferralProgram.PARTNER ? refereeRewards.partner : refereeRewards.referee;
 
-            // The referee bought something, so both rewards unlock now (in-app credit, not withdrawable).
-            await this.creditWalletSafe(link.referrerId, referrerAmount, referrer?.country || "GH", "Referral reward - your invite made their first purchase", { type: "referral_referrer", referredId: referredUserId });
-            await this.creditWalletSafe(referredUserId, refereeAmount, referrer?.country || "GH", "Referral bonus - unlocked by your first purchase", { type: "referral_referee", referrerId: link.referrerId });
+            const why = link.program === ReferralProgram.PARTNER
+                ? `completed ${link.requiredProgress} trips or orders`
+                : "made their first purchase";
+
+            await this.creditWalletSafe(link.referrerId, referrerAmount, referrer?.country || "GH", `Referral reward - your invite ${why}`, { type: "referral_referrer", program: link.program, referredId: referredUserId });
+            await this.creditWalletSafe(referredUserId, refereeAmount, referrer?.country || "GH", "Referral bonus unlocked", { type: "referral_referee", program: link.program, referrerId: link.referrerId });
 
             await this.notifications
-                .notify(link.referrerId, NotificationType.WALLET_CREDITED, "Referral reward earned", `You earned ${referrerAmount} in-app credit because your invite made their first VeloHUB purchase.`, {})
+                .notify(link.referrerId, NotificationType.WALLET_CREDITED, "Referral reward earned", `You earned ${referrerAmount} in-app credit because your invite ${why}.`, {})
                 .catch(() => {});
             await this.notifications
                 .notify(referredUserId, NotificationType.WALLET_CREDITED, "Referral bonus unlocked", `Your ${refereeAmount} referral credit is now in your wallet for in-app use.`, {})
                 .catch(() => {});
-            log.info("Referral rewards paid on first purchase", { referrerId: link.referrerId, referredUserId, referrerAmount, refereeAmount });
+            log.info("Referral rewards paid", { referrerId: link.referrerId, referredUserId, program: link.program, referrerAmount, refereeAmount });
         } catch (e) {
-            log.warn("rewardReferrerOnFirstCompletion failed (non-fatal)", { referredUserId, error: (e as Error).message });
+            log.warn("recordQualifyingActivity failed (non-fatal)", { referredUserId, error: (e as Error).message });
         }
+    }
+
+    /** The referee bought something. Kept as the name the order/ride services already call. */
+    async rewardReferrerOnFirstCompletion(referredUserId: string): Promise<void> {
+        await this.recordQualifyingActivity(referredUserId, "purchase");
+    }
+
+    /** A referred driver finished a trip or delivery, or a referred merchant fulfilled an order. */
+    async recordPartnerJob(referredUserId: string | null | undefined): Promise<void> {
+        if (!referredUserId) return;
+        await this.recordQualifyingActivity(referredUserId, "partner_job");
     }
 
     /** All referral credit is promo/non-withdrawable: spendable in-app, excluded from payouts. */

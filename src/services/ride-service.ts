@@ -824,6 +824,9 @@ export class RideService {
         // If this customer was referred, their first completed ride pays the referrer (idempotent).
         await this.referralService.rewardReferrerOnFirstCompletion(updated.customerId).catch(() => {});
 
+        // If the DRIVER was referred, this trip counts toward their partner referral.
+        await this.referralService.recordPartnerJob(updated.driverId).catch(() => {});
+
         // Best-effort cleanup: settlement is already durable, so a Redis/socket hiccup
         // here must never bubble a 400 to the driver after their money has moved.
         try {
