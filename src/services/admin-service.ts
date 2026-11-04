@@ -106,6 +106,8 @@ export interface AdminDashboard {
         monthlyActiveUsersByCountry: Record<string, number>;
         totalListings: number;
         totalListingsByCountry: Record<string, number>;
+        /** buyers + merchants + drivers. Overlapping segments, so NOT a people count. */
+        segmentMemberships: number;
     };
     today: {
         totalOrders: number;
@@ -344,6 +346,46 @@ export class AdminService {
         return { merchants };
     }
 
+    /**
+     * Size of a user segment: active accounts that hold the role OR the
+     * matching profile.
+     *
+     * Counting roles alone was wrong twice over. It swept in soft-deleted
+     * accounts, which is how "Buyers" came out LARGER than total platform
+     * users, and it missed the drift between role assignment and profile
+     * creation (drivers with a profile but no driver role were invisible, so
+     * the driver tile read ~72 when there were ~108 real drivers).
+     *
+     * These segments overlap by design: nearly every merchant and driver also
+     * holds a buyer role, so they must never be summed to produce a user
+     * total. Use totalUsers for that.
+     */
+    private async countSegment(kind: "buyer" | "merchant" | "driver"): Promise<number> {
+        const rows = await this.userRepo.query(
+            `SELECT COUNT(*)::int AS count FROM users u
+             WHERE u."deletedAt" IS NULL AND ${this.segmentPredicate(kind)}`,
+            [kind],
+        );
+        return Number(rows?.[0]?.count || 0);
+    }
+
+    /** Same segment, broken down by country, for the drill-down dialogs. */
+    private async segmentByCountry(kind: "buyer" | "merchant" | "driver"): Promise<any[]> {
+        return this.userRepo.query(
+            `SELECT u.country AS country, COUNT(*)::int AS count FROM users u
+             WHERE u."deletedAt" IS NULL AND ${this.segmentPredicate(kind)}
+             GROUP BY u.country`,
+            [kind],
+        );
+    }
+
+    private segmentPredicate(kind: "buyer" | "merchant" | "driver"): string {
+        const table = { buyer: "buyer_profiles", merchant: "merchant_profiles", driver: "driver_profiles" }[kind];
+        return `(EXISTS (SELECT 1 FROM ${table} p WHERE p."userId" = u.id)
+              OR EXISTS (SELECT 1 FROM user_roles ur JOIN roles r ON r.id = ur."roleId"
+                         WHERE ur."userId" = u.id AND r.name = $1))`;
+    }
+
     async getDashboard(): Promise<AdminDashboard> {
         const today = new Date();
         today.setHours(0, 0, 0, 0);
@@ -374,39 +416,12 @@ export class AdminService {
         ] = await Promise.all([
             this.userRepo.count(),
             this.userRepo.createQueryBuilder("u").select("u.country", "country").addSelect("COUNT(u.id)", "count").groupBy("u.country").getRawMany(),
-            this.merchantProfileRepo.count(),
-            this.userRoleRepo.createQueryBuilder("ur")
-                .innerJoin("ur.role", "r")
-                .innerJoin("ur.user", "u")
-                .where("r.name = :name", { name: RoleType.MERCHANT })
-                .select("u.country", "country")
-                .addSelect("COUNT(ur.id)", "count")
-                .groupBy("u.country")
-                .getRawMany(),
-            this.userRoleRepo.count({
-                where: { role: { name: RoleType.DRIVER } },
-                relations: { role: true },
-            }),
-            this.userRoleRepo.createQueryBuilder("ur")
-                .innerJoin("ur.role", "r")
-                .innerJoin("ur.user", "u")
-                .where("r.name = :name", { name: RoleType.DRIVER })
-                .select("u.country", "country")
-                .addSelect("COUNT(ur.id)", "count")
-                .groupBy("u.country")
-                .getRawMany(),
-            this.userRoleRepo.count({
-                where: { role: { name: RoleType.BUYER } },
-                relations: { role: true },
-            }),
-            this.userRoleRepo.createQueryBuilder("ur")
-                .innerJoin("ur.role", "r")
-                .innerJoin("ur.user", "u")
-                .where("r.name = :name", { name: RoleType.BUYER })
-                .select("u.country", "country")
-                .addSelect("COUNT(ur.id)", "count")
-                .groupBy("u.country")
-                .getRawMany(),
+            this.countSegment("merchant"),
+            this.segmentByCountry("merchant"),
+            this.countSegment("driver"),
+            this.segmentByCountry("driver"),
+            this.countSegment("buyer"),
+            this.segmentByCountry("buyer"),
             this.merchantProfileRepo.count({
                 where: { status: MerchantVerificationStatus.APPROVED, isOpen: true },
             }),
@@ -595,6 +610,11 @@ export class AdminService {
                 monthlyActiveUsersByCountry: formatStats(monthlyActiveUsersByCountryRaw),
                 totalListings,
                 totalListingsByCountry: formatStats(totalListingsByCountryRaw),
+                // Buyers/merchants/drivers overlap (nearly every merchant and
+                // driver is also a buyer), so this sum is role memberships, not
+                // people. Surfaced so the UI can explain why the tiles do not
+                // add up to totalUsers instead of looking self-contradictory.
+                segmentMemberships: totalBuyers + totalMerchants + totalDrivers,
             },
             today: {
                 totalOrders: todaysOrders.length,
