@@ -11,6 +11,9 @@ router.use(apiKeyMiddleware);
 // Drivers and merchants both request payouts.
 const payoutRoles = requireRole(["driver", "merchant"]);
 
+router.get("/method", payoutRoles, controller.getMethod);
+router.post("/connect/onboard", payoutRoles, controller.startOnboarding);
+router.get("/connect/status", payoutRoles, controller.connectStatus);
 router.get("/banks", payoutRoles, controller.listBanks);
 router.get("/bank", payoutRoles, controller.getBank);
 router.post("/bank", payoutRoles, controller.saveBank);

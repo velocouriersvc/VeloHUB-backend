@@ -9,12 +9,19 @@ import { NotificationType } from "../models/notification";
 import { v4 as uuidv4 } from "uuid";
 import { createServiceLogger } from "../utils/logger";
 import { payoutBreakdown } from "../utils/payout-fee";
+import { User } from "../models/user";
+import { payoutRailFor, isPaystackPayoutCountry, PAYSTACK_PAYOUT_CURRENCIES, PayoutRail } from "../config/payout-rails";
 
 const log = createServiceLogger("PayoutService");
 
 async function getGatewayProvider() {
     const { paymentProviderRegistry } = await import("./payment/payment-provider-registry");
     return paymentProviderRegistry.getGatewayProvider();
+}
+
+async function getStripeProvider() {
+    const { paymentProviderRegistry } = await import("./payment/payment-provider-registry");
+    return paymentProviderRegistry.getStripeProvider();
 }
 
 export type PayoutRole = "driver" | "merchant";
@@ -34,9 +41,132 @@ export class PayoutService {
     private driverRepo = AppDataSource.getRepository(DriverProfile);
     private merchantRepo = AppDataSource.getRepository(MerchantProfile);
     private notifications = new NotificationService();
+    private userRepo = AppDataSource.getRepository(User);
 
     private profileRepoFor(role: PayoutRole): any {
         return role === "driver" ? this.driverRepo : this.merchantRepo;
+    }
+
+    /** The payout rail for this user, decided by their country. */
+    async railFor(userId: string): Promise<{ rail: PayoutRail; country: string | null }> {
+        const user = await this.userRepo.findOne({ where: { id: userId } });
+        const country = user?.country || null;
+        return { rail: payoutRailFor(country), country };
+    }
+
+    /**
+     * What the app should render on the payout screen.
+     *
+     * Paystack markets keep the bank/momo picker. Everywhere else returns the
+     * Stripe Connect state, because those users have no Paystack bank codes to
+     * choose from and previously hit a picker that could not accept them.
+     */
+    async getPayoutMethod(userId: string, role: PayoutRole) {
+        const { rail, country } = await this.railFor(userId);
+        let wallet = await this.wallet.getWallet(userId);
+        if (!wallet) wallet = await this.wallet.createWallet(userId);
+
+        if (rail === "paystack") {
+            return {
+                rail,
+                country,
+                currency: wallet.currency || PAYSTACK_PAYOUT_CURRENCIES[(country || "").toUpperCase()] || "GHS",
+                bank: await this.getBankDetails(userId, role),
+                ready: !!wallet.paystackRecipientCode,
+            };
+        }
+
+        // Stripe: refresh from Stripe so a finished onboarding is reflected even
+        // if the account.updated webhook has not landed yet.
+        const status = wallet.stripeConnectAccountId
+            ? await this.syncStripeStatus(userId)
+            : { payoutsEnabled: false, detailsSubmitted: false, requirementsDue: [] as string[], bankLast4: null };
+
+        return {
+            rail,
+            country,
+            currency: wallet.currency || "USD",
+            ready: !!status.payoutsEnabled,
+            onboarding: {
+                started: !!wallet.stripeConnectAccountId,
+                detailsSubmitted: !!status.detailsSubmitted,
+                requirementsDue: status.requirementsDue || [],
+            },
+            bankLast4: status.bankLast4 || null,
+        };
+    }
+
+    /**
+     * Create (once) the connected account and return a hosted onboarding link
+     * where the user adds their bank details and completes verification.
+     */
+    async startStripeOnboarding(userId: string, urls: { returnUrl: string; refreshUrl: string }) {
+        const { rail, country } = await this.railFor(userId);
+        if (rail !== "stripe") {
+            throw new Error("Your country is paid out through bank transfer, not Stripe.");
+        }
+        const stripe = await getStripeProvider();
+        let wallet = await this.wallet.getWallet(userId);
+        if (!wallet) wallet = await this.wallet.createWallet(userId);
+
+        if (!wallet.stripeConnectAccountId) {
+            const user = await this.userRepo.findOne({ where: { id: userId } });
+            const created = await stripe.createConnectAccount({
+                email: user?.email || null,
+                country: (country || "US").toUpperCase(),
+                userId,
+            });
+            if (!created.success || !created.accountId) {
+                throw new Error(created.message || "Could not start payout setup. Please try again.");
+            }
+            wallet.stripeConnectAccountId = created.accountId;
+            await this.walletRepo.save(wallet);
+            log.info("Stripe connected account created", { userId, accountId: created.accountId });
+        }
+
+        const link = await stripe.createAccountLink({
+            accountId: wallet.stripeConnectAccountId!,
+            refreshUrl: urls.refreshUrl,
+            returnUrl: urls.returnUrl,
+        });
+        if (!link.success || !link.url) {
+            throw new Error(link.message || "Could not open payout setup. Please try again.");
+        }
+        return { url: link.url, accountId: wallet.stripeConnectAccountId };
+    }
+
+    /** Pull the connected account state and cache payouts_enabled on the wallet. */
+    async syncStripeStatus(userId: string) {
+        const wallet = await this.wallet.getWallet(userId);
+        if (!wallet?.stripeConnectAccountId) {
+            return { payoutsEnabled: false, detailsSubmitted: false, requirementsDue: [] as string[], bankLast4: null };
+        }
+        const stripe = await getStripeProvider();
+        const status = await stripe.getConnectAccount(wallet.stripeConnectAccountId);
+        if (status.success && wallet.stripePayoutsEnabled !== !!status.payoutsEnabled) {
+            wallet.stripePayoutsEnabled = !!status.payoutsEnabled;
+            await this.walletRepo.save(wallet);
+        }
+        return {
+            payoutsEnabled: !!status.payoutsEnabled,
+            detailsSubmitted: !!status.detailsSubmitted,
+            requirementsDue: status.requirementsDue || [],
+            bankLast4: status.bankLast4 || null,
+        };
+    }
+
+    /** Stripe account.updated webhook: keep payouts_enabled in step. */
+    async handleConnectAccountUpdated(account: any): Promise<void> {
+        const accountId = account?.id;
+        if (!accountId) return;
+        const wallet = await this.walletRepo.findOne({ where: { stripeConnectAccountId: accountId } });
+        if (!wallet) return;
+        const enabled = !!account.payouts_enabled;
+        if (wallet.stripePayoutsEnabled !== enabled) {
+            wallet.stripePayoutsEnabled = enabled;
+            await this.walletRepo.save(wallet);
+            log.info("Stripe connect payouts flag updated", { accountId, enabled });
+        }
     }
 
     /** Banks / momo providers for the payout picker. */
@@ -45,6 +175,17 @@ export class PayoutService {
         if (!provider.listBanks) return [];
         const res = await provider.listBanks(currency);
         return res.banks || [];
+    }
+
+    /** Guard: the bank picker is Paystack-only and meaningless elsewhere. */
+    private async assertPaystackRail(userId: string) {
+        const { rail, country } = await this.railFor(userId);
+        if (rail !== "paystack") {
+            throw new Error(
+                "Bank payouts for your country are set up through Stripe. Open payout setup to add your bank.",
+            );
+        }
+        return country;
     }
 
     /** The saved payout destination (account number masked). */
@@ -76,6 +217,9 @@ export class PayoutService {
         input: { bankCode: string; accountNumber: string; bankName?: string; isMomo?: boolean }
     ) {
         if (!input.bankCode || !input.accountNumber) throw new Error("Bank and account number are required");
+        // Outside Paystack's markets these codes do not exist; those users go
+        // through Stripe Connect onboarding instead.
+        await this.assertPaystackRail(userId);
         const provider = await getGatewayProvider();
         if (!provider.resolveAccount || !provider.createTransferRecipient) {
             throw new Error("Payouts are not available right now");
@@ -130,6 +274,11 @@ export class PayoutService {
 
         const wallet = await this.wallet.getWallet(userId);
         if (!wallet) throw new Error("Wallet not found");
+
+        const { rail } = await this.railFor(userId);
+        if (rail === "stripe") {
+            return this.instantPayoutViaStripe(userId, wallet, amount, input);
+        }
         if (!wallet.paystackRecipientCode) throw new Error("Add your bank details before requesting a payout");
 
         const { fee, net, currency } = payoutBreakdown(amount, wallet.currency || "NGN");
@@ -170,6 +319,70 @@ export class PayoutService {
 
         log.info("Instant payout sent", { userId, reference, gross: amount, fee, net });
         return { reference, gross: amount, fee, net, status: "processing" };
+    }
+
+    /**
+     * Payout for countries Paystack cannot reach. Same ledger semantics as the
+     * Paystack path: debit the gross up front, send the net, and re-credit
+     * immediately if Stripe rejects the transfer.
+     */
+    private async instantPayoutViaStripe(
+        userId: string,
+        wallet: Wallet,
+        amount: number,
+        input: { amount: number; reason?: string; audit?: Record<string, any> },
+    ): Promise<{ reference: string; gross: number; fee: number; net: number; status: string }> {
+        if (!wallet.stripeConnectAccountId || !wallet.stripePayoutsEnabled) {
+            // Re-check with Stripe before refusing: onboarding may have just finished.
+            const status = await this.syncStripeStatus(userId);
+            if (!status.payoutsEnabled) {
+                throw new Error("Finish payout setup before requesting a payout");
+            }
+        }
+
+        const currency = wallet.currency || "USD";
+        const { fee, net } = payoutBreakdown(amount, currency);
+        if (net <= 0) throw new Error("Amount is too small to cover the transfer fee");
+        if (amount > (await this.wallet.getWithdrawableBalance(userId))) {
+            throw new Error("Insufficient withdrawable balance for this payout");
+        }
+
+        const reference = `PO-${uuidv4().slice(0, 12)}`;
+        await this.wallet.debit(userId, amount, `Payout to bank (${currency})`, {
+            type: "payout",
+            status: "processing",
+            rail: "stripe",
+            gross: amount,
+            fee,
+            net,
+            reference,
+            ...(input.audit || {}),
+        }, false, true);
+
+        const stripe = await getStripeProvider();
+        const fresh = await this.wallet.getWallet(userId);
+        const transfer = await stripe.transferToConnectedAccount({
+            accountId: fresh!.stripeConnectAccountId!,
+            amount: net,
+            currency,
+            reference,
+            description: input.reason || `On-Demand Payout ${reference}`,
+        });
+
+        if (!transfer.success) {
+            await this.wallet.credit(userId, amount, `Payout reversed: ${reference}`, {
+                type: "payout_reversal",
+                ofReference: reference,
+                reason: transfer.message || "Transfer could not be started",
+            });
+            await this.updateTxStatus(reference, "failed", { lastError: transfer.message });
+            throw new Error(transfer.message || "Bank transfer could not be started. Please try again later.");
+        }
+
+        // Stripe accepts the transfer synchronously, so it is settled from our side.
+        await this.updateTxStatus(reference, "success", { stripeTransferId: transfer.transferId });
+        log.info("Instant payout sent via Stripe", { userId, reference, gross: amount, fee, net });
+        return { reference, gross: amount, fee, net, status: "success" };
     }
 
     /** Count today's payout requests for a user (daily-limit guard). */
