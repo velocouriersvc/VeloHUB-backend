@@ -1,6 +1,6 @@
 import "dotenv/config";
 import express, { Request, Response } from "express";
-import cors from "cors";
+import { applySecurityMiddleware, otpLimiter, RATE_LIMITED_AUTH_PATHS } from "./middleware/security-middleware";
 import { createServer } from "http";
 import swaggerUi from "swagger-ui-express";
 import { AppDataSource } from "./db/data-source";
@@ -58,7 +58,8 @@ const httpServer = createServer(app);
 const PORT = process.env.PORT || 3000;
 
 // Middleware
-app.use(cors());
+applySecurityMiddleware(app);
+
 // Webhook routes must come before express.json()
 app.use('/api/v1/identity/webhook', express.raw({ type: 'application/json' }));
 app.post('/api/v1/payments/webhook', express.raw({ type: 'application/json' }));
@@ -79,24 +80,31 @@ app.get("/metrics", async (_req: Request, res: Response) => {
   res.end(await register.metrics());
 });
 
-// Swagger docs
-app.use("/docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
-  customCss: '.swagger-ui .topbar { display: none }',
-  customSiteTitle: "Velo API Docs",
-  swaggerOptions: {
-    persistAuthorization: true,        // Remember API key across page reloads
-    tryItOutEnabled: true,             // "Try it out" is ON by default
-    filter: true,                      // Search bar to filter endpoints
-    displayRequestDuration: true,      // Show how long requests take
-    docExpansion: "list",              // Show all tags collapsed with summaries
-    defaultModelsExpandDepth: 2,       // Expand schema models
-    defaultModelExpandDepth: 2,
-  },
-}));
-app.get("/docs.json", (_req: Request, res: Response) => {
-  res.setHeader("Content-Type", "application/json");
-  res.send(swaggerSpec);
-});
+// Swagger docs. This publishes the entire API surface, with "Try it out" on and
+// the API key remembered across reloads, to anyone who browses to it - so it is
+// off unless ENABLE_API_DOCS is explicitly "true". nginx blocks it at the edge
+// as well, so turning it on exposes it in-cluster only.
+const API_DOCS_ENABLED = process.env.ENABLE_API_DOCS === "true";
+
+if (API_DOCS_ENABLED) {
+  app.use("/docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
+    customCss: '.swagger-ui .topbar { display: none }',
+    customSiteTitle: "Velo API Docs",
+    swaggerOptions: {
+      persistAuthorization: true,        // Remember API key across page reloads
+      tryItOutEnabled: true,             // "Try it out" is ON by default
+      filter: true,                      // Search bar to filter endpoints
+      displayRequestDuration: true,      // Show how long requests take
+      docExpansion: "list",              // Show all tags collapsed with summaries
+      defaultModelsExpandDepth: 2,       // Expand schema models
+      defaultModelExpandDepth: 2,
+    },
+  }));
+  app.get("/docs.json", (_req: Request, res: Response) => {
+    res.setHeader("Content-Type", "application/json");
+    res.send(swaggerSpec);
+  });
+}
 
 // Health
 app.use(healthRoutes);
@@ -108,6 +116,9 @@ app.use(`/${PUBLIC_BUCKET}`, publicAssetRoutes);
 
 // Handled by express.raw at the top
 
+// Each of these either sends a message that costs money or is worth guessing
+// at repeatedly.
+RATE_LIMITED_AUTH_PATHS.forEach(p => app.use(p, otpLimiter));
 app.use("/api/v1/auth", authRoutes);
 app.use("/api/v1/profile", profileRoutes);
 app.use("/api/v1/support", supportRoutes);

@@ -18,7 +18,7 @@ const SYSTEM_USER_ID = "00000000-0000-0000-0000-000000000000";
 async function downloadFile(url: string): Promise<{ buffer: Buffer; mimeType: string; fileName: string }> {
     const response = await axios.get(url, { responseType: 'arraybuffer' });
     const buffer = Buffer.from(response.data, 'binary');
-    const mimeType = response.headers['content-type'] || 'image/jpeg';
+    const mimeType = String(response.headers['content-type'] || 'image/jpeg');
     const fileName = url.split('/').pop() || 'file.jpg';
     return { buffer, mimeType, fileName };
 }

@@ -108,6 +108,8 @@ export interface AdminDashboard {
         totalListingsByCountry: Record<string, number>;
         /** buyers + merchants + drivers. Overlapping segments, so NOT a people count. */
         segmentMemberships: number;
+        /** Same sum, per country, so the headline tile's drill-down adds up to it. */
+        segmentMembershipsByCountry: Record<string, number>;
     };
     today: {
         totalOrders: number;
@@ -578,6 +580,15 @@ export class AdminService {
             return result;
         };
 
+        /** Adds several per-country maps into one. */
+        const sumByCountry = (...maps: Record<string, number>[]) => {
+            const result: Record<string, number> = {};
+            maps.forEach(m => Object.entries(m).forEach(([c, n]) => {
+                result[c] = (result[c] || 0) + Number(n);
+            }));
+            return result;
+        };
+
         const pendingVerificationsByCountry = formatStats(pendingMerchantsByCountryRaw);
         const driverPending = formatStats(pendingDriversByCountryRaw);
         Object.keys(driverPending).forEach(c => {
@@ -615,6 +626,15 @@ export class AdminService {
                 // people. Surfaced so the UI can explain why the tiles do not
                 // add up to totalUsers instead of looking self-contradictory.
                 segmentMemberships: totalBuyers + totalMerchants + totalDrivers,
+                // The dashboard headline shows memberships, so its "View by
+                // country" drill-down has to be the membership sum too -
+                // otherwise the breakdown would total the distinct-account
+                // figure and contradict the number above it.
+                segmentMembershipsByCountry: sumByCountry(
+                    formatStats(totalBuyersByCountryRaw),
+                    formatStats(totalMerchantsByCountryRaw),
+                    formatStats(totalDriversByCountryRaw),
+                ),
             },
             today: {
                 totalOrders: todaysOrders.length,
