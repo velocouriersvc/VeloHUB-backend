@@ -1095,6 +1095,13 @@ export class PaymentService {
         log.info("Stripe webhook received", { type: event.type });
 
         switch (event.type) {
+            // Connected-account onboarding finished (or capabilities changed).
+            // Keeps the payout-ready flag in step without the user refreshing.
+            case "account.updated": {
+                const { PayoutService } = await import("../payout-service");
+                await new PayoutService().handleConnectAccountUpdated(event.data.object as any);
+                break;
+            }
             case "payment_intent.succeeded": {
                 const pi = event.data.object;
                 const paymentId = pi.metadata?.paymentId;

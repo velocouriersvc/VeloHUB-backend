@@ -29,6 +29,48 @@ export class PayoutController {
         return names.includes("merchant") && !names.includes("driver") ? "merchant" : "driver";
     }
 
+    /**
+     * GET /payouts/method
+     * Which payout rail this user gets, and whether they are ready to be paid.
+     * The app renders the bank picker or Stripe onboarding off this.
+     */
+    getMethod = async (req: AuthRequest, res: Response) => {
+        try {
+            const method = await this.payouts.getPayoutMethod(req.user!.id, this.roleFrom(req));
+            return res.json(method);
+        } catch (error) {
+            log.error("getMethod failed", { error: (error as Error).message });
+            return res.status(500).json({ message: "Could not load your payout method" });
+        }
+    };
+
+    /**
+     * POST /payouts/connect/onboard
+     * Returns a Stripe hosted onboarding URL where the user adds their bank.
+     */
+    startOnboarding = async (req: AuthRequest, res: Response) => {
+        try {
+            const base = process.env.PAYOUT_ONBOARDING_RETURN_URL || "https://velocouriersvc.com/payouts";
+            const returnUrl = String(req.body?.returnUrl || `${base}?status=complete`);
+            const refreshUrl = String(req.body?.refreshUrl || `${base}?status=refresh`);
+            const result = await this.payouts.startStripeOnboarding(req.user!.id, { returnUrl, refreshUrl });
+            return res.json(result);
+        } catch (error) {
+            log.warn("startOnboarding failed", { error: (error as Error).message });
+            return res.status(400).json({ message: (error as Error).message });
+        }
+    };
+
+    /** GET /payouts/connect/status - refreshed from Stripe. */
+    connectStatus = async (req: AuthRequest, res: Response) => {
+        try {
+            return res.json(await this.payouts.syncStripeStatus(req.user!.id));
+        } catch (error) {
+            log.error("connectStatus failed", { error: (error as Error).message });
+            return res.status(500).json({ message: "Could not check your payout setup" });
+        }
+    };
+
     /** GET /payouts/banks?currency=NGN */
     listBanks = async (req: AuthRequest, res: Response) => {
         try {

@@ -26,6 +26,17 @@ export class Wallet {
     @Column({ type: "varchar", nullable: true })
     paystackRecipientCode: string | null;
 
+    // Stripe Connect payout destination, used in countries Paystack Transfers
+    // cannot reach. The connected account holds the user's bank details, which
+    // Stripe collects and verifies through its own hosted onboarding.
+    @Column({ type: "varchar", nullable: true })
+    stripeConnectAccountId: string | null;
+
+    // Mirrors payouts_enabled on the connected account, so a payout is not
+    // attempted before onboarding is actually finished.
+    @Column({ type: "boolean", default: false })
+    stripePayoutsEnabled: boolean;
+
     @CreateDateColumn()
     createdAt: Date;
 
