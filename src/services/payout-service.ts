@@ -11,6 +11,7 @@ import { createServiceLogger } from "../utils/logger";
 import { payoutBreakdown } from "../utils/payout-fee";
 import { User } from "../models/user";
 import { payoutRailFor, isPaystackPayoutCountry, PAYSTACK_PAYOUT_CURRENCIES, PayoutRail } from "../config/payout-rails";
+import { currencyForCountry } from "../utils/currency";
 
 const log = createServiceLogger("PayoutService");
 
@@ -47,6 +48,36 @@ export class PayoutService {
         return role === "driver" ? this.driverRepo : this.merchantRepo;
     }
 
+    /**
+     * The currency a Stripe payout must settle in.
+     *
+     * createWallet() defaults to Ghana when it is called without a country, so
+     * users outside Ghana ended up holding a GHS wallet (53 of them, all with
+     * a zero balance). Transferring GHS to a US connected account fails, so the
+     * payout currency comes from the user's country instead.
+     *
+     * A mismatched wallet is corrected only while it is empty. If it ever holds
+     * money the balance is in the recorded currency and silently relabelling it
+     * would misstate real funds, so that case is logged and left alone.
+     */
+    private async payoutCurrencyFor(userId: string, country: string | null, wallet: Wallet): Promise<string> {
+        const expected = currencyForCountry((country || "").toUpperCase());
+        const current = wallet.currency || expected;
+        if (current === expected) return current;
+
+        if (Number(wallet.balance) === 0) {
+            wallet.currency = expected;
+            await this.walletRepo.save(wallet);
+            log.info("Corrected empty wallet currency to match country", { userId, country, from: current, to: expected });
+            return expected;
+        }
+
+        log.warn("Wallet currency does not match the user's country; leaving it alone because it holds a balance", {
+            userId, country, walletCurrency: current, expected, balance: wallet.balance,
+        });
+        return current;
+    }
+
     /** The payout rail for this user, decided by their country. */
     async railFor(userId: string): Promise<{ rail: PayoutRail; country: string | null }> {
         const user = await this.userRepo.findOne({ where: { id: userId } });
@@ -64,7 +95,7 @@ export class PayoutService {
     async getPayoutMethod(userId: string, role: PayoutRole) {
         const { rail, country } = await this.railFor(userId);
         let wallet = await this.wallet.getWallet(userId);
-        if (!wallet) wallet = await this.wallet.createWallet(userId);
+        if (!wallet) wallet = await this.wallet.createWallet(userId, (country || "GH").toUpperCase());
 
         if (rail === "paystack") {
             return {
@@ -85,7 +116,7 @@ export class PayoutService {
         return {
             rail,
             country,
-            currency: wallet.currency || "USD",
+            currency: await this.payoutCurrencyFor(userId, country, wallet),
             ready: !!status.payoutsEnabled,
             onboarding: {
                 started: !!wallet.stripeConnectAccountId,
@@ -107,7 +138,7 @@ export class PayoutService {
         }
         const stripe = await getStripeProvider();
         let wallet = await this.wallet.getWallet(userId);
-        if (!wallet) wallet = await this.wallet.createWallet(userId);
+        if (!wallet) wallet = await this.wallet.createWallet(userId, (country || "US").toUpperCase());
 
         if (!wallet.stripeConnectAccountId) {
             const user = await this.userRepo.findOne({ where: { id: userId } });
@@ -340,7 +371,8 @@ export class PayoutService {
             }
         }
 
-        const currency = wallet.currency || "USD";
+        const { country } = await this.railFor(userId);
+        const currency = await this.payoutCurrencyFor(userId, country, wallet);
         const { fee, net } = payoutBreakdown(amount, currency);
         if (net <= 0) throw new Error("Amount is too small to cover the transfer fee");
         if (amount > (await this.wallet.getWithdrawableBalance(userId))) {
